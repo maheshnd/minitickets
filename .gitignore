@@ -1,0 +1,8 @@
+node_modules
+.next
+next-env.d.ts
+*.tsbuildinfo
+
+# Real env files hold local settings; only the .env.example files are committed.
+.env
+.env.local

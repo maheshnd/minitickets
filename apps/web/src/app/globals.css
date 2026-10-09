@@ -1,0 +1,2 @@
+/* Loads Tailwind: its reset styles plus every utility class (p-8, text-red-600, ...). */
+@import "tailwindcss";

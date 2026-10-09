@@ -1,0 +1,4 @@
+# Tells pnpm which folders are packages in this monorepo.
+packages:
+  - "apps/*"
+  - "packages/*"

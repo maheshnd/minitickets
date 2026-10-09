@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Browser code: include the DOM types (window, document, ...).
+    "lib": ["dom", "dom.iterable", "esnext"],
+    // React 17+ JSX transform: no need to `import React` in every file.
+    "jsx": "react-jsx",
+    "incremental": true,
+    // Next.js editor plugin: extra checks for "use client", route exports, etc.
+    "plugins": [{ "name": "next" }],
+    // `@/` means `src/`, so imports look like "@/lib/trpc/client".
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
