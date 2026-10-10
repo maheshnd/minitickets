@@ -60,3 +60,10 @@ export async function getCurrentUser(sessionId: string | undefined) {
   const user = await users.findById(session.userId);
   return user ? { id: user.id, email: user.email } : null;
 }
+
+// Logout: revoke the session on the server. Idempotent: no cookie, or a session that is
+// already gone, is fine, so calling logout twice is safe.
+export async function logout(sessionId: string | undefined) {
+  if (!sessionId) return;
+  await sessions.remove(sessionId);
+}

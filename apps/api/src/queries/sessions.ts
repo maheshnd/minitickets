@@ -33,7 +33,7 @@ export async function get(sessionId: string) {
   return JSON.parse(value) as { userId: string; createdAt: string };
 }
 
-// 4. Delete a session (used by logout in a later step).
+// 4. Delete a session (used by logout). Deleting a key that doesn't exist is not an error.
 export async function remove(sessionId: string) {
   await redis.del(keyFor(sessionId));
 }

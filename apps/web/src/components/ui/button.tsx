@@ -7,6 +7,9 @@ type ButtonProps = {
   // Navigation should be a link; actions should be a button. Both look the same.
   href?: string;
   variant?: "primary" | "secondary";
+  // Only used for the <button> form.
+  onClick?: () => void;
+  disabled?: boolean;
 };
 
 const base =
@@ -19,7 +22,7 @@ const variants = {
   secondary: "border border-gray-300 bg-white text-gray-900 hover:bg-gray-100",
 };
 
-export function Button({ children, href, variant = "primary" }: ButtonProps) {
+export function Button({ children, href, variant = "primary", onClick, disabled }: ButtonProps) {
   const className = `${base} ${variants[variant]}`;
 
   if (href) {
@@ -30,7 +33,12 @@ export function Button({ children, href, variant = "primary" }: ButtonProps) {
     );
   }
   return (
-    <button type="button" className={className}>
+    <button
+      type="button"
+      className={`${className} disabled:cursor-not-allowed disabled:opacity-60`}
+      onClick={onClick}
+      disabled={disabled}
+    >
       {children}
     </button>
   );
