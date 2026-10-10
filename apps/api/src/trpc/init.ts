@@ -9,6 +9,7 @@ const t = initTRPC.context<Context>().create({
   errorFormatter({ shape, error }) {
     // 2a. When input validation fails, the cause is a ZodError. We attach its per-field
     //     messages so the UI can show them, e.g. { name: ["Name is required"] }.
+    //     The default message is the raw Zod JSON dump, so we replace it with a short one.
     const fieldErrors: Record<string, string[] | undefined> | null =
       error.cause instanceof ZodError ? z.flattenError(error.cause).fieldErrors : null;
 
@@ -16,9 +17,15 @@ const t = initTRPC.context<Context>().create({
     //     server logs only; the client gets a generic message.
     const isInternal = shape.data.code === "INTERNAL_SERVER_ERROR";
 
+    const message = isInternal
+      ? "Something went wrong"
+      : error.cause instanceof ZodError
+        ? "Invalid input"
+        : shape.message;
+
     return {
       ...shape,
-      message: isInternal ? "Something went wrong" : shape.message,
+      message,
       data: {
         ...shape.data,
         // tRPC adds a stack trace in development. File paths are internals, so always drop it.

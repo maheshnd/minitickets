@@ -1,20 +1,59 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import Link from "next/link";
 import type { ReactNode } from "react";
-import { QueryProvider } from "@/providers/query-provider";
+import { Container } from "@/components/ui/container";
 import "./globals.css";
 
-// The <title> shown in the browser tab.
+// 1. next/font downloads the font at build time and serves it from our own domain:
+//    no layout shift while loading and no request to Google from the visitor's browser.
+const inter = Inter({ subsets: ["latin"] });
+
+// 2. Default metadata for every page. A page can override it with its own `metadata`.
 export const metadata: Metadata = {
-  title: "minitickets",
+  title: { default: "MiniTickets", template: "%s | MiniTickets" },
+  description: "MiniTickets helps your team collect, track, and resolve support requests in one simple place.",
 };
 
-// Root layout: the HTML shell around every page. Routing only, no feature logic.
+const linkClass =
+  "rounded px-2 py-1 text-sm font-medium hover:text-indigo-700 " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600";
+
+// Root layout: wraps every page with the same header and footer.
+// It is a Server Component (no "use client") because it has no state or event handlers.
+// Server Components are rendered to HTML on the server and send no component JavaScript to the browser.
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gray-50 text-gray-900">
-        {/* Makes React Query + tRPC available to every component below. */}
-        <QueryProvider>{children}</QueryProvider>
+      <body className={`${inter.className} flex min-h-screen flex-col bg-gray-50 text-gray-900`}>
+        <header className="border-b border-gray-200 bg-white">
+          <Container className="flex items-center justify-between py-4">
+            <Link href="/" className={`${linkClass} text-lg font-bold`}>
+              MiniTickets
+            </Link>
+            <nav aria-label="Main">
+              <ul className="flex items-center gap-2">
+                <li>
+                  <Link href="/login" className={linkClass}>
+                    Login
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/signup" className={linkClass}>
+                    Sign up
+                  </Link>
+                </li>
+              </ul>
+            </nav>
+          </Container>
+        </header>
+
+        {/* flex-1 pushes the footer to the bottom even on short pages. */}
+        <main className="flex-1">{children}</main>
+
+        <footer className="border-t border-gray-200 bg-white py-6 text-center text-sm text-gray-600">
+          <Container>© {new Date().getFullYear()} MiniTickets. A learning project.</Container>
+        </footer>
       </body>
     </html>
   );
