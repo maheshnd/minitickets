@@ -5,5 +5,6 @@ import { defineConfig } from "@playwright/test";
 // here, so the tests never touch servers they did not start.
 export default defineConfig({
   testDir: "./e2e",
-  use: { baseURL: "http://localhost:3000" },
+  // E2E_BASE_URL lets you test a second copy of the app on other ports.
+  use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000" },
 });

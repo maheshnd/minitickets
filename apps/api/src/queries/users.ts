@@ -21,13 +21,19 @@ export async function findByEmail(email: string) {
   return rows[0];
 }
 
-// 2. Insert a new user and return the saved row (with its generated id and createdAt).
+// 2. Look up one user by id (used to turn a session's userId into a user).
+export async function findById(id: string) {
+  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return rows[0];
+}
+
+// 3. Insert a new user and return the saved row (with its generated id and createdAt).
 export async function create(input: { email: string; passwordHash: string }) {
   try {
     const rows = await db.insert(users).values(input).returning();
     return rows[0];
   } catch (err) {
-    // 3. This is the "translate" try/catch: we do not handle the error, we only rename it.
+    // 4. This is the "translate" try/catch: we do not handle the error, we only rename it.
     //    Postgres speaks in driver codes (23505); the service layer must not know about
     //    them. So a duplicate email becomes our own ConflictError, and anything else
     //    is rethrown untouched (it is a real failure and ends up as a 500).

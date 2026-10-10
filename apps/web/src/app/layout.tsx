@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Container } from "@/components/ui/container";
+import { HeaderNav } from "@/features/auth/components/header-nav";
 import { QueryProvider } from "@/providers/query-provider";
 import "./globals.css";
 
@@ -36,20 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/" className={`${linkClass} text-lg font-bold`}>
                 MiniTickets
               </Link>
-              <nav aria-label="Main">
-                <ul className="flex items-center gap-2">
-                  <li>
-                    <Link href="/login" className={linkClass}>
-                      Login
-                    </Link>
-                  </li>
-                  <li>
-                    <Link href="/signup" className={linkClass}>
-                      Sign up
-                    </Link>
-                  </li>
-                </ul>
-              </nav>
+              <HeaderNav />
             </Container>
           </header>
 

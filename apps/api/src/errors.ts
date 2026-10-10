@@ -3,7 +3,7 @@
 // The errorMapper in trpc/init.ts is the one place that turns these into HTTP-style errors.
 
 // 1. The kinds of failure we care about. Each one maps to one tRPC/HTTP code later.
-export type AppErrorKind = "NOT_FOUND" | "CONFLICT" | "FORBIDDEN" | "BAD_REQUEST";
+export type AppErrorKind = "NOT_FOUND" | "CONFLICT" | "FORBIDDEN" | "BAD_REQUEST" | "UNAUTHORIZED";
 
 // 2. The base class. `kind` tells the errorMapper which code to use.
 export class AppError extends Error {
@@ -33,5 +33,12 @@ export class ConflictError extends AppError {
 export class ForbiddenError extends AppError {
   constructor(message: string) {
     super("FORBIDDEN", message);
+  }
+}
+
+// "We don't know who you are" (HTTP 401), e.g. wrong login details.
+export class UnauthorizedError extends AppError {
+  constructor(message: string) {
+    super("UNAUTHORIZED", message);
   }
 }

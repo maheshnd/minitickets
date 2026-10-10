@@ -29,3 +29,14 @@ export const PublicUserSchema = z.object({
 });
 
 export type PublicUser = z.infer<typeof PublicUserSchema>;
+
+// Login form input. Unlike signup, we do NOT enforce a minimum length or any password rules here:
+// the only question at login is "does it match?". Rules on the login form would also tell an
+// attacker something about our password policy. We only reject empty values and a huge password
+// (the max stops someone from sending a giant string that is slow to hash).
+export const LoginInput = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email("Enter a valid email address")),
+  password: z.string().min(1, "Enter your password").max(128, "Password must be at most 128 characters"),
+});
+
+export type LoginInput = z.infer<typeof LoginInput>;

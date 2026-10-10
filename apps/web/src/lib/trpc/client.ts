@@ -19,6 +19,15 @@ export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 //    httpBatchLink combines calls made at the same moment into one HTTP request.
 export function makeTrpcClient() {
   return createTRPCClient<AppRouter>({
-    links: [httpBatchLink({ url: `${API_URL}/trpc` })],
+    links: [
+      httpBatchLink({
+        url: `${API_URL}/trpc`,
+        // 4. The web (:3000) and API (:4000) are different origins, and browsers send
+        //    cookies to another origin only when asked. "include" sends the session
+        //    cookie with every call and lets the API's Set-Cookie be saved. The API's
+        //    CORS settings must allow it too (credentials: true, exact origin).
+        fetch: (url, options) => fetch(url, { ...options, credentials: "include" }),
+      }),
+    ],
   });
 }

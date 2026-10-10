@@ -21,10 +21,10 @@ docs/            One file per step, in plain English.
   `procedures/<feature>.ts` → `services/<feature>.ts` → `queries/<feature>.ts`.
   No suffixes like `.router` or `.service`; the folder says the layer.
 
-  procedures -> services -> queries -> db. Each layer only calls the layer below.
+  procedures -> services -> queries -> data store (Postgres / Redis). Each layer only calls the layer below.
   - **Procedures:** validate input + call a service, no logic.
   - **Services:** business logic, no HTTP or SQL.
-  - **Queries:** the only code that touches the database.
+  - **Queries:** the only code that touches ANY data store (Postgres or Redis).
 - **web:** `app/` is routing only. Feature code lives in `features/<feature>/{components,hooks}`.
   Components never call tRPC directly; they use a hook from their feature.
 - **Types across apps:** web imports only `type AppRouter` from `@minitickets/api/router`, never runtime code.
@@ -35,7 +35,7 @@ docs/            One file per step, in plain English.
 pnpm install      install everything
 pnpm dev          run web (:3000) and api (:4000) together
 pnpm typecheck    tsc --noEmit in every package
-pnpm db:up        start Postgres in Docker (waits until healthy); db:down stops it
+pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
 ```
 
@@ -46,7 +46,7 @@ Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both
 - Small files, one job each.
 - Add short step-wise inline comments (1., 2., 3. …) explaining WHAT each part does and WHY.
 - No clever abstractions; prefer obvious code, even if it is a little longer.
-- Add NO extra libraries, NO DI container, NO Docker, NO database unless the current step asks for it.
+- Add NO extra libraries, NO DI container, NO Docker, NO database or data store unless the current step asks for it.
 - TypeScript strict everywhere; validate all external input (requests, env) with Zod.
 - Shared input schemas live in `packages/shared`, not in the apps.
 - Build only what the current step asks for, then stop. Don't build ahead.

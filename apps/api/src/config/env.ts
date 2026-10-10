@@ -8,6 +8,10 @@ const EnvSchema = z.object({
   WEB_ORIGIN: z.url(),
   // Postgres connection string. Must be a postgres:// (or postgresql://) URL.
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  // Redis connection string (sessions live here). Must be a redis:// (or rediss://) URL.
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  // Only "production" changes behavior: it turns on the Secure flag of the session cookie.
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
 // 2. Check process.env against the schema once, when the API starts.

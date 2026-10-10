@@ -42,6 +42,7 @@ const codeByKind: Record<AppErrorKind, TRPCError["code"]> = {
   CONFLICT: "CONFLICT",
   FORBIDDEN: "FORBIDDEN",
   BAD_REQUEST: "BAD_REQUEST",
+  UNAUTHORIZED: "UNAUTHORIZED",
 };
 
 // 4. errorMapper: a middleware that wraps every procedure.

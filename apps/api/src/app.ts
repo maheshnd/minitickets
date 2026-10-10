@@ -1,8 +1,9 @@
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyError } from "fastify";
 import { env } from "./config/env";
-import { pingDb } from "./queries/health";
+import { pingDb, pingRedis } from "./queries/health";
 import { createContext } from "./trpc/context";
 import { appRouter, type AppRouter } from "./trpc/router";
 
@@ -33,7 +34,12 @@ export async function buildApp() {
 
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the
   //    browser blocks the calls unless the API explicitly allows the web origin.
-  await app.register(cors, { origin: env.WEB_ORIGIN });
+  //    credentials: true lets the browser send and receive cookies on these calls. It only
+  //    works with one exact origin (never "*"), so a random website can't use our cookie.
+  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+
+  // 2b. Cookies: adds `req.cookies` (read) and `reply.setCookie` (write).
+  await app.register(cookie);
 
   // 3. Error handler for plain Fastify routes (like /health). tRPC routes never reach it,
   //    because tRPC catches its own errors and uses the onError hook below.
@@ -55,16 +61,19 @@ export async function buildApp() {
   //    It must NOT check the database, or a DB outage would make orchestrators restart a healthy API.
   app.get("/health", async () => ({ status: "ok" }));
 
-  // 5. Readiness: "can the API do real work right now?" Runs `select 1`.
-  //    200 if the database answers, 503 (Service Unavailable) if not.
+  // 5. Readiness: "can the API do real work right now?" Pings Postgres AND Redis.
+  //    200 if both answer, 503 (Service Unavailable) if either does not.
+  //    allSettled waits for both, so one failure never hides the other in the log.
   app.get("/ready", async (request, reply) => {
-    try {
-      await pingDb();
-      return { status: "ready" };
-    } catch (err) {
-      request.log.error({ err }, "database not ready");
+    const [db, redis] = await Promise.allSettled([pingDb(), pingRedis()]);
+
+    if (db.status === "rejected") request.log.error({ err: db.reason }, "database not ready");
+    if (redis.status === "rejected") request.log.error({ err: redis.reason }, "redis not ready");
+
+    if (db.status === "rejected" || redis.status === "rejected") {
       return reply.status(503).send({ status: "unavailable" });
     }
+    return { status: "ready" };
   });
 
   // 6. Mount tRPC: every request to /trpc/* is handled by appRouter.

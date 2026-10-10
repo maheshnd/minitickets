@@ -1,6 +1,7 @@
 import { buildApp } from "./app";
 import { env } from "./config/env";
 import { pool } from "./db/client";
+import { redis } from "./redis/client";
 
 // Entry point of the API (run by `pnpm dev`).
 
@@ -27,9 +28,12 @@ async function shutdown(signal: string) {
   try {
     // 3a. Stop accepting new requests and wait for in-flight ones to finish.
     await app.close();
-    // 3b. Only then close the database pool (requests may still need it until they finish).
+    // 3b. Only then close the data stores (requests may still need them until they finish).
+    //     redis.quit() sends QUIT and waits for pending replies, so nothing is cut off.
     await pool.end();
-    app.log.info("shutdown complete: server closed, database pool closed");
+    // If Redis is already down, quit() fails; disconnect() just drops the socket.
+    await redis.quit().catch(() => redis.disconnect());
+    app.log.info("shutdown complete: server closed, database pool and redis closed");
     process.exit(0);
   } catch (err) {
     app.log.error({ err }, "shutdown failed");

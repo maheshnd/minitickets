@@ -1,4 +1,4 @@
-# Runs the local Postgres database. Start it with `pnpm db:up`.
+# Runs the local Postgres database and Redis. Start both with `pnpm db:up`.
 # Docker Compose reads the ${...} values below from the root .env file.
 services:
   postgres:
@@ -23,5 +23,25 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    # 1. Pinned version, same reason as Postgres.
+    image: redis:7.4.5
+    restart: unless-stopped
+    # 2. The container always listens on 6379. The host port comes from REDIS_PORT
+    #    (default 6379), so it can move if another project already uses 6379.
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    # 3. Named volume + appendonly: sessions survive a container restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    # 4. Healthcheck: `redis-cli ping` answers PONG once Redis accepts commands.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres_data:
+  redis_data:
