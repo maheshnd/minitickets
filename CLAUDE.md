@@ -58,6 +58,10 @@ Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both
 - Never kill or restart processes you did not start. If a port is busy, use another port
   for your own test instance.
 - Never stop or restart Docker or other projects' containers.
+- When you start a process for testing, record its PID right away (e.g. `$!` after starting it
+  in the background) and stop only that PID with `kill <pid>`. Never stop a process by name or
+  pattern: no `pkill`, `killall`, `kill $(lsof ...)`, `kill $(pgrep ...)` or `xargs kill`.
+  A pattern can match the owner's own dev servers. `.claude/settings.json` denies these commands.
 
 ## Notes
 
