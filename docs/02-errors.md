@@ -24,14 +24,14 @@ went wrong, using one of these:
 
 ## How an error travels
 
-Take `hello.fail` with `mode: "notFound"`.
+Take a service that cannot find what it was asked for.
 
-### 1. The service throws: `services/hello.ts`
+### 1. The service throws: `services/<feature>.ts`
 
 `throw new NotFoundError("Event 42 was not found")`. There is no try/catch. The error just flies
 upward to whoever called us.
 
-### 2. The procedure does nothing: `procedures/hello.ts`
+### 2. The procedure does nothing: `procedures/<feature>.ts`
 
 The procedure called the service, so the error passes straight through it. Procedures stay thin.
 
@@ -113,17 +113,16 @@ tRPC's `.input(schema)` already does a parse for us. A failure becomes a `BAD_RE
 `errorFormatter` attaches the `fieldErrors`. That is why we rarely call `parse` ourselves in procedures.
 `config/env.ts` uses it too: wrong env values should stop the server at startup.
 
-## The temporary demo
+## Example
 
-`hello.fail` (with `mode`: `notFound`, `conflict` or `crash`) exists only to show the flow. It will be
-removed when the first real feature arrives. Try it:
-
+```ts
+// services/events.ts
+export async function getEvent(id: number) {
+  const event = await findEventById(id);
+  if (!event) throw new NotFoundError(`Event ${id} was not found`);
+  return event;
+}
 ```
-curl -s -i 'http://localhost:4000/trpc/hello.fail?input=%7B%22mode%22%3A%22notFound%22%7D'
-curl -s -i 'http://localhost:4000/trpc/hello.fail?input=%7B%22mode%22%3A%22conflict%22%7D'
-curl -s -i 'http://localhost:4000/trpc/hello.fail?input=%7B%22mode%22%3A%22crash%22%7D'
-curl -s -i 'http://localhost:4000/trpc/hello.greet?input=%7B%22name%22%3A%22%22%7D'
-```
 
-Watch the API terminal while you run them: warn lines for the first two and the last, an error line
-with the stack for `crash`.
+The client receives HTTP 404 with the message `Event 42 was not found`. The service never
+mentions HTTP or tRPC; the error handling code does the translating.

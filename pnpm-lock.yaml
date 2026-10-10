@@ -38,6 +38,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@minitickets/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tanstack/react-query':
         specifier: ^5.104.1
         version: 5.104.1(react@19.3.0)
