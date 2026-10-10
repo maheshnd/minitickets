@@ -35,9 +35,11 @@ docs/            One file per step, in plain English.
 pnpm install      install everything
 pnpm dev          run web (:3000) and api (:4000) together
 pnpm typecheck    tsc --noEmit in every package
+pnpm db:up        start Postgres in Docker (waits until healthy); db:down stops it
+pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
 ```
 
-Env files: `apps/api/.env` and `apps/web/.env.local`, both copied from their `.env.example`.
+Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both copied from their `.env.example`.
 
 ## Code rules
 
@@ -49,6 +51,7 @@ Env files: `apps/api/.env` and `apps/web/.env.local`, both copied from their `.e
 - Shared input schemas live in `packages/shared`, not in the apps.
 - Build only what the current step asks for, then stop. Don't build ahead.
 - Each step gets a `docs/NN-<name>.md` written in simple English.
+- For UI changes, verify in a headless browser before reporting done. Say clearly what was and wasn't verified.
 
 ## Notes
 

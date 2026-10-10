@@ -6,6 +6,8 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive(),
   // The web app's URL. CORS allows browser requests only from this origin.
   WEB_ORIGIN: z.url(),
+  // Postgres connection string. Must be a postgres:// (or postgresql://) URL.
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
 });
 
 // 2. Check process.env against the schema once, when the API starts.

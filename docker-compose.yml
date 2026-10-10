@@ -1,0 +1,27 @@
+# Runs the local Postgres database. Start it with `pnpm db:up`.
+# Docker Compose reads the ${...} values below from the root .env file.
+services:
+  postgres:
+    # 1. Pinned version: everyone runs the exact same Postgres, so nothing changes by surprise.
+    image: postgres:17.6
+    restart: unless-stopped
+    # 2. Credentials come from the root .env (see .env.example).
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    # 3. Named volume: the data lives outside the container, so it survives `pnpm db:down`.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # 4. Healthcheck: Docker runs pg_isready every few seconds and marks the
+    #    container "healthy" only once Postgres really accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:

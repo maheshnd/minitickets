@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyError } from "fastify";
 import { env } from "./config/env";
+import { pingDb } from "./queries/health";
 import { createContext } from "./trpc/context";
 import { appRouter, type AppRouter } from "./trpc/router";
 
@@ -31,10 +32,23 @@ export async function buildApp() {
     return reply.status(statusCode).send({ error: error.message });
   });
 
-  // 4. A plain health check route (no tRPC). Handy for checking the server is up.
+  // 4. Liveness: "is the process up?" Always 200 while the server can answer at all.
+  //    It must NOT check the database, or a DB outage would make orchestrators restart a healthy API.
   app.get("/health", async () => ({ status: "ok" }));
 
-  // 5. Mount tRPC: every request to /trpc/* is handled by appRouter.
+  // 5. Readiness: "can the API do real work right now?" Runs `select 1`.
+  //    200 if the database answers, 503 (Service Unavailable) if not.
+  app.get("/ready", async (request, reply) => {
+    try {
+      await pingDb();
+      return { status: "ready" };
+    } catch (err) {
+      request.log.error({ err }, "database not ready");
+      return reply.status(503).send({ status: "unavailable" });
+    }
+  });
+
+  // 6. Mount tRPC: every request to /trpc/* is handled by appRouter.
   await app.register(fastifyTRPCPlugin, {
     prefix: "/trpc",
     trpcOptions: {
