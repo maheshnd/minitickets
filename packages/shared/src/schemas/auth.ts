@@ -20,3 +20,12 @@ export const SignupInput = z
   });
 
 export type SignupInput = z.infer<typeof SignupInput>;
+
+// What the API may send back about a user. Deliberately has NO password_hash.
+// The API's .output() uses it as a filter, so a hash can never leave the server.
+export const PublicUserSchema = z.object({
+  id: z.uuid(),
+  email: z.string(),
+});
+
+export type PublicUser = z.infer<typeof PublicUserSchema>;

@@ -4,6 +4,7 @@ import { SignupInput } from "@minitickets/shared";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Container } from "@/components/ui/container";
 import { Input } from "@/components/ui/input";
+import { useSignup } from "../hooks/use-signup";
 
 type FieldName = "email" | "password" | "confirmPassword";
 type Values = Record<FieldName, string>;
@@ -32,6 +33,9 @@ export function SignupForm() {
   // 1. Before the first submit we stay quiet; after it, fields are re-checked on blur.
   const [submitted, setSubmitted] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Shown under the form when the failure is not tied to a field (network, 500...).
+  const [formError, setFormError] = useState("");
+  const signup = useSignup();
 
   // 2. Refs let us call .focus() on an input after a failed submit.
   const refs = {
@@ -44,6 +48,7 @@ export function SignupForm() {
     const { name, value } = event.target;
     setValues((current) => ({ ...current, [name]: value }));
     setSuccess(false);
+    setFormError("");
   }
 
   // 3. On blur, validate everything but update only the field that was left.
@@ -69,8 +74,35 @@ export function SignupForm() {
       return;
     }
 
-    // 6. Passed. No network call yet; Step 5 will send the data to the API.
-    setSuccess(true);
+    // 6. Passed: send it to the API. The server validates again and may still say no.
+    setSuccess(false);
+    setFormError("");
+    signup.mutate(values, {
+      onSuccess: () => {
+        setSuccess(true);
+        setValues({ email: "", password: "", confirmPassword: "" });
+      },
+      onError: (error) => {
+        const data = error.data;
+        // 6a. Server-side validation (400): show each message under its field.
+        const fromServer: Errors = {};
+        for (const field of fieldOrder) {
+          const message = data?.fieldErrors?.[field]?.[0];
+          if (message) fromServer[field] = message;
+        }
+        // 6b. Duplicate email (409): the message belongs under the email field.
+        if (data?.httpStatus === 409) fromServer.email = error.message;
+
+        if (Object.keys(fromServer).length > 0) {
+          setErrors(fromServer);
+          const first = fieldOrder.find((field) => fromServer[field]);
+          if (first) refs[first].current?.focus();
+        } else {
+          // 6c. Anything else: a general message, never raw internals.
+          setFormError("Something went wrong. Please try again.");
+        }
+      },
+    });
   }
 
   return (
@@ -116,14 +148,20 @@ export function SignupForm() {
         />
         <button
           type="submit"
-          className="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          disabled={signup.isPending}
+          className="inline-flex w-full items-center justify-center rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
         >
-          Sign up
+          {signup.isPending ? "Creating account..." : "Sign up"}
         </button>
         {/* role="status" makes screen readers announce the text when it appears. */}
         <p role="status" className="text-sm text-green-700">
-          {success ? "Looks good. Account creation comes in Step 5." : ""}
+          {success ? "Account created. Login comes next." : ""}
         </p>
+        {formError ? (
+          <p role="alert" className="text-sm text-red-700">
+            {formError}
+          </p>
+        ) : null}
       </form>
     </Container>
   );

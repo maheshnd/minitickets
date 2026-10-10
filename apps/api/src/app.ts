@@ -9,8 +9,27 @@ import { appRouter, type AppRouter } from "./trpc/router";
 // Builds and configures the Fastify app, but does NOT start it.
 // Keeping "build" (here) apart from "listen" (server.ts) makes the app easy to test later.
 export async function buildApp() {
-  // 1. Create the Fastify instance. logger: true prints each request to the terminal.
-  const app = Fastify({ logger: true });
+  // 1. Create the Fastify instance. The logger prints each request to the terminal.
+  //    redact replaces these fields with "[Redacted]" if they ever appear in a log line,
+  //    so passwords can never end up in log files. (We also never log request bodies or hashes.)
+  const app = Fastify({
+    logger: {
+      redact: {
+        paths: [
+          "password",
+          "confirmPassword",
+          "passwordHash",
+          "*.password",
+          "*.confirmPassword",
+          "*.passwordHash",
+          "*.*.password",
+          "*.*.confirmPassword",
+          "*.*.passwordHash",
+        ],
+        censor: "[Redacted]",
+      },
+    },
+  });
 
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the
   //    browser blocks the calls unless the API explicitly allows the web origin.

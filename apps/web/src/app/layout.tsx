@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Container } from "@/components/ui/container";
+import { QueryProvider } from "@/providers/query-provider";
 import "./globals.css";
 
 // 1. next/font downloads the font at build time and serves it from our own domain:
@@ -26,34 +27,39 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className={`${inter.className} flex min-h-screen flex-col bg-gray-50 text-gray-900`}>
-        <header className="border-b border-gray-200 bg-white">
-          <Container className="flex items-center justify-between py-4">
-            <Link href="/" className={`${linkClass} text-lg font-bold`}>
-              MiniTickets
-            </Link>
-            <nav aria-label="Main">
-              <ul className="flex items-center gap-2">
-                <li>
-                  <Link href="/login" className={linkClass}>
-                    Login
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/signup" className={linkClass}>
-                    Sign up
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-          </Container>
-        </header>
+        {/* QueryProvider is a Client Component, but wrapping children in it does NOT turn them
+            into client components. Children passed in as props stay Server Components; the
+            provider only renders them in place and adds React context around them. */}
+        <QueryProvider>
+          <header className="border-b border-gray-200 bg-white">
+            <Container className="flex items-center justify-between py-4">
+              <Link href="/" className={`${linkClass} text-lg font-bold`}>
+                MiniTickets
+              </Link>
+              <nav aria-label="Main">
+                <ul className="flex items-center gap-2">
+                  <li>
+                    <Link href="/login" className={linkClass}>
+                      Login
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/signup" className={linkClass}>
+                      Sign up
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
+            </Container>
+          </header>
 
-        {/* flex-1 pushes the footer to the bottom even on short pages. */}
-        <main className="flex-1">{children}</main>
+          {/* flex-1 pushes the footer to the bottom even on short pages. */}
+          <main className="flex-1">{children}</main>
 
-        <footer className="border-t border-gray-200 bg-white py-6 text-center text-sm text-gray-600">
-          <Container>© {new Date().getFullYear()} MiniTickets. A learning project.</Container>
-        </footer>
+          <footer className="border-t border-gray-200 bg-white py-6 text-center text-sm text-gray-600">
+            <Container>© {new Date().getFullYear()} MiniTickets. A learning project.</Container>
+          </footer>
+        </QueryProvider>
       </body>
     </html>
   );
