@@ -1,9 +1,11 @@
+import { accountRouter } from "../procedures/account";
 import { authRouter } from "../procedures/auth";
 import { router } from "./init";
 
 // The root router: one key per feature (each one lives in procedures/).
 export const appRouter = router({
   auth: authRouter,
+  account: accountRouter,
 });
 
 // Export the TYPE of the router, not the code.

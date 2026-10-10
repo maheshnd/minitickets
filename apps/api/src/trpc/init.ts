@@ -65,8 +65,22 @@ const errorMapper = t.middleware(async ({ next }) => {
   });
 });
 
-// 5. Export only the building blocks the rest of the API needs.
+// 5. isAuthed: a middleware that only lets logged-in callers through.
+//    This is the REAL security check for private data. A frontend guard can be skipped
+//    by anyone who calls the API directly (curl, scripts), this cannot.
+const isAuthed = t.middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "You must be logged in" });
+  }
+  // Passing `session` to next() replaces ctx.session with the non-null version, so in a
+  // protected procedure TypeScript then knows ctx.session.userId exists (no null check needed).
+  return next({ ctx: { session: ctx.session } });
+});
+
+// 6. Export only the building blocks the rest of the API needs.
 //    router: groups procedures together.
 //    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.
 export const router = t.router;
+//    protectedProcedure: a public procedure plus the login check above.
 export const publicProcedure = t.procedure.use(errorMapper);
+export const protectedProcedure = publicProcedure.use(isAuthed);

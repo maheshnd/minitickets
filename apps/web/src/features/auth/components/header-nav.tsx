@@ -22,6 +22,9 @@ export function HeaderNav() {
   if (me.data) {
     return (
       <nav aria-label="Main" className="flex items-center gap-3">
+        <Link href="/dashboard" className={linkClass}>
+          Dashboard
+        </Link>
         <p className="text-sm text-gray-700">Signed in as {me.data.email}</p>
         {/* Disabled while the request runs, so a double click can't send it twice. */}
         <Button variant="secondary" onClick={() => logout.mutate()} disabled={logout.isPending}>

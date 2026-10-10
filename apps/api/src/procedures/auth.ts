@@ -65,8 +65,9 @@ export const authRouter = router({
 
   // The current user, or null when nobody is logged in. Not an error: the header
   // calls this on every page and "logged out" is a normal answer.
+  // The session was already checked in createContext, so we just use ctx.session.
   me: publicProcedure.output(PublicUserSchema.nullable()).query(({ ctx }) => {
-    return authService.getCurrentUser(ctx.sessionId);
+    return authService.getCurrentUser(ctx.session?.userId);
   }),
 });
 

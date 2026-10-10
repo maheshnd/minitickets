@@ -1,11 +1,12 @@
 "use client";
 
 import { LoginInput } from "@minitickets/shared";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Container } from "@/components/ui/container";
 import { Input } from "@/components/ui/input";
 import { useLogin } from "../hooks/use-login";
+import { getSafeNext } from "../lib/safe-next";
 
 type FieldName = "email" | "password";
 type Values = Record<FieldName, string>;
@@ -37,6 +38,8 @@ export function LoginForm() {
   const [formError, setFormError] = useState("");
   const login = useLogin();
   const router = useRouter();
+  // Where to go after login. getSafeNext only lets through paths on our own site (no open redirect).
+  const next = getSafeNext(useSearchParams().get("next"));
 
   // 2. Refs let us call .focus() on an input after a failed submit.
   const refs = {
@@ -75,8 +78,8 @@ export function LoginForm() {
     // 6. Passed: send it to the API. The server validates again and may still say no.
     setFormError("");
     login.mutate(values, {
-      // 6a. Success: the API has set the cookie. Go to the home page.
-      onSuccess: () => router.push("/"),
+      // 6a. Success: the API has set the cookie. Go to the page the user wanted (or home).
+      onSuccess: () => router.push(next),
       onError: (error) => {
         const data = error.data;
         // 6b. Server-side validation (400): show each message under its field.

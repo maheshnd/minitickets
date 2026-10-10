@@ -51,13 +51,11 @@ export async function login(input: { email: string; password: string }) {
   return { user: { id: user.id, email: user.email }, sessionId };
 }
 
-// Current user: turn the session id from the cookie into a user. Returns null if the
-// cookie is missing, the session expired, or the user no longer exists.
-export async function getCurrentUser(sessionId: string | undefined) {
-  if (!sessionId) return null;
-  const session = await sessions.get(sessionId);
-  if (!session) return null;
-  const user = await users.findById(session.userId);
+// Current user: turn the userId from the session into a user. Returns null if nobody is
+// logged in, or the user no longer exists.
+export async function getCurrentUser(userId: string | undefined) {
+  if (!userId) return null;
+  const user = await users.findById(userId);
   return user ? { id: user.id, email: user.email } : null;
 }
 
