@@ -6,6 +6,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "typecheck": "pnpm -r typecheck",
     "db:up": "docker compose up -d --wait",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "test:e2e": "pnpm --filter @minitickets/web test:e2e"
   }
 }

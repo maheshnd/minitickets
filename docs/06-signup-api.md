@@ -75,7 +75,11 @@ trade-off here on purpose.
 
 - `QueryProvider` is back in `layout.tsx`. A client provider does not make its server
   children client components.
-- The QueryClient never retries 4xx errors (the request itself is wrong) and retries other
-  failures up to 2 times.
+- The QueryClient never retries 4xx errors on queries (the request itself is wrong) and
+  retries other query failures up to 2 times.
+- Mutations are never retried (`retry: 0`). Imagine a signup that works on the server, but
+  the response is lost on the way back. A retry would send the same email again and get
+  409, so the user would see a false "Email already registered" for an account that was
+  just created. It is better to show one honest error than to retry a write.
 - `useSignup` wraps the mutation. The form disables the button while it is pending, shows
   server field errors under the matching inputs, and shows a 409 under the email field.

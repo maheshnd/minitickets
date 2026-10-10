@@ -21,7 +21,10 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: { retry: shouldRetry },
-          mutations: { retry: shouldRetry },
+          // Mutations never retry. If a signup succeeds on the server but the response is
+          // lost on the way back, a retry would hit the unique email and return 409, and the
+          // user would see a false "Email already registered" for their own new account.
+          mutations: { retry: 0 },
         },
       }),
   );
