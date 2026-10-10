@@ -4,6 +4,9 @@ import { z } from "zod";
 const EnvSchema = z.object({
   // process.env values are always strings; z.coerce turns "4000" into the number 4000.
   PORT: z.coerce.number().int().positive(),
+  // Which network address to listen on. 127.0.0.1 = only this machine (safe for local dev).
+  // Inside a Docker container this must be 0.0.0.0, or the published port cannot reach the API.
+  HOST: z.string().default("127.0.0.1"),
   // The web app's URL. CORS allows browser requests only from this origin.
   WEB_ORIGIN: z.url(),
   // Postgres connection string. Must be a postgres:// (or postgresql://) URL.

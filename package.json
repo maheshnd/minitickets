@@ -7,6 +7,8 @@
     "typecheck": "pnpm -r typecheck",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
+    "app:up": "docker compose --profile app up -d --build --wait",
+    "app:down": "docker compose --profile app rm --stop --force api web migrate",
     "test:e2e": "pnpm --filter @minitickets/web test:e2e",
     "lint": "eslint .",
     "test": "vitest run"

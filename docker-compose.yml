@@ -1,4 +1,5 @@
 # Runs the local Postgres database and Redis. Start both with `pnpm db:up`.
+# The full app (migrate, api, web) also runs here, but only with the "app" profile: `pnpm app:up`.
 # Docker Compose reads the ${...} values below from the root .env file.
 services:
   postgres:
@@ -41,6 +42,93 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # ---- The app, in containers. Only started with `--profile app` (`pnpm app:up`). ----
+
+  # One-off job: applies the SQL migrations, then exits. It is separate from the api on purpose:
+  # if several api containers ran migrations at startup, they would race each other.
+  migrate:
+    # 1. build: make the image from our Dockerfile instead of downloading one.
+    #    `context: .` is the repo root (the Dockerfile copies files from several folders);
+    #    `dockerfile` says which Dockerfile inside that context.
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    # image: the name given to the built image, so it is easy to find with `docker images`
+    #        and so migrate and api share one name.
+    image: minitickets-api
+    # 2. profiles: a service with a profile starts only when that profile is asked for.
+    #    So plain `pnpm db:up` still starts only postgres and redis.
+    profiles: ["app"]
+    # 3. command: replaces the image's default command (start the server) with the migration runner.
+    command: ["node", "dist/migrate.js"]
+    # 4. environment: values for the container, given when it runs (never baked into the image).
+    #    "postgres" is the service name above; inside the compose network it is the host name.
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    # 5. depends_on + service_healthy: wait until postgres passes its healthcheck.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 6. restart "no": a one-off job must run once and stay finished, not restart in a loop.
+    restart: "no"
+
+  api:
+    # 1. Same Dockerfile and image name as migrate (the second build is instant, from cache).
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    # image / profiles: same meaning as in migrate above.
+    image: minitickets-api
+    profiles: ["app"]
+    # restart: bring the API back if it crashes, but not after you stopped it yourself.
+    restart: unless-stopped
+    # 2. ports "host:container": the API listens on 4000 inside; 4100 on your machine avoids
+    #    a clash with `pnpm dev`, which uses 4000.
+    ports:
+      - "4100:4000"
+    # 3. environment: the settings the API checks at startup (apps/api/src/config/env.ts).
+    #    WEB_ORIGIN must be the address the BROWSER uses for the web app, because CORS compares it.
+    #    postgres and redis are reached by service name, on their normal container ports.
+    environment:
+      WEB_ORIGIN: http://localhost:3100
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+    # 4. depends_on: start only after migrate finished successfully (exit code 0) and redis is healthy.
+    #    If migrate fails, the api never starts on an old database.
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # 5. healthcheck: the slim image has no curl, so use node to call /health. This lets
+    #    `up --wait` and `depends_on` know when the API really answers.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    # 1. build.args: values for the ARG lines in the Dockerfile. NEXT_PUBLIC_API_URL is copied into
+    #    the browser JavaScript at build time, so it is the API address as the BROWSER sees it
+    #    (the published port 4100), not the compose network name.
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4100
+    # image / profiles / restart: same meaning as in api above.
+    image: minitickets-web
+    profiles: ["app"]
+    restart: unless-stopped
+    # 2. ports: the web server listens on 3000 inside; 3100 on your machine avoids a clash with `pnpm dev`.
+    ports:
+      - "3100:3000"
+    # 3. depends_on: start after the API is healthy, so the first page load can already log in.
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

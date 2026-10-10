@@ -1,0 +1,32 @@
+# The build context is the whole repo (a monorepo needs it). Everything listed here is NOT
+# sent to Docker. That makes builds faster, keeps secrets out of images, and stops files from
+# the host from overwriting files made inside the image.
+
+# 1. Installed packages. The image runs its own `pnpm install`. Host copies are for the host's
+#    operating system (macOS) and would break Linux-native packages like @node-rs/argon2.
+**/node_modules
+
+# 2. Build output. The image builds its own. Stale host output could be copied in by mistake.
+**/.next
+**/dist
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# 3. Env files hold local settings and passwords. They must never end up in an image layer.
+#    Settings are given to a container when it RUNS (docker-compose.yml), not when it is built.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# 4. Test output: big, changes on every test run, and not needed to run the app.
+**/test-results
+**/playwright-report
+
+# 5. Git history: large, and not needed to build or run.
+.git
+
+# 6. Files that only matter on the host: docs, CI config, editor and Claude settings.
+docs
+.github
+.claude
