@@ -1,25 +1,64 @@
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import { ZodError, z } from "zod";
+import { AppError, type AppErrorKind } from "../errors";
 import type { Context } from "./context";
 
 // 1. Set up tRPC once for the whole API and tell it what `ctx` looks like.
 const t = initTRPC.context<Context>().create({
-  // 2. Customize the error sent to the client. When input validation fails, the
-  //    cause is a ZodError. We attach its per-field messages so the UI can show them,
-  //    e.g. { name: ["Name is required"] }. For any other error it is null.
+  // 2. Customize the error sent to the client (this is the LAST step before the response).
   errorFormatter({ shape, error }) {
+    // 2a. When input validation fails, the cause is a ZodError. We attach its per-field
+    //     messages so the UI can show them, e.g. { name: ["Name is required"] }.
     const fieldErrors: Record<string, string[] | undefined> | null =
       error.cause instanceof ZodError ? z.flattenError(error.cause).fieldErrors : null;
 
+    // 2b. Never leak internals. For a 500, the real message (and stack) stays in the
+    //     server logs only; the client gets a generic message.
+    const isInternal = shape.data.code === "INTERNAL_SERVER_ERROR";
+
     return {
       ...shape,
-      data: { ...shape.data, fieldErrors },
+      message: isInternal ? "Something went wrong" : shape.message,
+      data: {
+        ...shape.data,
+        // tRPC adds a stack trace in development. File paths are internals, so always drop it.
+        stack: undefined,
+        fieldErrors,
+      },
     };
   },
 });
 
-// 3. Export only the two building blocks the rest of the API needs.
+// 3. Which tRPC code each AppError kind becomes.
+const codeByKind: Record<AppErrorKind, TRPCError["code"]> = {
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  FORBIDDEN: "FORBIDDEN",
+  BAD_REQUEST: "BAD_REQUEST",
+};
+
+// 4. errorMapper: a middleware that wraps every procedure.
+//    `next()` runs the procedure and returns its result instead of throwing, so we can look at it.
+const errorMapper = t.middleware(async ({ next }) => {
+  const result = await next();
+
+  // 4a. Success, or an error that is not ours (e.g. a ZodError, or a crash): pass it through unchanged.
+  if (result.ok || !(result.error.cause instanceof AppError)) {
+    return result;
+  }
+
+  // 4b. A business error from a service: throw the matching TRPCError.
+  //     We keep the AppError as `cause` so the logs still show where it came from.
+  const appError = result.error.cause;
+  throw new TRPCError({
+    code: codeByKind[appError.kind],
+    message: appError.message,
+    cause: appError,
+  });
+});
+
+// 5. Export only the building blocks the rest of the API needs.
 //    router: groups procedures together.
-//    publicProcedure: a procedure anyone can call (no login check yet).
+//    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.
 export const router = t.router;
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(errorMapper);

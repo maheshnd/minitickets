@@ -9,3 +9,10 @@ export const GreetInputSchema = z.object({
 // 2. The TypeScript type, inferred from the schema.
 //    Because it is derived, the type and the runtime check can never drift apart.
 export type GreetInput = z.infer<typeof GreetInputSchema>;
+
+// 3. TEMPORARY demo for the error-handling step: which kind of failure to trigger.
+export const FailInputSchema = z.object({
+  mode: z.enum(["notFound", "conflict", "crash"]),
+});
+
+export type FailInput = z.infer<typeof FailInputSchema>;

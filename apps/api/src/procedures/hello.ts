@@ -1,6 +1,6 @@
-import { GreetInputSchema } from "@minitickets/shared";
+import { FailInputSchema, GreetInputSchema } from "@minitickets/shared";
 import { publicProcedure, router } from "../trpc/init";
-import { greet } from "../services/hello";
+import { fail, greet } from "../services/hello";
 
 export const helloRouter = router({
   // "greet" is a query: it only reads data (like an HTTP GET).
@@ -10,4 +10,7 @@ export const helloRouter = router({
     .input(GreetInputSchema)
     // 2. Pass the validated input to the service. The procedure stays thin: no logic here.
     .query(({ input }) => greet(input)),
+
+  // TEMPORARY demo for the error-handling step: always fails in the way `mode` asks for.
+  fail: publicProcedure.input(FailInputSchema).query(({ input }) => fail(input)),
 });
