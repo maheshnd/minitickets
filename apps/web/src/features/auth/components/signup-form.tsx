@@ -38,11 +38,14 @@ export function SignupForm() {
   const signup = useSignup();
 
   // 2. Refs let us call .focus() on an input after a failed submit.
-  const refs = {
-    email: useRef<HTMLInputElement>(null),
-    password: useRef<HTMLInputElement>(null),
-    confirmPassword: useRef<HTMLInputElement>(null),
-  };
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  // Only called from event handlers, never during render (React forbids reading refs while rendering).
+  function focusField(field: FieldName) {
+    const refs = { email: emailRef, password: passwordRef, confirmPassword: confirmPasswordRef };
+    refs[field].current?.focus();
+  }
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target;
@@ -70,7 +73,7 @@ export function SignupForm() {
     const firstInvalid = fieldOrder.find((field) => found[field]);
     if (firstInvalid) {
       setSuccess(false);
-      refs[firstInvalid].current?.focus();
+      focusField(firstInvalid);
       return;
     }
 
@@ -96,7 +99,7 @@ export function SignupForm() {
         if (Object.keys(fromServer).length > 0) {
           setErrors(fromServer);
           const first = fieldOrder.find((field) => fromServer[field]);
-          if (first) refs[first].current?.focus();
+          if (first) focusField(first);
         } else {
           // 6c. Anything else: a general message, never raw internals.
           setFormError("Something went wrong. Please try again.");
@@ -120,7 +123,7 @@ export function SignupForm() {
           onChange={handleChange}
           onBlur={() => handleBlur("email")}
           error={errors.email}
-          ref={refs.email}
+          ref={emailRef}
         />
         <Input
           id="password"
@@ -132,7 +135,7 @@ export function SignupForm() {
           onChange={handleChange}
           onBlur={() => handleBlur("password")}
           error={errors.password}
-          ref={refs.password}
+          ref={passwordRef}
         />
         <Input
           id="confirmPassword"
@@ -144,7 +147,7 @@ export function SignupForm() {
           onChange={handleChange}
           onBlur={() => handleBlur("confirmPassword")}
           error={errors.confirmPassword}
-          ref={refs.confirmPassword}
+          ref={confirmPasswordRef}
         />
         <button
           type="submit"

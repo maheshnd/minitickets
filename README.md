@@ -5,7 +5,7 @@ fully shared types, in a pnpm monorepo.
 
 ## Quick start
 
-Requires Node 22+ and pnpm 10.
+Requires Node 24 (see `.nvmrc`) and pnpm 10.
 
 ```bash
 pnpm install
@@ -26,6 +26,8 @@ pnpm dev
 | ---------------- | ------------------------------------------------------ |
 | `pnpm dev`       | Runs `dev` in `apps/web` and `apps/api` in parallel     |
 | `pnpm typecheck` | Runs `tsc --noEmit` in every package                    |
+| `pnpm lint`      | Runs ESLint on every package                            |
+| `pnpm test`      | Runs the unit tests (Vitest)                            |
 
 ## Folders
 

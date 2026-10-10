@@ -30,7 +30,7 @@ export const authRouter = router({
     .mutation(({ input }) => {
       // 3. confirmPassword was only for the form (the schema already compared it).
       //    Drop it so the service only sees what it needs.
-      const { confirmPassword: _confirmPassword, ...credentials } = input;
+      const credentials = { email: input.email, password: input.password };
       return authService.signup(credentials);
     }),
 

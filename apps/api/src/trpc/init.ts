@@ -81,6 +81,8 @@ const isAuthed = t.middleware(({ ctx, next }) => {
 //    router: groups procedures together.
 //    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.
 export const router = t.router;
+//    createCallerFactory: lets tests call a router directly as a function, with no HTTP server.
+export const createCallerFactory = t.createCallerFactory;
 //    protectedProcedure: a public procedure plus the login check above.
 export const publicProcedure = t.procedure.use(errorMapper);
 export const protectedProcedure = publicProcedure.use(isAuthed);
