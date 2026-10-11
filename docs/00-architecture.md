@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Step 11b (security groups + budget alert).
+Last updated: Step 11c (data layer: RDS Postgres, ElastiCache Valkey, secrets).
 
 ## 1. The whole system
 
@@ -26,33 +26,41 @@ flowchart TB
 flowchart TB
     internet["Internet"]
     budget["Budget alert<br/>$20 per month, emails us"]
+    sm["Secrets Manager<br/>db password, redis-url<br/>built, switchable"]
     subgraph vpc["Built: AWS network (VPC 10.0.0.0/16, 2 public + 2 private subnets)"]
         albsg["alb group<br/>80, 443 from internet"]
         websg["web group :3000"]
         apisg["api group :4000"]
         dbsg["db group :5432"]
         redissg["redis group :6379"]
+        rds[("RDS Postgres 17<br/>built, switchable")]
+        cache[("ElastiCache Valkey<br/>built, switchable")]
     end
     alb["Load balancer<br/>planned"]
     ecs["ECS containers<br/>planned"]
-    rds["RDS Postgres<br/>planned"]
-    cache["Redis (ElastiCache)<br/>planned"]
     internet --> albsg
     albsg --> websg
     albsg --> apisg
     apisg --> dbsg
     apisg --> redissg
+    dbsg --- rds
+    redissg --- cache
     alb -.-> albsg
     ecs -.-> websg
     ecs -.-> apisg
-    rds -.-> dbsg
-    cache -.-> redissg
+    ecs -.->|"planned, Step 11e"| sm
 ```
 
-Reading the AWS diagram: solid arrows are traffic the security groups **allow**. Dotted arrows
-mean "this planned thing will wear that group". Nothing is attached to the groups yet.
+Reading the AWS diagram: solid arrows are traffic the security groups **allow**. A plain line
+means "this thing wears that group". Dotted arrows are planned. Nothing wears the alb, web or
+api groups yet, so nobody can reach the database or cache yet.
 
-The budget is not inside the VPC. It watches the whole AWS account.
+"Switchable" means the part exists only while the Pulumi config `dataEnabled` is `true`
+(see [14](14-infra-data.md)). It is off by default, because RDS and ElastiCache cost money
+every hour. The network, security groups and budget are always on.
+
+The budget is not inside the VPC. It watches the whole AWS account. Secrets Manager is an AWS
+service outside our VPC too.
 
 ## 2. Layers and docs
 
@@ -67,6 +75,6 @@ The budget is not inside the VPC. It watches the whole AWS account.
 | [11](11-docker.md) | Docker | Dockerfiles for api and web | 01 |
 | [12](12-infra-network.md) | AWS network | VPC, 4 subnets, internet gateway, route tables | nothing |
 | [13](13-infra-security-groups.md) | AWS security | 5 security groups + their rules, monthly budget alert | 12 (`vpcId`) |
-| planned | Database / cache | RDS Postgres, Redis | 12 (private subnets), 13 (db, redis groups) |
+| [14](14-infra-data.md) | AWS data (switchable) | RDS Postgres 17, ElastiCache Valkey, redis-url secret, `dataEnabled` switch | 12 (private subnets), 13 (db, redis groups) |
 | planned | Containers + load balancer | ECR, ECS, ALB | 12, 13 |
-| planned | IAM roles | Permissions for containers | ECS |
+| planned | IAM roles | Permissions for containers (read the 2 secrets) | ECS, 14 (secret ARNs) |
