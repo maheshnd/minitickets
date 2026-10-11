@@ -14,6 +14,7 @@ documented in `docs/NN-*.md`.
 apps/web         Next.js (App Router, src/, Tailwind). UI only.
 apps/api         Fastify 5 + tRPC v11. All server logic.
 packages/shared  Zod schemas + inferred types used by both apps. No other code.
+infra/           Pulumi (TypeScript) AWS infrastructure. index.ts only imports layer files from src/.
 docs/            One file per step, in plain English.
 ```
 
@@ -37,6 +38,7 @@ pnpm dev          run web (:3000) and api (:4000) together
 pnpm typecheck    tsc --noEmit in every package
 pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
+cd infra && pulumi preview   show what infra would change (read-only). The owner runs `pulumi up`.
 ```
 
 Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both copied from their `.env.example`.
@@ -50,10 +52,32 @@ Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both
 - TypeScript strict everywhere; validate all external input (requests, env) with Zod.
 - Shared input schemas live in `packages/shared`, not in the apps.
 - Build only what the current step asks for, then stop. Don't build ahead.
-- Each step gets a `docs/NN-<name>.md` written in simple English.
+- Each step gets a `docs/NN-<name>.md`. See "Docs rule" below.
 - For UI changes, verify in a headless browser before reporting done. Say clearly what was and wasn't verified.
 
+## Docs rule
+
+Every `docs/NN-*.md` is written for a beginner.
+
+- Short sentences, simple everyday words. Explain any technical word the first time it appears.
+- Every important concept gets a diagram. Use Mermaid code blocks (they render on GitHub): flowchart
+  or sequence diagrams. Keep each diagram small (max ~8 boxes). Several small diagrams beat one big one.
+- Use a real-life comparison where it helps (e.g. VPC = a private office building, subnets = floors,
+  route table = the signboard saying where each corridor leads).
+- Every doc follows this structure:
+  1. In one sentence: what this step builds
+  2. The big picture (diagram)
+  3. Each concept: what it is -> diagram -> why we need it
+  4. Dependency order: what must exist before what (diagram)
+  5. What breaks if this is wrong or missing
+  6. Interview questions with short answers (5-8)
+  7. Check yourself: 3 questions without answers
+- Check that every Mermaid diagram has valid syntax before committing.
+
 ## Safety rules
+
+- AWS / Pulumi: use the owner's existing AWS CLI profile and Pulumi login. Never print credentials.
+  You may run `pulumi preview`. NEVER run `pulumi up` or `pulumi destroy`: the owner runs those.
 
 - Never kill or restart processes you did not start. If a port is busy, use another port
   for your own test instance.

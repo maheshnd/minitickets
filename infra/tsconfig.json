@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Pulumi runs this code with ts-node, which wants classic CommonJS modules.
+    "module": "commonjs",
+    "moduleResolution": "node"
+  },
+  "include": ["index.ts", "src"]
+}
