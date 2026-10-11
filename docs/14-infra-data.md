@@ -332,8 +332,8 @@ Total created when on: **7 resources**. RDS usually takes 5–10 minutes, Valkey
 
 **Uses from earlier layers**
 
-- `privateSubnetIds` from `network.ts` ([Step 11a](12-infra-network.md)): both subnet groups.
-- `dbSgId` and `redisSgId` from `security.ts` ([Step 11b](13-infra-security-groups.md)): the firewalls the stores wear.
+- `privateSubnetIds` from the network layer ([Step 11a](12-infra-network.md)): both subnet groups.
+- `dbSgId` and `redisSgId` from the security layer ([Step 11b](13-infra-security-groups.md)): the firewalls the stores wear.
 - The budget from Step 11b watches the new cost.
 
 **Used by later layers**

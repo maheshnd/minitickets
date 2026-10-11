@@ -220,7 +220,7 @@ In real production we would add one of these, because private app containers mus
 
 ### 3.11 How later layers use these outputs
 
-`index.ts` exports three **stack outputs**: `vpcId`, `publicSubnetIds`, `privateSubnetIds`. An output is a value Pulumi saves after `pulumi up`. Later layers (security groups, database, ECS) will be new files in `infra/src/` that import from `network.ts` and use these values.
+`index.ts` exports three **stack outputs**: `vpcId`, `publicSubnetIds`, `privateSubnetIds`. An output is a value Pulumi saves after `pulumi up`. Later layers (security groups, database, ECS) will be new files in `infra/src/`. `infra/index.ts` passes these values into them (see [15](15-infra-dependencies.md)).
 
 ```mermaid
 flowchart LR

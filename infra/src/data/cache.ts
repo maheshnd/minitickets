@@ -1,8 +1,14 @@
+// LAYER: cache (part of the data layer)
+// NEEDS (inputs):   privateSubnetIds <- from network
+//                   redisSgId        <- from security
+// CREATES:          auth token (random), cache subnet group, then Valkey replication group
+// GIVES (outputs):  primaryEndpoint  -> used by secrets
+//                   authToken        -> used by secrets (stays a secret value, never exported)
+//
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as random from "@pulumi/random";
 import { tagsFor } from "../tags";
-import { privateSubnetIds } from "../network";
-import { redisSgId } from "../security";
 
 // The cache part of the data layer: one small Valkey node in the private subnets.
 // See docs/14-infra-data.md for the diagrams.
@@ -17,7 +23,17 @@ import { redisSgId } from "../security";
 
 const prefix = "minitickets-dev";
 
-export function createCache() {
+export interface CacheInputs {
+  privateSubnetIds: pulumi.Input<string>[];
+  redisSgId: pulumi.Input<string>;
+}
+
+export interface CacheOutputs {
+  primaryEndpoint: pulumi.Output<string>;
+  authToken: pulumi.Output<string>;
+}
+
+export function createCache(inputs: CacheInputs): CacheOutputs {
   // 1. Auth token (the cache's password)
   // WHAT: a random 32-character string, created by Pulumi on our machine.
   // WHY: TLS hides traffic from eavesdroppers; the token makes sure only callers who know it
@@ -34,11 +50,11 @@ export function createCache() {
   // 2. Cache subnet group
   // WHAT: the list of subnets ElastiCache may put the node in.
   // WHY: same as the DB subnet group in postgres.ts: private subnets only, 2 AZs.
-  // DEPENDS ON: privateSubnetIds (network.ts).
+  // DEPENDS ON: inputs.privateSubnetIds (from network).
   const subnetGroup = new aws.elasticache.SubnetGroup(`${prefix}-valkey-subnets`, {
     name: `${prefix}-valkey-subnets`,
     description: "Private subnets for minitickets Valkey",
-    subnetIds: privateSubnetIds,
+    subnetIds: inputs.privateSubnetIds,
     tags: tagsFor(`${prefix}-valkey-subnets`),
   });
 
@@ -48,7 +64,7 @@ export function createCache() {
   // WHY: the api stores login sessions here, like the local Docker Redis. A replication
   //      group (not a single "cache cluster") is the only kind that supports TLS + auth
   //      token, and we can add a replica later without rebuilding.
-  // DEPENDS ON: subnetGroup, redisSgId (security.ts) and authToken.
+  // DEPENDS ON: subnetGroup, inputs.redisSgId (from security) and authToken.
   const replicationGroup = new aws.elasticache.ReplicationGroup(`${prefix}-valkey`, {
     replicationGroupId: `${prefix}-valkey`,
     description: "minitickets sessions (Valkey)",
@@ -70,7 +86,7 @@ export function createCache() {
 
     // 3c. Network: private subnets, behind the redis security group.
     subnetGroupName: subnetGroup.name,
-    securityGroupIds: [redisSgId],
+    securityGroupIds: [inputs.redisSgId],
 
     // 3d. Encryption.
     //     transitEncryptionEnabled: every connection must use TLS (the "s" in rediss://),
@@ -92,7 +108,7 @@ export function createCache() {
     tags: tagsFor(`${prefix}-valkey`),
   });
 
-  // 4. What secrets.ts and index.ts need. The token stays a secret Output; it is never
+  // 4. What index.ts passes on to the secrets layer and exports. The token stays a secret Output; it is never
   //    exported as a stack output.
   return {
     primaryEndpoint: replicationGroup.primaryEndpointAddress,

@@ -9,3 +9,6 @@ next-env.d.ts
 test-results
 playwright-report
 dist
+
+# Written by pnpm infra:graph
+infra/deps.dot

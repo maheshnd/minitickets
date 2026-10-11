@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Step 11c (data layer: RDS Postgres, ElastiCache Valkey, secrets).
+Last updated: Step 11d (infra refactor: explicit layer dependencies, no AWS change).
 
 ## 1. The whole system
 
@@ -59,6 +59,20 @@ api groups yet, so nobody can reach the database or cache yet.
 (see [14](14-infra-data.md)). It is off by default, because RDS and ElastiCache cost money
 every hour. The network, security groups and budget are always on.
 
+How the infra code is wired (see [15](15-infra-dependencies.md)): each layer is a function and
+only `infra/index.ts` passes outputs into inputs.
+
+```mermaid
+flowchart LR
+    network --> security
+    network --> postgres
+    security --> postgres
+    network --> cache
+    security --> cache
+    cache --> secrets
+    budget
+```
+
 The budget is not inside the VPC. It watches the whole AWS account. Secrets Manager is an AWS
 service outside our VPC too.
 
@@ -76,5 +90,6 @@ service outside our VPC too.
 | [12](12-infra-network.md) | AWS network | VPC, 4 subnets, internet gateway, route tables | nothing |
 | [13](13-infra-security-groups.md) | AWS security | 5 security groups + their rules, monthly budget alert | 12 (`vpcId`) |
 | [14](14-infra-data.md) | AWS data (switchable) | RDS Postgres 17, ElastiCache Valkey, redis-url secret, `dataEnabled` switch | 12 (private subnets), 13 (db, redis groups) |
+| [15](15-infra-dependencies.md) | Infra wiring | Nothing new in AWS. Each layer is a function; only `index.ts` connects them | 12, 13, 14 |
 | planned | Containers + load balancer | ECR, ECS, ALB | 12, 13 |
 | planned | IAM roles | Permissions for containers (read the 2 secrets) | ECS, 14 (secret ARNs) |

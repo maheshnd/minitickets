@@ -1,3 +1,9 @@
+// LAYER: secrets (part of the data layer)
+// NEEDS (inputs):   redisEndpoint <- from cache (primaryEndpoint)
+//                   authToken     <- from cache
+// CREATES:          Secrets Manager secret (redis-url), then its secret version (the URL)
+// GIVES (outputs):  redisUrlSecretArn -> used by (planned) IAM roles
+//
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
@@ -15,10 +21,16 @@ import { tagsFor } from "../tags";
 
 const prefix = "minitickets-dev";
 
-export function createRedisUrlSecret(args: {
-  primaryEndpoint: pulumi.Input<string>;
+export interface SecretsInputs {
+  redisEndpoint: pulumi.Input<string>;
   authToken: pulumi.Input<string>;
-}) {
+}
+
+export interface SecretsOutputs {
+  redisUrlSecretArn: pulumi.Output<string>;
+}
+
+export function createSecrets(inputs: SecretsInputs): SecretsOutputs {
   // 1. The secret (the safe itself, still empty)
   // WHAT: a Secrets Manager entry named "minitickets/dev/redis-url".
   // WHY: the api needs ONE value, REDIS_URL, exactly like apps/api/.env. Storing the whole
@@ -40,16 +52,16 @@ export function createRedisUrlSecret(args: {
   //       rediss = Redis over TLS. The empty part before ":" is the username (none, so the
   //       default user); the part after ":" is the auth token.
   // WHY: this is the format ioredis and our env check (apps/api/src/config/env.ts) accept.
-  // DEPENDS ON: secret, plus the endpoint and token from cache.ts.
+  // DEPENDS ON: secret, plus inputs.redisEndpoint and inputs.authToken (from cache).
   //   pulumi.secret(...) keeps the URL encrypted in Pulumi state and hidden in previews,
   //   because it contains the token.
   new aws.secretsmanager.SecretVersion(`${prefix}-redis-url-value`, {
     secretId: secret.id,
     secretString: pulumi.secret(
-      pulumi.interpolate`rediss://:${args.authToken}@${args.primaryEndpoint}:6379`,
+      pulumi.interpolate`rediss://:${inputs.authToken}@${inputs.redisEndpoint}:6379`,
     ),
   });
 
   // 3. Only the ARN leaves this file. The ARN is the safe's address, not its contents.
-  return { arn: secret.arn };
+  return { redisUrlSecretArn: secret.arn };
 }

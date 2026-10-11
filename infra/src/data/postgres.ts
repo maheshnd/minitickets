@@ -1,7 +1,13 @@
+// LAYER: postgres (part of the data layer)
+// NEEDS (inputs):   privateSubnetIds <- from network
+//                   dbSgId           <- from security
+// CREATES:          DB subnet group, then RDS Postgres instance
+// GIVES (outputs):  address, port    -> used by (planned) api containers
+//                   masterSecretArn  -> used by (planned) IAM roles
+//
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
-import { privateSubnetIds } from "../network";
-import { dbSgId } from "../security";
 
 // The Postgres part of the data layer: one small RDS database in the private subnets.
 // See docs/14-infra-data.md for the diagrams.
@@ -11,25 +17,36 @@ import { dbSgId } from "../security";
 
 const prefix = "minitickets-dev";
 
-export function createPostgres() {
+export interface PostgresInputs {
+  privateSubnetIds: pulumi.Input<string>[];
+  dbSgId: pulumi.Input<string>;
+}
+
+export interface PostgresOutputs {
+  address: pulumi.Output<string>;
+  port: pulumi.Output<number>;
+  masterSecretArn: pulumi.Output<string | undefined>;
+}
+
+export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
   // 1. DB subnet group
   // WHAT: the list of subnets RDS is allowed to put the database in.
   // WHY: RDS needs to know WHERE inside the VPC it may live. We give it only the private
   //      subnets, so the database can never land in a subnet with an internet route.
   //      AWS demands subnets in at least 2 availability zones, even for one database: if we
   //      ever turn on Multi-AZ (or AWS has to move the database), the second AZ is ready.
-  // DEPENDS ON: privateSubnetIds (network.ts).
+  // DEPENDS ON: inputs.privateSubnetIds (from network).
   const subnetGroup = new aws.rds.SubnetGroup(`${prefix}-db-subnets`, {
     name: `${prefix}-db-subnets`,
     description: "Private subnets for minitickets Postgres",
-    subnetIds: privateSubnetIds,
+    subnetIds: inputs.privateSubnetIds,
     tags: tagsFor(`${prefix}-db-subnets`),
   });
 
   // 2. The database instance
   // WHAT: a managed Postgres 17 server. AWS runs the machine, patches it and backs it up.
   // WHY: the api stores users (and later tickets) here, like the local Docker Postgres.
-  // DEPENDS ON: subnetGroup (where it lives) and dbSgId (security.ts, who may connect).
+  // DEPENDS ON: subnetGroup (where it lives) and inputs.dbSgId (from security, who may connect).
   const db = new aws.rds.Instance(`${prefix}-db`, {
     identifier: `${prefix}-db`,
 
@@ -64,7 +81,7 @@ export function createPostgres() {
     //     publiclyAccessible false: RDS gives the database no public IP address, so its
     //     name resolves only to a private 10.0.x.x address.
     dbSubnetGroupName: subnetGroup.name,
-    vpcSecurityGroupIds: [dbSgId],
+    vpcSecurityGroupIds: [inputs.dbSgId],
     publiclyAccessible: false,
     port: 5432,
 

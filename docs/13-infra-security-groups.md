@@ -196,7 +196,7 @@ Total created: 5 groups + 6 ingress rules + 3 egress rules + 1 budget = **15 res
 
 **Uses from earlier layers**
 
-- `vpcId` from `network.ts` ([Step 11a](12-infra-network.md)). A security group lives inside one VPC.
+- `vpcId` from the network layer ([Step 11a](12-infra-network.md)). A security group lives inside one VPC.
 
 **Used by later layers**
 

@@ -11,7 +11,8 @@
     "app:down": "docker compose --profile app rm --stop --force api web migrate",
     "test:e2e": "pnpm --filter @minitickets/web test:e2e",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "infra:graph": "cd infra && pulumi stack graph deps.dot"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
