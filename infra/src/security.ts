@@ -3,8 +3,8 @@
 // CREATES:          5 security groups (alb, web, api, db, redis), then 6 ingress rules
 //                   (alb 80, alb 443, web 3000, api 4000, db 5432, redis 6379),
 //                   then 3 egress rules (alb, web, api)
-// GIVES (outputs):  albSgId   -> used by (planned) load balancer
-//                   webSgId   -> used by (planned) web containers
+// GIVES (outputs):  albSgId   -> used by alb (entry layer)
+//                   webSgId   -> used by web-service (web tasks)
 //                   apiSgId   -> used by service (api tasks)
 //                   dbSgId    -> used by postgres
 //                   redisSgId -> used by cache

@@ -450,8 +450,8 @@ flowchart TB
 
 **Used by later layers**
 
-- Step 11f (load balancer) will attach a target group to this service, allow it in through the alb group, route `/trpc/*` here, and replace the `WEB_ORIGIN` placeholder with the real address.
-- A web service will follow the same pattern (task definition + service) with the web image.
+- [Step 11f](18-infra-alb-web.md) (load balancer) attaches a target group to this service and routes `/trpc/*` here. `WEB_ORIGIN` stays a placeholder until Step 11g, see [18](18-infra-alb-web.md) section 3.11.
+- The web service in [Step 11f](18-infra-alb-web.md) follows the same pattern (task definition + service) with the web image.
 - `apiLogGroup`, `clusterName` and `apiServiceName` are what you use to debug on deploy day.
 
 See [00-architecture.md](00-architecture.md) for the whole picture.

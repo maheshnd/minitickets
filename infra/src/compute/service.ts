@@ -3,7 +3,9 @@
 //                   taskDefinitionArn <- from task
 //                   publicSubnetIds   <- from network
 //                   apiSgId           <- from security
-// CREATES:          ECS service minitickets-dev-api (keeps 1 api task running)
+//                   apiTargetGroupArn <- from listener (OPTIONAL: only when the entry switch is on)
+// CREATES:          ECS service minitickets-dev-api (keeps 1 api task running,
+//                   registered in the ALB's api target group when entry is on)
 // GIVES (outputs):  serviceName -> stack output, for the deploy-day commands
 //
 import * as pulumi from "@pulumi/pulumi";
@@ -25,6 +27,8 @@ export interface ServiceInputs {
   taskDefinitionArn: pulumi.Input<string>;
   publicSubnetIds: pulumi.Input<string>[];
   apiSgId: pulumi.Input<string>;
+  // undefined = no load balancer (computeEnabled on, entryEnabled off): exactly the Step 11e service.
+  apiTargetGroupArn?: pulumi.Input<string>;
 }
 
 export interface ServiceOutputs {
@@ -37,7 +41,8 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
   // WHY: a task started by hand stays dead after a crash. The service brings it back, and
   //      rolls out a new version when the task definition changes.
   // DEPENDS ON: cluster (via clusterName, which waits for the capacity providers), the task
-  //   definition, the public subnets (network) and the api security group (security).
+  //   definition, the public subnets (network), the api security group (security) and, when
+  //   entry is on, the api target group (entry, already attached to the listener rule).
   const service = new aws.ecs.Service(`${prefix}-api-service`, {
     name: `${prefix}-api`,
     cluster: inputs.clusterName,
@@ -59,8 +64,8 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
     //     subnet with a public IP it reaches them through the internet gateway.
     //     Is that unsafe? The public IP only makes the task REACHABLE in theory. The api security
     //     group still blocks ALL inbound traffic except port 4000 from the load balancer group
-    //     (docs/13-infra-security-groups.md), and no load balancer exists yet. So nothing from the
-    //     internet gets in. Production: private subnets + NAT gateway or VPC endpoints.
+    //     (docs/13-infra-security-groups.md). So the only way in from the internet is through the
+    //     ALB (when entry is on). Production: private subnets + NAT gateway or VPC endpoints.
     networkConfiguration: {
       subnets: inputs.publicSubnetIds,
       securityGroups: [inputs.apiSgId],
@@ -76,7 +81,17 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
     //     It also needs the ssmmessages permissions on the task role (iam.ts).
     enableExecuteCommand: true,
 
-    // 1f. No load balancer yet. Step 11f adds one and connects it here.
+    // 1f. Load balancer (only when entry is on, docs/18-infra-alb-web.md).
+    //     loadBalancers: register every api task in the api target group, so the ALB can send
+    //       /trpc/* to container "api" on port 4000.
+    //     healthCheckGracePeriodSeconds 60: for the first 60 s after a task starts, ECS ignores
+    //       failed ALB health checks. WHY: Node needs a few seconds to start and connect. Without a
+    //       grace period the first failed checks could make ECS kill the task before it was ready.
+    //     Both stay undefined when entry is off, so the service is exactly the Step 11e one.
+    loadBalancers: inputs.apiTargetGroupArn
+      ? [{ targetGroupArn: inputs.apiTargetGroupArn, containerName: "api", containerPort: 4000 }]
+      : undefined,
+    healthCheckGracePeriodSeconds: inputs.apiTargetGroupArn ? 60 : undefined,
 
     tags: tagsFor(`${prefix}-api-service`),
   });

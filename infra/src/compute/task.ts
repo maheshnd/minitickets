@@ -85,8 +85,10 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "DB_HOST", value: inputs.dbHost },
           { name: "DB_PORT", value: pulumi.interpolate`${inputs.dbPort}` },
           { name: "DB_NAME", value: "minitickets" },
-          // Placeholder: nothing calls the api from a browser yet. Step 11f puts web and api
-          // behind one load balancer (same origin) and sets the real address here.
+          // Placeholder. CORS (the only thing that reads WEB_ORIGIN) matters only when the
+          // browser calls the api on ANOTHER origin. Behind the ALB (Step 11f) web and api share
+          // one origin, so the browser never asks a CORS question and this value is unused.
+          // The real public https address arrives with CloudFront in Step 11g.
           // .invalid is a top-level domain reserved for "never a real address".
           { name: "WEB_ORIGIN", value: "https://placeholder.invalid" },
         ],

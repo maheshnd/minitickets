@@ -1,14 +1,15 @@
 // LAYER: logs (part of the compute layer)
-// NEEDS (inputs):   nothing
-// CREATES:          CloudWatch log group /minitickets/dev/api
-// GIVES (outputs):  logGroupName -> used by task (the container sends its output here)
+// NEEDS (inputs):   service: "api" or "web" (which app the log group is for)
+// CREATES:          CloudWatch log group /minitickets/dev/<service>
+// GIVES (outputs):  logGroupName -> used by task / web-task (the container sends its output here)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 
-// The logs part of the compute layer: one place in CloudWatch for the api's output.
-// See docs/17-infra-ecs-api.md for the diagrams.
+// The logs part of the compute layer: one place in CloudWatch for one app's output.
+// Called once for the api (compute switch) and once for web (entry switch).
+// See docs/17-infra-ecs-api.md and docs/18-infra-alb-web.md for the diagrams.
 //
 // CloudWatch Logs in simple words:
 //   A container's console.log / Fastify log lines disappear when the container stops. CloudWatch
@@ -21,18 +22,19 @@ export interface LogsOutputs {
   logGroupName: pulumi.Output<string>;
 }
 
-export function createLogs(): LogsOutputs {
+export function createLogs(service: "api" | "web"): LogsOutputs {
   // 1. Log group
-  // WHAT: the book named /minitickets/dev/api.
-  // WHY: the awslogs driver in task.ts needs a group to write to. It does not create one itself.
+  // WHAT: the book named /minitickets/dev/api (or /minitickets/dev/web).
+  // WHY: the awslogs driver in task.ts / web-task.ts needs a group to write to. It does not
+  //      create one itself. One group per app keeps the api and web lines apart.
   // DEPENDS ON: nothing.
   // retentionInDays 7: lines older than a week are deleted automatically. Storage is billed per
   //   GB, and dev logs older than a week are never read. Without it, logs are kept FOREVER.
   //   Production: often 30-90 days (or what an audit requires).
-  const logGroup = new aws.cloudwatch.LogGroup(`${prefix}-api-logs`, {
-    name: "/minitickets/dev/api",
+  const logGroup = new aws.cloudwatch.LogGroup(`${prefix}-${service}-logs`, {
+    name: `/minitickets/dev/${service}`,
     retentionInDays: 7,
-    tags: tagsFor(`${prefix}-api-logs`),
+    tags: tagsFor(`${prefix}-${service}-logs`),
   });
 
   return { logGroupName: logGroup.name };

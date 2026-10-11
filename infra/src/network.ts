@@ -2,8 +2,8 @@
 // NEEDS (inputs):   nothing (it is the first layer)
 // CREATES:          vpc, internet gateway, 2 public subnets, 2 private subnets,
 //                   public route table, private route table, 4 route table associations
-// GIVES (outputs):  vpcId           -> used by security
-//                   publicSubnetIds -> used by service (api tasks), (planned) load balancer
+// GIVES (outputs):  vpcId           -> used by security, target-groups
+//                   publicSubnetIds -> used by service (api tasks), web-service (web tasks), alb
 //                   privateSubnetIds -> used by postgres, cache
 //
 import * as pulumi from "@pulumi/pulumi";
