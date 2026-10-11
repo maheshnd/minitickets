@@ -44,10 +44,12 @@ test("an external ?next= is ignored after login (no open redirect)", async ({ pa
   await expect(page.getByRole("banner").getByText(`Signed in as ${email}`)).toBeVisible();
 });
 
-test("a fake sid cookie passes the route guard but the API's 401 sends us to login", async ({ page, context }) => {
+test("a fake sid cookie passes the route guard but the API's 401 sends us to login", async ({ page, context, baseURL }) => {
   // 5. The proxy only checks that a cookie exists, so this gets past it. The API says 401
   //    (no such session) and the profile hook redirects. This shows the guard is UX only.
-  await context.addCookies([{ name: "sid", value: "not-a-real-session", url: "http://localhost:3000" }]);
+  //    The cookie is set for baseURL (localhost locally, the CloudFront address with E2E_BASE_URL),
+  //    so the browser sends it to whichever app is under test.
+  await context.addCookies([{ name: "sid", value: "not-a-real-session", url: baseURL }]);
   await page.goto("/dashboard");
   await expect(page).toHaveURL("/login?next=/dashboard");
 });

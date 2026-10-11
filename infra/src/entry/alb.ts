@@ -17,6 +17,7 @@ import { tagsFor } from "../tags";
 //   talks to the receptionist, never to the staff directly. The receptionist reads what the
 //   visitor asks for (the URL path) and walks them to the right desk (web or api).
 //   On its own the ALB routes nothing: the listener (listener.ts) holds the routing rules.
+//   Since Step 11g visitors never reach it directly: CloudFront (cdn.ts) stands in front of it.
 
 const prefix = "minitickets-dev";
 
@@ -49,7 +50,8 @@ export function createAlb(inputs: AlbInputs): AlbOutputs {
     internal: false,
     subnets: inputs.publicSubnetIds,
 
-    // 1c. It wears the alb badge: open on 80 and 443 to the internet, and allowed out to web and api.
+    // 1c. It wears the alb badge: port 80 open only to CloudFront (Step 11g), and allowed out to
+    //     web and api.
     securityGroups: [inputs.albSgId],
 
     // 1d. Drop requests with malformed HTTP headers instead of passing them on.

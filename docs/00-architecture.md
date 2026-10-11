@@ -3,7 +3,8 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Step 11f (ALB + web service + `/trpc/*` path routing, `entryEnabled` switch).
+Last updated: Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
+`trustProxy`) and the deploy-day runbook ([20](20-deploy-day.md)).
 
 ## 1. The whole system
 
@@ -25,12 +26,12 @@ flowchart TB
 ```mermaid
 flowchart TB
     internet["Browser / internet"]
-    cf["CloudFront + HTTPS<br/>planned, Step 11g"]
+    cf["CloudFront, HTTPS<br/>https://id.cloudfront.net<br/>built, switchable"]
     budget["Budget alert<br/>$20 per month, emails us"]
     sm["Secrets Manager<br/>db password, redis-url<br/>built, switchable"]
     cw["CloudWatch Logs<br/>/minitickets/dev/api and /web<br/>built, switchable"]
     subgraph vpc["Built: AWS network (VPC 10.0.0.0/16, 2 public + 2 private subnets)"]
-        alb["ALB, public subnets<br/>HTTP :80, alb group<br/>built, switchable"]
+        alb["ALB, public subnets<br/>HTTP :80, alb group<br/>CloudFront only<br/>built, switchable"]
         webtask["ECS web task, public subnet<br/>Fargate Spot, ARM64, web group<br/>built, switchable"]
         apitask["ECS api task, public subnet<br/>Fargate Spot, ARM64, api group<br/>built, switchable"]
         rds[("RDS Postgres 17<br/>db group<br/>built, switchable")]
@@ -38,8 +39,9 @@ flowchart TB
     end
     ecr[("ECR repos: api, web<br/>built, always on")]
     laptop["Your laptop<br/>pnpm images:push"]
-    internet -->|"http :80"| alb
-    cf -.->|"planned: https in front of the ALB"| alb
+    internet -->|"https"| cf
+    cf -->|"http :80 + secret header<br/>/_next/static/* cached"| alb
+    internet -.->|"blocked: alb group allows<br/>only CloudFront IPs"| alb
     alb -->|"everything else -> :3000"| webtask
     alb -->|"/trpc/* -> :4000"| apitask
     apitask -->|":5432"| rds
@@ -52,14 +54,19 @@ flowchart TB
     webtask -->|"logs"| cw
 ```
 
-Reading the AWS diagram: every arrow into a box inside the VPC is traffic that box's security
-group **allows** (rules from [13](13-infra-security-groups.md)): the internet may reach only the
-ALB; only the ALB may reach web (3000) and api (4000); only the api may reach the database and
-cache. The ALB splits by path: `/trpc/*` goes to the api, everything else to web, so the browser
-uses one origin ([18](18-infra-alb-web.md)). The dotted arrow is planned: until CloudFront adds
-HTTPS (Step 11g), the site is plain http and login does not stick (the session cookie is Secure).
-The tasks sit in public subnets with public IPs only so they can reach ECR, Secrets Manager and
-CloudWatch without a NAT gateway (see [17](17-infra-ecs-api.md)).
+Reading the AWS diagram: the browser talks only to **CloudFront**, over HTTPS (free
+`*.cloudfront.net` certificate), so the Secure session cookie and login work ([19](19-infra-cloudfront.md)).
+CloudFront caches the built `/_next/static/*` files at the edge and passes everything else on.
+The hop from CloudFront to the ALB is plain http in dev (production: HTTPS there too).
+Two locks keep everyone else out of the ALB: its security group allows port 80 **only** from
+CloudFront's IP ranges (a managed prefix list), and its listener answers **403** unless the request
+carries CloudFront's secret `X-Origin-Verify` header. Every other arrow into a box inside the VPC is
+traffic that box's security group **allows** (rules from [13](13-infra-security-groups.md)): only
+the ALB may reach web (3000) and api (4000); only the api may reach the database and cache. The ALB
+splits by path: `/trpc/*` goes to the api, everything else to web, so the browser uses one origin
+([18](18-infra-alb-web.md)). The api trusts 2 proxy hops (CloudFront + ALB), so its logs show the
+real visitor IP. The tasks sit in public subnets with public IPs only so they can reach ECR,
+Secrets Manager and CloudWatch without a NAT gateway (see [17](17-infra-ecs-api.md)).
 
 "Switchable" means the part exists only while its Pulumi config switch is `true`. All three are off
 by default, because these parts cost money every hour:
@@ -67,11 +74,14 @@ by default, because these parts cost money every hour:
 - `dataEnabled` ([14](14-infra-data.md)): RDS, Valkey, the redis-url secret.
 - `computeEnabled` ([17](17-infra-ecs-api.md)): log group, ECS cluster, IAM roles, api task
   definition and service. It needs `dataEnabled` and an `apiImageTag` (a pushed git SHA).
-- `entryEnabled` ([18](18-infra-alb-web.md)): ALB, 2 target groups, listener + `/trpc/*` rule, and
-  the web app (log group, execution role, task definition, service); connects the api service to
-  the ALB. It needs `dataEnabled`, `computeEnabled` and a `webImageTag`.
+- `entryEnabled` ([18](18-infra-alb-web.md), [19](19-infra-cloudfront.md)): ALB, 2 target groups,
+  listener (default 403) + 2 rules, the origin secret, the CloudFront distribution, and the web app
+  (log group, execution role, task definition, service); connects the api service to the ALB and
+  sets the api's `WEB_ORIGIN` to the CloudFront address. It needs `dataEnabled`, `computeEnabled`
+  and a `webImageTag`.
 
-The network, security groups, budget and ECR repositories are always on.
+The network, security groups, budget and ECR repositories are always on. The order for turning
+everything on, checking it and turning it off is in [20-deploy-day.md](20-deploy-day.md).
 
 How the infra code is wired (see [15](15-infra-dependencies.md)): each layer is a function and
 only `infra/index.ts` passes outputs into inputs.
@@ -100,6 +110,10 @@ flowchart LR
     network --> targetGroups
     alb --> listener
     targetGroups --> listener
+    originSecret --> listener
+    alb --> cdn
+    originSecret --> cdn
+    cdn --> task
     listener --> service
     listener --> webService
     webIam --> webTask
@@ -133,4 +147,5 @@ service outside our VPC too.
 | [16](16-infra-ecr.md) | AWS registry | 2 ECR repositories (immutable tags, scan on push, lifecycle policy) + `images:push` script; web image calls the API on the same origin | nothing |
 | [17](17-infra-ecs-api.md) | AWS compute (switchable) | Log group, ECS cluster (FARGATE + FARGATE_SPOT), execution + task IAM roles, api task definition and service, `computeEnabled` + `apiImageTag`, `infra:migrate` script; api accepts `DB_*` + verified TLS to RDS | 12 (public subnets), 13 (api group), 14 (address, 2 secret ARNs), 16 (image) |
 | [18](18-infra-alb-web.md) | AWS entry + web (switchable) | ALB (HTTP :80), api + web target groups (type ip, 30 s draining), listener (default -> web, `/trpc/*` -> api); web log group, web execution role (no secrets), web task definition + service; api service joins the ALB; `entryEnabled` + `webImageTag` | 12 (public subnets, vpcId), 13 (alb, web, api groups), 16 (web image), 17 (cluster, api service), 14 (via 17) |
-| planned | CloudFront + HTTPS (Step 11g) | HTTPS address in front of the ALB, so the Secure session cookie and login work; real `WEB_ORIGIN` | 18 |
+| [19](19-infra-cloudfront.md) | AWS CloudFront + origin protection (switchable, part of entry) | CloudFront distribution (`*.cloudfront.net` HTTPS, 3 cache behaviors: static cached, `/trpc/*` and pages never cached), `appUrl`; alb group: port 80 from the CloudFront prefix list only (443 rule removed); `X-Origin-Verify` secret header, listener default 403 + 2 header rules; api `WEB_ORIGIN` = `appUrl`, `TRUST_PROXY_HOPS` = 2 + Fastify `trustProxy` | 13 (alb group), 18 (ALB, target groups, listener), 17 (api task definition) |
+| [20](20-deploy-day.md) | Deploy day (runbook) | Nothing new. One ordered runbook for the whole stack: prepare, push, data, compute + entry, migrate, verify, console tour, off, troubleshooting | 12 – 19 |

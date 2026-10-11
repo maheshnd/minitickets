@@ -21,6 +21,8 @@ flowchart LR
 
 Read it as a chain: the internet reaches only the load balancer. The load balancer reaches web and api. Only the api reaches the database and Redis. Every other path is blocked.
 
+> **Changed in [Step 11g](19-infra-cloudfront.md):** the alb group no longer accepts the whole internet. Port 80 is open **only to CloudFront's IP ranges** (the managed prefix list `com.amazonaws.global.cloudfront.origin-facing`), and the 443 rule is gone. Visitors now reach the load balancer only through CloudFront. The rest of this page describes the Step 11b version.
+
 Files:
 
 | File                     | Job                                                  |
@@ -53,7 +55,7 @@ flowchart LR
 
 | Group   | Protects                | Ingress (in)                        | Egress (out)  |
 | ------- | ----------------------- | ----------------------------------- | ------------- |
-| `alb`   | the load balancer       | 80 and 443 from the internet        | all           |
+| `alb`   | the load balancer       | 80 and 443 from the internet (since 11g: 80 from CloudFront only) | all |
 | `web`   | Next.js containers      | 3000 from the `alb` group           | all           |
 | `api`   | Fastify containers      | 4000 from the `alb` group           | all           |
 | `db`    | Postgres                | 5432 from the `api` group           | none          |
@@ -83,7 +85,7 @@ flowchart TB
 - **A range is too wide.** It lets in every machine in it, not just the api.
 - **A group rule says what we mean:** "only the api". It stays true whatever the IPs are.
 
-The only IP-based rule is the load balancer's, `0.0.0.0/0` (every address), because the whole internet is allowed to visit it.
+The only IP-based rule is the load balancer's, `0.0.0.0/0` (every address), because the whole internet is allowed to visit it. (Since [Step 11g](19-infra-cloudfront.md) it points at CloudFront's IP list instead.)
 
 ### 3.4 Least privilege
 

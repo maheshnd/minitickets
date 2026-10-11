@@ -4,6 +4,8 @@
 //                   logGroupName       <- from logs
 //                   dbHost, dbPort, dbMasterSecretArn <- from postgres
 //                   redisUrlSecretArn  <- from secrets
+//                   webOrigin          <- cdn appUrl when entry is on, else a placeholder
+//                   trustProxyHops     <- 2 when entry is on (CloudFront + ALB), else 0
 // CREATES:          ECS task definition minitickets-dev-api (one new revision per change)
 // GIVES (outputs):  taskDefinitionArn -> used by service, and by scripts/run-migrations.sh
 //
@@ -31,6 +33,8 @@ export interface TaskInputs {
   dbPort: pulumi.Input<number>;
   dbMasterSecretArn: pulumi.Input<string>;
   redisUrlSecretArn: pulumi.Input<string>;
+  webOrigin: pulumi.Input<string>;
+  trustProxyHops: number;
 }
 
 export interface TaskOutputs {
@@ -85,12 +89,15 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "DB_HOST", value: inputs.dbHost },
           { name: "DB_PORT", value: pulumi.interpolate`${inputs.dbPort}` },
           { name: "DB_NAME", value: "minitickets" },
-          // Placeholder. CORS (the only thing that reads WEB_ORIGIN) matters only when the
-          // browser calls the api on ANOTHER origin. Behind the ALB (Step 11f) web and api share
-          // one origin, so the browser never asks a CORS question and this value is unused.
-          // The real public https address arrives with CloudFront in Step 11g.
-          // .invalid is a top-level domain reserved for "never a real address".
-          { name: "WEB_ORIGIN", value: "https://placeholder.invalid" },
+          // The public https address of the app (CloudFront, Step 11g), or a placeholder when the
+          // entry layer is off (index.ts decides). Today only CORS reads it, and behind CloudFront
+          // the page and /trpc share one origin, so the browser never asks a CORS question.
+          // Step 13 adds a CSRF check that compares each request's Origin header with this value.
+          { name: "WEB_ORIGIN", value: inputs.webOrigin },
+          // How many proxies stand between the internet and the api (index.ts decides): 2 with
+          // entry on (CloudFront, then the ALB), 0 without. With 2 the api reads the real visitor
+          // IP from X-Forwarded-For (apps/api/src/app.ts, docs/19-infra-cloudfront.md).
+          { name: "TRUST_PROXY_HOPS", value: String(inputs.trustProxyHops) },
         ],
 
         // 2g. Secrets: ECS reads them (with the execution role) when the task starts and puts

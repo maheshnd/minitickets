@@ -1,7 +1,7 @@
 // LAYER: security
 // NEEDS (inputs):   vpcId <- from network
-// CREATES:          5 security groups (alb, web, api, db, redis), then 6 ingress rules
-//                   (alb 80, alb 443, web 3000, api 4000, db 5432, redis 6379),
+// CREATES:          5 security groups (alb, web, api, db, redis), then 5 ingress rules
+//                   (alb 80 from CloudFront only, web 3000, api 4000, db 5432, redis 6379),
 //                   then 3 egress rules (alb, web, api)
 // GIVES (outputs):  albSgId   -> used by alb (entry layer)
 //                   webSgId   -> used by web-service (web tasks)
@@ -44,9 +44,12 @@ export interface SecurityOutputs {
 
 export function createSecurityGroups(inputs: SecurityInputs): SecurityOutputs {
   // 1. alb group
-  // WHAT: the firewall for the load balancer, the only thing the internet may talk to.
-  // WHY: it is the single public entry point. Everything else hides behind it.
+  // WHAT: the firewall for the load balancer. Since Step 11g only CloudFront may talk to it.
+  // WHY: it is the single entry point into the VPC. Everything else hides behind it.
   // DEPENDS ON: inputs.vpcId (from network).
+  // The description below is out of date (it predates CloudFront), but we keep it on purpose:
+  //   AWS cannot change a security group's description, so a new one would REPLACE the group,
+  //   and with it every rule and every resource that wears it. The rules below are the truth.
   const albSg = new aws.ec2.SecurityGroup(`${prefix}-alb-sg`, {
     vpcId: inputs.vpcId,
     description: "Load balancer: open to the internet on 80 and 443",
@@ -103,33 +106,32 @@ export function createSecurityGroups(inputs: SecurityInputs): SecurityOutputs {
   // A rule needs BOTH groups to exist first: the group it protects and (if any) the group
   // it allows. That is why rules are separate resources created after the groups.
 
-  // 6. alb: HTTP from the internet
-  // WHAT: allow port 80 from every IPv4 address.
-  // WHY: this is the one door the public is meant to use. (Port 80 will later redirect to 443.)
-  // DEPENDS ON: albSg.
+  // 6. alb: HTTP from CloudFront only (changed in Step 11g, see docs/19-infra-cloudfront.md)
+  // WHAT: the AWS managed prefix list "com.amazonaws.global.cloudfront.origin-facing": the list
+  //       of IP ranges CloudFront uses to call origins. AWS keeps it up to date for us.
+  //       A prefix list is a named list of IP ranges that one rule can point at.
+  // WHY: only CloudFront should reach the ALB. A visitor who finds the ALB's DNS name and calls
+  //      it directly gets no answer at all (the connection times out), so nobody can skip
+  //      CloudFront's HTTPS. This is lock 1 of 2; lock 2 is the secret header (entry/listener.ts).
+  // DEPENDS ON: albSg and the prefix list lookup (a read, not a resource we create).
+  // Quota: one rule that points at a prefix list counts as as many rules as the list's maximum
+  //   size. AWS counts this list as 55, and a group may hold 60 inbound rules. That is one reason
+  //   the old 443 rule is gone: nothing listens on 443 (CloudFront talks to the ALB on 80).
+  //   Plain 0.0.0.0/0 rules for 80 and 443 are gone too: the internet may no longer call the ALB.
+  const cloudFrontPrefixList = aws.ec2.getManagedPrefixListOutput({
+    name: "com.amazonaws.global.cloudfront.origin-facing",
+  });
   new aws.vpc.SecurityGroupIngressRule(`${prefix}-alb-in-80`, {
     securityGroupId: albSg.id,
-    description: "HTTP from the internet",
+    description: "HTTP from CloudFront only",
     ipProtocol: "tcp",
     fromPort: 80,
     toPort: 80,
-    cidrIpv4: "0.0.0.0/0",
+    prefixListId: cloudFrontPrefixList.id,
     tags: tagsFor(`${prefix}-alb-in-80`),
   });
 
-  // 7. alb: HTTPS from the internet
-  // WHAT: allow port 443 from every IPv4 address.
-  // WHY: encrypted web traffic. This is what users will really use.
-  // DEPENDS ON: albSg.
-  new aws.vpc.SecurityGroupIngressRule(`${prefix}-alb-in-443`, {
-    securityGroupId: albSg.id,
-    description: "HTTPS from the internet",
-    ipProtocol: "tcp",
-    fromPort: 443,
-    toPort: 443,
-    cidrIpv4: "0.0.0.0/0",
-    tags: tagsFor(`${prefix}-alb-in-443`),
-  });
+  // 7. (Removed in Step 11g: "alb: HTTPS 443 from the internet". See rule 6 for why.)
 
   // 8. web: port 3000 from the alb group only
   // WHAT: let the load balancer forward requests to the Next.js containers.

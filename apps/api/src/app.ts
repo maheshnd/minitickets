@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyError } from "fastify";
 import { env } from "./config/env";
+import { trustProxyHops } from "./config/trust-proxy";
 import { pingDb, pingRedis } from "./queries/health";
 import { createContext } from "./trpc/context";
 import { appRouter, type AppRouter } from "./trpc/router";
@@ -30,6 +31,13 @@ export async function buildApp() {
         censor: "[Redacted]",
       },
     },
+    // 1b. Proxies: on AWS every request reaches us through CloudFront and the load balancer, so the
+    //     connection always comes from the load balancer. trustProxy makes request.ip (and the
+    //     remoteAddress in every request log line) the REAL visitor's IP, read from the
+    //     X-Forwarded-For header, and request.protocol come from X-Forwarded-Proto.
+    //     WHY: real client IPs in the logs now, and per-visitor rate limiting later.
+    //     Locally TRUST_PROXY_HOPS is 0, so nothing changes: trust nobody (see ./config/trust-proxy.ts).
+    trustProxy: trustProxyHops(env.TRUST_PROXY_HOPS),
   });
 
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the

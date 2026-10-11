@@ -17,6 +17,8 @@ import { createApiService } from "./src/compute/service";
 import { createAlb } from "./src/entry/alb";
 import { createTargetGroups } from "./src/entry/target-groups";
 import { createListener } from "./src/entry/listener";
+import { createOriginSecret } from "./src/entry/origin-secret";
+import { createCdn } from "./src/entry/cdn";
 import { createWebIamRole } from "./src/compute/web-iam";
 import { createWebTask } from "./src/compute/web-task";
 import { createWebService } from "./src/compute/web-service";
@@ -96,12 +98,14 @@ if (computeEnabled && !dataEnabled) {
 //     Set it with: pulumi config set apiImageTag <sha>
 const apiImageTag = computeEnabled ? config.require("apiImageTag") : undefined;
 
-// 10. The entry layer ON/OFF switch (see docs/18-infra-alb-web.md).
-//     WHAT it adds: the load balancer (ALB, target groups, listener) AND the web app (log group,
-//     role, task definition, service), and it connects the api service to the ALB.
+// 10. The entry layer ON/OFF switch (see docs/18-infra-alb-web.md and docs/19-infra-cloudfront.md).
+//     WHAT it adds: the load balancer (ALB, target groups, listener), CloudFront in front of it
+//     (with its origin secret), AND the web app (log group, role, task definition, service). It
+//     connects the api service to the ALB and gives the api its real WEB_ORIGIN.
 //     WHY one switch for both: web is useless without the ALB (its security group lets in only
 //     the ALB), and the ALB is useless without web (its default action sends pages there).
 //     WHY a switch at all: the ALB is billed every hour it exists, even with zero visitors.
+//     (CloudFront has no hourly price, but without the ALB it has nothing to serve.)
 //       pulumi config set entryEnabled true  + pulumi up -> creates the entry layer + web
 //       pulumi config set entryEnabled false + pulumi up -> deletes ONLY those; the api service
 //                                                          goes back to "no load balancer" (11e)
@@ -140,8 +144,53 @@ const iam =
       })
     : undefined;
 
-// 14. Api task definition. Needs: the image (registry + tag), both roles (iam), the log group
-//     (logs), and the data layer's address and secret ARNs.
+// 14. Load balancer (entry). Needs: network.publicSubnetIds (an internet-facing ALB lives in the
+//     public subnets) and security.albSgId (its firewall: port 80 open only to CloudFront).
+const alb = entryEnabled
+  ? createAlb({
+      publicSubnetIds: network.publicSubnetIds,
+      albSgId: security.albSgId,
+    })
+  : undefined;
+
+// 15. Target groups (entry). Needs: network.vpcId, because a target group belongs to one VPC.
+const targetGroups = entryEnabled ? createTargetGroups({ vpcId: network.vpcId }) : undefined;
+
+// 16. Origin secret (entry). Needs: nothing. The random X-Origin-Verify value that CloudFront
+//     sends (18) and the listener checks (17). See docs/19-infra-cloudfront.md.
+const originSecret = entryEnabled ? createOriginSecret() : undefined;
+
+// 17. Listener + 2 rules (entry). Needs: the ALB, both target groups and the origin secret.
+//     Default 403; secret header + /trpc/* -> api; secret header -> web.
+//     It gives the two target group ARNs BACK, but only once each is attached to the ALB:
+//     ECS refuses to register a service in a target group that no load balancer uses yet.
+const listener =
+  alb && targetGroups && originSecret
+    ? createListener({
+        albArn: alb.albArn,
+        apiTargetGroupArn: targetGroups.apiTargetGroupArn,
+        webTargetGroupArn: targetGroups.webTargetGroupArn,
+        originHeaderName: originSecret.headerName,
+        originHeaderValue: originSecret.headerValue,
+      })
+    : undefined;
+
+// 18. CloudFront (entry). Needs: the ALB's DNS name (its origin) and the origin secret (the header
+//     it adds to every request). Gives appUrl, the public https address.
+const cdn =
+  alb && originSecret
+    ? createCdn({
+        albDnsName: alb.albDnsName,
+        originHeaderName: originSecret.headerName,
+        originHeaderValue: originSecret.headerValue,
+      })
+    : undefined;
+
+// 19. Api task definition. Needs: the image (registry + tag), both roles (iam), the log group
+//     (logs), the data layer's address and secret ARNs and, only when entry is on, appUrl (cdn).
+//     That is why it comes AFTER the entry layer since Step 11g.
+//     With entry off: WEB_ORIGIN keeps the placeholder and no proxy is trusted, exactly as in
+//     Step 11e. (.invalid is a top-level domain reserved for "never a real address".)
 const apiTask =
   apiImageTag && iam && logs && postgres && secrets
     ? createApiTask({
@@ -153,34 +202,12 @@ const apiTask =
         dbPort: postgres.port,
         dbMasterSecretArn: postgres.masterSecretArn,
         redisUrlSecretArn: secrets.redisUrlSecretArn,
+        webOrigin: cdn?.appUrl ?? "https://placeholder.invalid",
+        trustProxyHops: cdn ? 2 : 0,
       })
     : undefined;
 
-// 15. Load balancer (entry). Needs: network.publicSubnetIds (an internet-facing ALB lives in the
-//     public subnets) and security.albSgId (its firewall: 80 and 443 open to the internet).
-const alb = entryEnabled
-  ? createAlb({
-      publicSubnetIds: network.publicSubnetIds,
-      albSgId: security.albSgId,
-    })
-  : undefined;
-
-// 16. Target groups (entry). Needs: network.vpcId, because a target group belongs to one VPC.
-const targetGroups = entryEnabled ? createTargetGroups({ vpcId: network.vpcId }) : undefined;
-
-// 17. Listener + /trpc/* rule (entry). Needs: the ALB and both target groups.
-//     It gives the two target group ARNs BACK, but only once each is attached to the ALB:
-//     ECS refuses to register a service in a target group that no load balancer uses yet.
-const listener =
-  alb && targetGroups
-    ? createListener({
-        albArn: alb.albArn,
-        apiTargetGroupArn: targetGroups.apiTargetGroupArn,
-        webTargetGroupArn: targetGroups.webTargetGroupArn,
-      })
-    : undefined;
-
-// 18. Api service. Needs: the cluster, the task definition, the public subnets (network), the
+// 20. Api service. Needs: the cluster, the task definition, the public subnets (network), the
 //     api security group (security) and, only when entry is on, the api target group (listener).
 //     With entry off, listener is undefined, so apiTargetGroupArn is undefined and the service
 //     is exactly the Step 11e one (no load balancer).
@@ -195,14 +222,14 @@ const apiService =
       })
     : undefined;
 
-// 19. Web log group. Needs: nothing. Only the entry switch.
+// 21. Web log group. Needs: nothing. Only the entry switch.
 const webLogs = entryEnabled ? createLogs("web") : undefined;
 
-// 20. Web execution role. Needs: nothing. Only the entry switch. A SEPARATE role from the api's:
+// 22. Web execution role. Needs: nothing. Only the entry switch. A SEPARATE role from the api's:
 //     web needs no secrets, so its role cannot read any (least privilege, see web-iam.ts).
 const webIam = entryEnabled ? createWebIamRole() : undefined;
 
-// 21. Web task definition. Needs: the web image (registry + tag), the web role and the web log group.
+// 23. Web task definition. Needs: the web image (registry + tag), the web role and the web log group.
 const webTask =
   webImageTag && webIam && webLogs
     ? createWebTask({
@@ -212,7 +239,7 @@ const webTask =
       })
     : undefined;
 
-// 22. Web service. Needs: the cluster, the web task definition, the public subnets (network), the
+// 24. Web service. Needs: the cluster, the web task definition, the public subnets (network), the
 //     web security group (security) and the web target group (listener).
 const webService =
   cluster && webTask && listener
@@ -225,7 +252,7 @@ const webService =
       })
     : undefined;
 
-// 23. Stack outputs. Network and security are always on.
+// 25. Stack outputs. Network and security are always on.
 export const vpcId = network.vpcId;
 export const publicSubnetIds = network.publicSubnetIds;
 export const privateSubnetIds = network.privateSubnetIds;
@@ -236,7 +263,7 @@ export const apiSgId = security.apiSgId;
 export const dbSgId = security.dbSgId;
 export const redisSgId = security.redisSgId;
 
-// 24. Data layer outputs: addresses and secret ARNs only, never passwords or tokens.
+// 26. Data layer outputs: addresses and secret ARNs only, never passwords or tokens.
 //    When the layer is off they are null. (undefined would make Pulumi print a warning for
 //    each one on every preview.)
 export const dbEndpoint = postgres?.address ?? null;
@@ -245,19 +272,21 @@ export const dbMasterSecretArn = postgres?.masterSecretArn ?? null;
 export const redisEndpoint = cache?.primaryEndpoint ?? null;
 export const redisUrlSecretArn = secrets?.redisUrlSecretArn ?? null;
 
-// 25. Registry outputs: where to push the images.
+// 27. Registry outputs: where to push the images.
 export const apiRepoUrl = registry.apiRepoUrl;
 export const webRepoUrl = registry.webRepoUrl;
 
-// 26. Compute layer outputs: names and ARNs for the deploy-day commands and the migration
-//     script. null when the layer is off (same reason as 24).
+// 28. Compute layer outputs: names and ARNs for the deploy-day commands and the migration
+//     script. null when the layer is off (same reason as 26).
 export const clusterName = cluster?.clusterName ?? null;
 export const apiServiceName = apiService?.serviceName ?? null;
 export const apiTaskDefinitionArn = apiTask?.taskDefinitionArn ?? null;
 export const apiLogGroup = logs?.logGroupName ?? null;
 
-// 27. Entry layer outputs. albDnsName is the address to open in the browser:
-//     http://<albDnsName>. null when the layer is off (same reason as 24).
+// 29. Entry layer outputs. appUrl is the address to open in the browser: https://<id>.cloudfront.net.
+//     albDnsName is only for debugging: a direct request to it is blocked (docs/19-infra-cloudfront.md).
+//     null when the layer is off (same reason as 26).
+export const appUrl = cdn?.appUrl ?? null;
 export const albDnsName = alb?.albDnsName ?? null;
 export const webServiceName = webService?.serviceName ?? null;
 export const webLogGroup = webLogs?.logGroupName ?? null;

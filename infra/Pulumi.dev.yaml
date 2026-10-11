@@ -6,3 +6,4 @@ config:
   aws:profile: ticketlite
   minitickets:dataEnabled: "false"
   minitickets:computeEnabled: "false"
+  minitickets:entryEnabled: "false"

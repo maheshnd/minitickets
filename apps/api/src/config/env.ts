@@ -15,6 +15,9 @@ const EnvSchema = z.object({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   // Only "production" changes behavior: it turns on the Secure flag of the session cookie.
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // How many proxies stand in front of the API (see ./trust-proxy.ts). 0 = none (local dev,
+  // Docker, CI). On AWS it is 2: CloudFront, then the load balancer (set in the task definition).
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 });
 
 // 2. Check process.env once, when the API starts: the app settings and the database settings.
