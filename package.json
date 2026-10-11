@@ -12,6 +12,7 @@
     "test:e2e": "pnpm --filter @minitickets/web test:e2e",
     "lint": "eslint .",
     "test": "vitest run",
+    "images:push": "bash scripts/push-images.sh",
     "infra:graph": "cd infra && pulumi stack graph deps.dot"
   },
   "devDependencies": {

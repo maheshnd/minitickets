@@ -8,6 +8,7 @@ import { createBudget } from "./src/budget";
 import { createPostgres } from "./src/data/postgres";
 import { createCache } from "./src/data/cache";
 import { createSecrets } from "./src/data/secrets";
+import { createRegistry } from "./src/registry";
 
 const config = new pulumi.Config();
 
@@ -58,7 +59,11 @@ const secrets = cache
     })
   : undefined;
 
-// 8. Stack outputs. Network and security are always on.
+// 8. Registry (ECR). Needs: nothing. Always on, because storing images costs cents.
+//    The push script (scripts/push-images.sh) reads its two URLs from the stack outputs.
+const registry = createRegistry();
+
+// 9. Stack outputs. Network and security are always on.
 export const vpcId = network.vpcId;
 export const publicSubnetIds = network.publicSubnetIds;
 export const privateSubnetIds = network.privateSubnetIds;
@@ -69,7 +74,7 @@ export const apiSgId = security.apiSgId;
 export const dbSgId = security.dbSgId;
 export const redisSgId = security.redisSgId;
 
-// 9. Data layer outputs: addresses and secret ARNs only, never passwords or tokens.
+// 10. Data layer outputs: addresses and secret ARNs only, never passwords or tokens.
 //    When the layer is off they are null. (undefined would make Pulumi print a warning for
 //    each one on every preview.)
 export const dbEndpoint = postgres?.address ?? null;
@@ -77,3 +82,7 @@ export const dbPort = postgres?.port ?? null;
 export const dbMasterSecretArn = postgres?.masterSecretArn ?? null;
 export const redisEndpoint = cache?.primaryEndpoint ?? null;
 export const redisUrlSecretArn = secrets?.redisUrlSecretArn ?? null;
+
+// 11. Registry outputs: where to push the images.
+export const apiRepoUrl = registry.apiRepoUrl;
+export const webRepoUrl = registry.webRepoUrl;

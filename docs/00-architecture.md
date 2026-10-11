@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Step 11d (infra refactor: explicit layer dependencies, no AWS change).
+Last updated: Step 11d (ECR repositories + image push, same-origin web build).
 
 ## 1. The whole system
 
@@ -36,8 +36,12 @@ flowchart TB
         rds[("RDS Postgres 17<br/>built, switchable")]
         cache[("ElastiCache Valkey<br/>built, switchable")]
     end
+    ecr[("ECR repos: api, web<br/>built, always on")]
+    laptop["Your laptop<br/>pnpm images:push"]
     alb["Load balancer<br/>planned"]
     ecs["ECS containers<br/>planned"]
+    laptop -->|"push arm64 images<br/>tag = git SHA"| ecr
+    ecr -.->|"planned, Step 11e: pull"| ecs
     internet --> albsg
     albsg --> websg
     albsg --> apisg
@@ -71,6 +75,7 @@ flowchart LR
     security --> cache
     cache --> secrets
     budget
+    registry
 ```
 
 The budget is not inside the VPC. It watches the whole AWS account. Secrets Manager is an AWS
@@ -91,5 +96,6 @@ service outside our VPC too.
 | [13](13-infra-security-groups.md) | AWS security | 5 security groups + their rules, monthly budget alert | 12 (`vpcId`) |
 | [14](14-infra-data.md) | AWS data (switchable) | RDS Postgres 17, ElastiCache Valkey, redis-url secret, `dataEnabled` switch | 12 (private subnets), 13 (db, redis groups) |
 | [15](15-infra-dependencies.md) | Infra wiring | Nothing new in AWS. Each layer is a function; only `index.ts` connects them | 12, 13, 14 |
-| planned | Containers + load balancer | ECR, ECS, ALB | 12, 13 |
+| [16](16-infra-ecr.md) | AWS registry | 2 ECR repositories (immutable tags, scan on push, lifecycle policy) + `images:push` script; web image calls the API on the same origin | nothing |
+| planned | Containers + load balancer | ECS, ALB (routes `/trpc/*` to api, `/*` to web) | 12, 13, 16 |
 | planned | IAM roles | Permissions for containers (read the 2 secrets) | ECS, 14 (secret ARNs) |

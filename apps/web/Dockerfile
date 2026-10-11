@@ -1,5 +1,6 @@
 # Web image. Build it from the repo root:
-#   docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4100 .
+#   docker build -f apps/web/Dockerfile .                      (AWS: same-origin, no API URL inside)
+#   docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4100 .   (docker compose)
 #
 # Stages (only the last one becomes the image we run):
 #   base    -> Node + pnpm. A shared starting point, produces no files of its own.
@@ -47,9 +48,11 @@ FROM deps AS build
 # 6. WHAT: declare a build argument and turn it into an environment variable.
 #    WHY: Next.js copies NEXT_PUBLIC_* values INTO the JavaScript sent to browsers while it
 #    builds. The value must therefore exist at BUILD time, and changing it later means a new
-#    image (one image per environment for now). It is a public address, not a secret.
-#    There is no default on purpose: forgetting it fails the build instead of shipping a wrong URL.
-ARG NEXT_PUBLIC_API_URL
+#    image. It is a public address, not a secret.
+#    The default is EMPTY on purpose: empty means "call /trpc on the same origin as the page".
+#    On AWS a load balancer routes /trpc/* to the api (Step 11f), so no address is baked in
+#    and one image works everywhere. docker compose still passes the localhost URL.
+ARG NEXT_PUBLIC_API_URL=""
 # 6b. WHAT: the ENV line below copies the ARG into an environment variable.
 #     WHY: `next build` reads environment variables, not build arguments.
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
