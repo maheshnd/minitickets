@@ -73,6 +73,16 @@ Every `docs/NN-*.md` is written for a beginner.
   6. Interview questions with short answers (5-8)
   7. Check yourself: 3 questions without answers
 - Check that every Mermaid diagram has valid syntax before committing.
+- `docs/00-architecture.md` is the living big picture. UPDATE it in every step:
+  - one Mermaid diagram of the whole system as it exists today (browser, web, api, postgres,
+    redis, and the AWS layers built so far); mark not-yet-built parts as "planned"
+  - a table: each layer/doc, what it creates, what it depends on
+- Every new doc has a section "How this connects": what it uses from earlier layers (with links
+  to those docs) and what later layers will use from it.
+- For any IAM permission (from Step 11e on), always explain it with a diagram of:
+  (a) the TRUST POLICY: who is allowed to use this role
+  (b) the PERMISSION POLICY: what the role is allowed to do
+  (c) which resource the role is attached to
 
 ## Safety rules
 

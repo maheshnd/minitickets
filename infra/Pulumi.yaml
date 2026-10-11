@@ -1,4 +1,4 @@
 # The Pulumi project: its name and the language the infrastructure code is written in.
 name: minitickets
 runtime: nodejs
-description: AWS infrastructure for minitickets (see docs/12-infra-network.md)
+description: AWS infrastructure for minitickets (see docs/12-infra-network.md, docs/13-infra-security-groups.md)
