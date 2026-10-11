@@ -95,6 +95,21 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4000
 
+# 11b. WHAT: download AWS's RDS certificate bundle (the certificate authorities, CAs, that sign
+#      every RDS database certificate, in all regions) and tell Node to trust it as well.
+#      WHY: on AWS the API connects to RDS with SSL and VERIFIES the certificate (see
+#      src/config/database.ts). Node only trusts the well-known public CAs, and the RDS CA is
+#      not one of them, so without this file the check fails with "self-signed certificate in
+#      certificate chain". The fix is to trust AWS's CA, NEVER to turn the check off.
+#      NODE_EXTRA_CA_CERTS ADDS these CAs to Node's normal list (public sites still work).
+#      --chmod=644: files downloaded by ADD are readable only by root by default, and the app
+#      runs as the "node" user (step 15). The target folder /usr/local/share already exists:
+#      ADD would create a missing folder with the same 644 mode, and nobody could open it.
+#      It is harmless locally: the local Postgres uses no SSL, so these CAs are never used there.
+#      Docker checks the URL on every build, so a new bundle from AWS lands in the next image.
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /usr/local/share/rds-global-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/rds-global-bundle.pem
+
 # 12. WHAT: copy the production-only package.json and node_modules from the prod stage.
 #     WHY: package.json has "type": "module", which Node needs to run our ES module output.
 #     --chown is not needed: the app only READS these files, so root ownership is safer

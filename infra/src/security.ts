@@ -5,7 +5,7 @@
 //                   then 3 egress rules (alb, web, api)
 // GIVES (outputs):  albSgId   -> used by (planned) load balancer
 //                   webSgId   -> used by (planned) web containers
-//                   apiSgId   -> used by (planned) api containers
+//                   apiSgId   -> used by service (api tasks)
 //                   dbSgId    -> used by postgres
 //                   redisSgId -> used by cache
 //

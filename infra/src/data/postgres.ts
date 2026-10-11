@@ -2,8 +2,8 @@
 // NEEDS (inputs):   privateSubnetIds <- from network
 //                   dbSgId           <- from security
 // CREATES:          DB subnet group, then RDS Postgres instance
-// GIVES (outputs):  address, port    -> used by (planned) api containers
-//                   masterSecretArn  -> used by (planned) IAM roles
+// GIVES (outputs):  address, port    -> used by task (DB_HOST, DB_PORT)
+//                   masterSecretArn  -> used by iam (execution role) and task (DB_USER, DB_PASSWORD)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -25,7 +25,7 @@ export interface PostgresInputs {
 export interface PostgresOutputs {
   address: pulumi.Output<string>;
   port: pulumi.Output<number>;
-  masterSecretArn: pulumi.Output<string | undefined>;
+  masterSecretArn: pulumi.Output<string>;
 }
 
 export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
@@ -73,8 +73,9 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     //     WHY: the password never appears in our code, in Pulumi config or in Pulumi state.
     //     We only ever see the secret's ARN (its address). Anyone who needs the password
     //     must be allowed by IAM to read that secret, and every read is logged.
-    //     Note: RDS rotates this password every 7 days by default. The api must read it
-    //     from the secret (Step 11e), never copy it somewhere by hand.
+    //     Note: RDS rotates this password every 7 days by default. The api reads it from the
+    //     secret, never from a copy. It reads it only at startup: see the known limitation
+    //     in docs/17-infra-ecs-api.md.
     manageMasterUserPassword: true,
 
     // 2f. Network: inside the private subnets, behind the db security group.
@@ -110,16 +111,23 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     applyImmediately: true,
 
     // 2i. SSL: RDS for Postgres 15+ sets rds.force_ssl = 1 by default, so it refuses
-    //     connections without SSL. The api must connect with SSL. We handle that in Step 11e.
+    //     connections without SSL. The api connects with SSL and verifies the certificate
+    //     (apps/api/src/config/database.ts).
 
     tags: tagsFor(`${prefix}-db`),
   });
 
-  // 3. What index.ts exports as stack outputs. ARNs and addresses only, never the password.
+  // 3. What index.ts passes on and exports. ARNs and addresses only, never the password.
   //    masterUserSecrets is a list with one entry; its secretArn points at the password.
+  //    With manageMasterUserPassword it is always there; if it ever were not, we stop with a
+  //    clear message instead of writing "undefined" into an IAM policy.
   return {
     address: db.address,
     port: db.port,
-    masterSecretArn: db.masterUserSecrets.apply((secrets) => secrets[0]?.secretArn),
+    masterSecretArn: db.masterUserSecrets.apply((secrets) => {
+      const arn = secrets[0]?.secretArn;
+      if (!arn) throw new Error("RDS returned no master password secret (is manageMasterUserPassword on?)");
+      return arn;
+    }),
   };
 }

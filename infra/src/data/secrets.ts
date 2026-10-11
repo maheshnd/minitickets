@@ -2,7 +2,7 @@
 // NEEDS (inputs):   redisEndpoint <- from cache (primaryEndpoint)
 //                   authToken     <- from cache
 // CREATES:          Secrets Manager secret (redis-url), then its secret version (the URL)
-// GIVES (outputs):  redisUrlSecretArn -> used by (planned) IAM roles
+// GIVES (outputs):  redisUrlSecretArn -> used by iam (execution role) and task (REDIS_URL)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";

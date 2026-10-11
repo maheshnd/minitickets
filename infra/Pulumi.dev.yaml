@@ -5,3 +5,4 @@ config:
     secure: AAABAEzBWrcL/MH3pScUxXVexOL6r9IVHtka45kVGj1sh1ZR72EgTkeyXU9r6Cm4ScDy/+p1+iTP3nAK040=
   aws:profile: ticketlite
   minitickets:dataEnabled: "false"
+  minitickets:computeEnabled: "false"

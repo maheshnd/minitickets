@@ -1,7 +1,8 @@
 // LAYER: registry
 // NEEDS (inputs):   nothing
 // CREATES:          2 ECR repositories (api, web), each with a lifecycle policy
-// GIVES (outputs):  apiRepoUrl, webRepoUrl (the push script and, later, ECS use them)
+// GIVES (outputs):  apiRepoUrl -> used by task (image), and the push script
+//                   webRepoUrl -> used by the push script (and, later, the web task)
 //
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";

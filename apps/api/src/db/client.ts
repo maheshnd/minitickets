@@ -9,8 +9,9 @@ import * as schema from "./schema/users";
 //    `max` is the most connections open at once. If all are busy, extra queries
 //    wait in line. Postgres itself allows only ~100 connections in total, so
 //    we keep our share small and explicit.
+//    env.database is either { connectionString } (local) or host, user, password + SSL (AWS).
 export const pool = new Pool({
-  connectionString: env.DATABASE_URL,
+  ...env.database,
   max: 10,
 });
 

@@ -2,22 +2,25 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { z } from "zod";
+import { DatabaseEnvSchema } from "../config/database";
 
 // Applies the SQL files in ./drizzle to the database, then exits.
 // In Docker it runs as a separate one-off container (`node dist/migrate.js`), NOT inside
 // the API: with several API containers starting together, they would all migrate at once.
+// On AWS it runs as a one-off ECS task (scripts/run-migrations.sh).
 // It is NOT built on drizzle-kit, because drizzle-kit is a dev tool that is not in the production image.
 
-// 1. This script needs only the database URL, so it validates only that
+// 1. This script needs only the database settings, so it validates only those
 //    (config/env.ts would also demand PORT, REDIS_URL, ... which a migration does not use).
-const result = z.object({ DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }) }).safeParse(process.env);
+//    Same rules as the API: DATABASE_URL locally, or DB_* with SSL on AWS.
+const result = DatabaseEnvSchema.safeParse(process.env);
 if (!result.success) {
-  console.error("Invalid environment variables:", z.flattenError(result.error).fieldErrors);
+  console.error("Invalid database settings:", z.flattenError(result.error).formErrors);
   process.exit(1);
 }
 
 // 2. One connection is enough for a one-off job.
-const pool = new Pool({ connectionString: result.data.DATABASE_URL, max: 1 });
+const pool = new Pool({ ...result.data, max: 1 });
 
 try {
   // 3. Run every migration that has not run yet. Drizzle remembers the finished ones in the

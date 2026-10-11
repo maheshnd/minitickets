@@ -3,7 +3,7 @@
 // CREATES:          vpc, internet gateway, 2 public subnets, 2 private subnets,
 //                   public route table, private route table, 4 route table associations
 // GIVES (outputs):  vpcId           -> used by security
-//                   publicSubnetIds -> used by (planned) load balancer
+//                   publicSubnetIds -> used by service (api tasks), (planned) load balancer
 //                   privateSubnetIds -> used by postgres, cache
 //
 import * as pulumi from "@pulumi/pulumi";
