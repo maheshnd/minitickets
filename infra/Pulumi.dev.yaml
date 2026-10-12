@@ -7,3 +7,5 @@ config:
   minitickets:dataEnabled: "true"
   minitickets:computeEnabled: "true"
   minitickets:entryEnabled: "true"
+  minitickets:apiImageTag: 8510e1f
+  minitickets:webImageTag: 8510e1f
