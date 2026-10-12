@@ -4,8 +4,8 @@ config:
   minitickets:alertEmail:
     secure: AAABAEzBWrcL/MH3pScUxXVexOL6r9IVHtka45kVGj1sh1ZR72EgTkeyXU9r6Cm4ScDy/+p1+iTP3nAK040=
   aws:profile: ticketlite
-  minitickets:dataEnabled: "true"
-  minitickets:computeEnabled: "true"
-  minitickets:entryEnabled: "true"
+  minitickets:dataEnabled: "false"
+  minitickets:computeEnabled: "false"
+  minitickets:entryEnabled: "false"
   minitickets:apiImageTag: 8510e1f
   minitickets:webImageTag: 8510e1f
