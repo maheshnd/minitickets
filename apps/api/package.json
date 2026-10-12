@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs migrate",
-    "db:seed": "tsx --env-file=.env src/db/seed.ts"
+    "db:seed": "tsx --env-file=.env src/db/seed.ts",
+    "user:make-admin": "tsx --env-file-if-exists=.env src/scripts/make-admin.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

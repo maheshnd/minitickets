@@ -1,6 +1,6 @@
-import { ListEventsOutput } from "@minitickets/shared";
+import { CreateEventInput, EventSchema, ListEventsOutput } from "@minitickets/shared";
 import * as eventsService from "../services/events";
-import { publicProcedure, router } from "../trpc/init";
+import { adminProcedure, publicProcedure, router } from "../trpc/init";
 
 // Procedures: validate input, call a service, return. No logic here.
 export const eventsRouter = router({
@@ -15,4 +15,12 @@ export const eventsRouter = router({
     (ctx.req.log as typeof ctx.req.log & { setBindings(bindings: object): void }).setBindings({ cache });
     return events;
   }),
+
+  // 1. adminProcedure: 401 if not logged in, 403 if logged in but not an admin (trpc/init.ts).
+  // 2. The same schema the admin form uses in the browser; the server never trusts that check.
+  // 3. The service saves the event and then invalidates the cached list.
+  create: adminProcedure
+    .input(CreateEventInput)
+    .output(EventSchema)
+    .mutation(({ input, ctx }) => eventsService.createEvent(input, ctx.req.log)),
 });

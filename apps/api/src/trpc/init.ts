@@ -82,6 +82,20 @@ const isAuthed = t.middleware(({ ctx, next }) => {
   return next({ ctx: { session: ctx.session } });
 });
 
+// 5b. isAdmin: a middleware that only lets admins through. It runs AFTER isAuthed, so ctx.session
+//     is never null here.
+//     Two different answers, on purpose (authentication vs authorization):
+//     - 401 UNAUTHORIZED (from isAuthed): "we don't know who you are": not logged in. Logging in may help.
+//     - 403 FORBIDDEN (from here): "we know who you are, and you may not do this": logged in, but
+//       not an admin. Logging in again will not help.
+//     Like isAuthed, this is the REAL check. Hiding the admin link in the web app is only for looks.
+const isAdmin = t.middleware(({ ctx, next }) => {
+  if (ctx.session?.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can do this" });
+  }
+  return next();
+});
+
 // 6. Export only the building blocks the rest of the API needs.
 //    router: groups procedures together.
 //    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.
@@ -91,3 +105,5 @@ export const createCallerFactory = t.createCallerFactory;
 //    protectedProcedure: a public procedure plus the login check above.
 export const publicProcedure = t.procedure.use(errorMapper);
 export const protectedProcedure = publicProcedure.use(isAuthed);
+//    adminProcedure: a protected procedure plus the role check above (401 first, then 403).
+export const adminProcedure = protectedProcedure.use(isAdmin);

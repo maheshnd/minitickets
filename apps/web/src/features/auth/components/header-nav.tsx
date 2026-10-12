@@ -28,6 +28,13 @@ export function HeaderNav() {
         <Link href="/dashboard" className={linkClass}>
           Dashboard
         </Link>
+        {/* Only admins see this link. Hiding it is just tidiness, not security: the API refuses
+            events.create for everyone else (403), whatever the page shows. */}
+        {me.data.role === "admin" ? (
+          <Link href="/admin/events/new" className={linkClass}>
+            New event
+          </Link>
+        ) : null}
         <p className="text-sm text-gray-700">Signed in as {me.data.email}</p>
         {/* Disabled while the request runs, so a double click can't send it twice. */}
         <Button variant="secondary" onClick={() => logout.mutate()} disabled={logout.isPending}>

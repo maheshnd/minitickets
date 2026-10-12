@@ -12,7 +12,17 @@ import { redis } from "../redis/client";
 //    never meets old-shaped data left behind by the previous version. The old key just expires
 //    by itself after its TTL. Without a version, new code could read old-shaped data for up to
 //    30 seconds, right after every deploy.
-export const UPCOMING_KEY = "events:upcoming:v1";
+//    The "g<gen>" part is the GENERATION (see step 1b): e.g. "events:upcoming:v1:g7".
+export function upcomingKey(gen: number): string {
+  return `events:upcoming:v1:g${gen}`;
+}
+
+// 1b. The generation counter: a number in Redis that goes up by one every time the list changes
+//     (an event is created). A missing key means 0. Readers read it FIRST and then use the key of
+//     that generation; a writer only bumps it. Old generations' keys are never read again and
+//     expire by their TTL. The service explains why this beats deleting the key (createEvent).
+//     It has no "v1": it counts changes to the DATA, which has nothing to do with the shape.
+export const UPCOMING_GEN_KEY = "events:upcoming:gen";
 
 // @concept: fail-fast
 // @concept: graceful-degradation
@@ -36,35 +46,60 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-// 4. Read the cached JSON text. Returns null when the key does not exist (a miss).
+// 4. Read the current generation. A missing key (nothing was ever created) is generation 0.
+//    INCR only ever stores whole numbers, so anything else means someone wrote junk by hand:
+//    we throw, and the service treats it like a Redis error (it reads Postgres).
+//    Throws when Redis is down or too slow, like every read here.
+export async function getUpcomingGeneration(): Promise<number> {
+  const value = await withTimeout(redis.get(UPCOMING_GEN_KEY), CACHE_TIMEOUT_MS);
+  if (value === null) return 0;
+  const gen = Number(value);
+  if (!Number.isSafeInteger(gen)) throw new Error(`${UPCOMING_GEN_KEY} is not a whole number: "${value}"`);
+  return gen;
+}
+
+// 5. Start a new generation: INCR adds 1 and returns the new number. It is atomic, so two admins
+//    creating events at the same moment get two different numbers (never a lost update), and on a
+//    missing key it starts from 0, so the first INCR returns 1.
+//    The gen key has no TTL on purpose: if it expired, the number would restart at 0 and could
+//    land on an old generation again.
+export async function bumpUpcomingGeneration(): Promise<number> {
+  return withTimeout(redis.incr(UPCOMING_GEN_KEY), CACHE_TIMEOUT_MS);
+}
+
+// 6. Read the cached JSON text of generation `gen`. Returns null when the key does not exist (a miss).
 //    Throws when Redis is down or too slow: the service turns that into "use Postgres".
-export async function getUpcomingFromCache(): Promise<string | null> {
-  return withTimeout(redis.get(UPCOMING_KEY), CACHE_TIMEOUT_MS);
+export async function getUpcomingFromCache(gen: number): Promise<string | null> {
+  return withTimeout(redis.get(upcomingKey(gen)), CACHE_TIMEOUT_MS);
 }
 
 // @concept: ttl
-// 5. Store the JSON text and let Redis delete it after `ttlSeconds` ("EX"). The caller picks the TTL.
-export async function setUpcomingInCache(json: string, ttlSeconds: number): Promise<void> {
-  await withTimeout(redis.set(UPCOMING_KEY, json, "EX", ttlSeconds), CACHE_TIMEOUT_MS);
+// 7. Store the JSON text under generation `gen` and let Redis delete it after `ttlSeconds` ("EX").
+//    The caller picks the TTL.
+export async function setUpcomingInCache(gen: number, json: string, ttlSeconds: number): Promise<void> {
+  await withTimeout(redis.set(upcomingKey(gen), json, "EX", ttlSeconds), CACHE_TIMEOUT_MS);
 }
 
-// 6. The Redis key of the REBUILD LOCK for the list above. Whoever holds it is the one API
-//    instance allowed to rebuild the list from Postgres right now. Same "v1" as the cache key, so
-//    a v2 deploy also gets its own lock.
-export const UPCOMING_LOCK_KEY = "lock:events:upcoming:v1";
+// 8. The Redis key of the REBUILD LOCK for the list above. Whoever holds it is the one API
+//    instance allowed to rebuild that generation's list from Postgres right now. Same "v1" as the
+//    cache key, so a v2 deploy also gets its own lock. Same generation too: a rebuild for the new
+//    generation never has to wait for a (now useless) rebuild of the old one.
+export function upcomingLockKey(gen: number): string {
+  return `lock:events:upcoming:v1:g${gen}`;
+}
 
-// 7. Try to take the lock. One Redis command, so two instances can never both get it:
+// 9. Try to take the lock. One Redis command, so two instances can never both get it:
 //    - NX: only set the key if it does Not eXist yet (someone else holds it -> nothing happens);
 //    - PX: the key deletes itself after `ttlMs` milliseconds, so a holder that crashes can never
 //      block the rebuild forever;
 //    - the value is the caller's random token: it proves later who the lock belongs to.
 //    Redis answers "OK" when the key was set (we hold the lock) and null when it already existed.
-export async function tryLockUpcomingRebuild(token: string, ttlMs: number): Promise<boolean> {
-  const reply = await withTimeout(redis.set(UPCOMING_LOCK_KEY, token, "PX", ttlMs, "NX"), CACHE_TIMEOUT_MS);
+export async function tryLockUpcomingRebuild(gen: number, token: string, ttlMs: number): Promise<boolean> {
+  const reply = await withTimeout(redis.set(upcomingLockKey(gen), token, "PX", ttlMs, "NX"), CACHE_TIMEOUT_MS);
   return reply === "OK";
 }
 
-// 8. Release = delete the lock key, but ONLY if it still holds OUR token.
+// 10. Release = delete the lock key, but ONLY if it still holds OUR token.
 //    WHY the check: our lock may have expired (the rebuild took longer than its TTL) and another
 //    instance may have taken it since. A plain DEL would then delete THEIR lock.
 //    WHY a Lua script: "GET, compare, DEL" as three separate commands leaves a gap in which the key
@@ -77,7 +112,7 @@ else
   return 0
 end`;
 
-export async function releaseUpcomingRebuildLock(token: string): Promise<boolean> {
-  const deleted = await withTimeout(redis.eval(RELEASE_IF_OWNER, 1, UPCOMING_LOCK_KEY, token), CACHE_TIMEOUT_MS);
+export async function releaseUpcomingRebuildLock(gen: number, token: string): Promise<boolean> {
+  const deleted = await withTimeout(redis.eval(RELEASE_IF_OWNER, 1, upcomingLockKey(gen), token), CACHE_TIMEOUT_MS);
   return deleted === 1;
 }

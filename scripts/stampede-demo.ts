@@ -2,7 +2,7 @@
 // Like check-concepts.ts, Node runs this TypeScript file directly (it strips the types).
 //
 // What it does:
-//   1. Deletes the events list cache key in Redis, so the next request is a MISS.
+//   1. Bumps the events list's cache generation in Redis (INCR), so the next request is a MISS.
 //   2. Fires N events.list requests at the same moment, at each --url (default: 100 at :4000).
 //   3. Prints the status codes and timings.
 // Then count the "db query: events.listUpcoming" lines in the API's log (start the API with
@@ -17,12 +17,13 @@
 import net from "node:net";
 import { parseArgs } from "node:util";
 
-// 1. Must be the same as UPCOMING_KEY in apps/api/src/queries/events-cache.ts.
+// 1. Must be the same as UPCOMING_GEN_KEY in apps/api/src/queries/events-cache.ts.
 //    (We do not import it: importing API code would also load its env checks and Redis client.)
-const CACHE_KEY = "events:upcoming:v1";
+//    Bumping it is exactly what creating an event does: every reader moves to a new, empty key.
+const GEN_KEY = "events:upcoming:gen";
 
 // 2. Read the command line. REDIS_URL comes from apps/api/.env (the root script loads that file),
-//    so the demo deletes the key in the same Redis the API uses.
+//    so the demo bumps the key in the same Redis the API uses.
 const { values } = parseArgs({
   options: {
     url: { type: "string", multiple: true, default: ["http://localhost:4000"] },
@@ -37,13 +38,13 @@ if (!Number.isInteger(perUrl) || perUrl < 1) {
   process.exit(1);
 }
 
-// 3. Delete the cache key. Redis's protocol (RESP) is plain text: a command is sent as an array of
-//    strings ("*2" = 2 parts, "$3" = the next part is 3 bytes long). The reply to DEL is ":1"
-//    (one key deleted) or ":0" (the key was not there). "-" at the start means an error.
-function redisDel(redisUrl: string, key: string): Promise<number> {
+// 3. Bump the generation. Redis's protocol (RESP) is plain text: a command is sent as an array of
+//    strings ("*2" = 2 parts, "$4" = the next part is 4 bytes long). The reply to INCR is ":<n>",
+//    the new number. "-" at the start means an error.
+function redisIncr(redisUrl: string, key: string): Promise<number> {
   const { protocol, hostname, port } = new URL(redisUrl);
   if (protocol !== "redis:") throw new Error(`only plain redis:// URLs are supported here, got ${protocol}`);
-  const command = `*2\r\n$3\r\nDEL\r\n$${Buffer.byteLength(key)}\r\n${key}\r\n`;
+  const command = `*2\r\n$4\r\nINCR\r\n$${Buffer.byteLength(key)}\r\n${key}\r\n`;
 
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host: hostname, port: Number(port || 6379) }, () => socket.write(command));
@@ -77,8 +78,8 @@ function percentile(sortedMs: number[], p: number): number {
 }
 
 async function main() {
-  const deleted = await redisDel(values.redis, CACHE_KEY);
-  console.log(`Deleted cache key ${CACHE_KEY}: ${deleted === 1 ? "yes" : "it was not there"}`);
+  const gen = await redisIncr(values.redis, GEN_KEY);
+  console.log(`Bumped ${GEN_KEY} to ${gen}: the cached list is now a miss`);
   console.log(`Firing ${perUrl} requests at each of: ${urls.join(", ")} (all at once)\n`);
 
   // 6. Start EVERY request before awaiting any, so they all arrive while the cache is empty.

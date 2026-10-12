@@ -40,6 +40,7 @@ pnpm docs:check   handbook and code agree (@concept anchors <-> cards <-> concep
 pnpm docs:history handbook files with last change (from git); --since <commit> for changed sections
 pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
+pnpm user:make-admin <email>   make an existing (signed-up) user an admin (no UI for roles)
 cd infra && pulumi preview   show what infra would change (read-only). The owner runs `pulumi up`.
 ```
 

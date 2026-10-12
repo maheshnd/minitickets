@@ -17,3 +17,19 @@ export async function listUpcoming(now: Date, log: { debug: (msg: string) => voi
   log.debug("db query: events.listUpcoming");
   return db.select().from(events).where(gt(events.startsAt, now)).orderBy(asc(events.startsAt)).limit(50);
 }
+
+// 3. Insert one event and return the saved row (with its generated id and createdAt).
+//    It is ONE statement outside any transaction, so Postgres commits it by itself ("autocommit"):
+//    when this function returns, the row is saved and every other connection can see it.
+//    The service relies on that: it invalidates the cache only after this returns.
+//    The CHECK constraints on the table still refuse bad seat numbers, even if a caller forgets.
+export async function create(input: {
+  title: string;
+  venue: string;
+  startsAt: Date;
+  totalSeats: number;
+  seatsLeft: number;
+}) {
+  const rows = await db.insert(events).values(input).returning();
+  return rows[0];
+}

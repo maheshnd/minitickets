@@ -44,3 +44,10 @@ export async function create(input: { email: string; passwordHash: string }) {
     throw err;
   }
 }
+
+// 5. Change one user's role, found by email. Returns the updated row, or undefined if no user has
+//    that email. One UPDATE statement: no "find first, then update" gap in between.
+export async function setRoleByEmail(email: string, role: "user" | "admin") {
+  const rows = await db.update(users).set({ role }).where(eq(users.email, email)).returning();
+  return rows[0];
+}

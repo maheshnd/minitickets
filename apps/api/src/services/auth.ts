@@ -33,8 +33,8 @@ export async function signup(input: { email: string; password: string }) {
   //    other fails, which queries/users.ts turns into a ConflictError.
   const user = await users.create({ email: input.email, passwordHash });
 
-  // 3. Return only id and email. The hash stays inside the server.
-  return { id: user.id, email: user.email };
+  // 3. Return only id, email and role (always "user" for a new account). The hash stays inside the server.
+  return { id: user.id, email: user.email, role: user.role };
 }
 
 // Login: check the password, start a session, return the user and the raw session id.
@@ -54,7 +54,7 @@ export async function login(input: { email: string; password: string }) {
 
   // 4. Start the session. The raw id goes to the browser as a cookie (procedures/auth.ts).
   const sessionId = await sessions.create(user.id);
-  return { user: { id: user.id, email: user.email }, sessionId };
+  return { user: { id: user.id, email: user.email, role: user.role }, sessionId };
 }
 
 // Current user: turn the userId from the session into a user. Returns null if nobody is
@@ -62,7 +62,7 @@ export async function login(input: { email: string; password: string }) {
 export async function getCurrentUser(userId: string | undefined) {
   if (!userId) return null;
   const user = await users.findById(userId);
-  return user ? { id: user.id, email: user.email } : null;
+  return user ? { id: user.id, email: user.email, role: user.role } : null;
 }
 
 // @concept: sessions-vs-jwt
