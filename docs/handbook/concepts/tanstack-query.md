@@ -121,3 +121,7 @@ logout."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)

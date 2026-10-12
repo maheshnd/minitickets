@@ -126,3 +126,8 @@ failure logs everyone out; production needs a replica with failover."
 ## 16. Status
 
 ✅ built for dev. **To make it production-grade:** replica + automatic failover across AZs.
+
+## Where it appears in the story
+
+- [Infra story: 8. ElastiCache Valkey](../infra-story.md#8-elasticache-valkey)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

@@ -123,3 +123,8 @@ dies immediately. A JWT can't be revoked like that without adding state back."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 5. The tRPC context](../app-story.md#5-the-trpc-context)
+- [App story: 8. The service](../app-story.md#8-the-service)

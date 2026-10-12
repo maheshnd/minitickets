@@ -112,3 +112,7 @@ Logs Insights."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)

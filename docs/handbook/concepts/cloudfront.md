@@ -135,3 +135,8 @@ passed through. It talks to the ALB over HTTP with a secret header, which the AL
 ## 16. Status
 
 ✅ built. **To make it production-grade:** custom domain, HTTPS to the origin, WAF, monitoring.
+
+## Where it appears in the story
+
+- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

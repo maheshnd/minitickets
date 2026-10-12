@@ -103,3 +103,7 @@ yourself. Roles and ownership rules come with tickets."
 
 🟡 partial. **To make it production-grade:** a role/ownership model, checks in services, 403s, and
 cross-user tests.
+
+## Where it appears in the story
+
+- [App story: 6. Middleware: errorMapper and protectedProcedure](../app-story.md#6-middleware-errormapper-and-protectedprocedure)

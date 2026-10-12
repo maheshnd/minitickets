@@ -101,3 +101,7 @@ real correlation id yet. Next step: base it on the ALB's trace header and return
 
 🟡 partial. **To make it production-grade:** unique ids (or the ALB trace id), returned in a response
 header, then OpenTelemetry traces.
+
+## Where it appears in the story
+
+- [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)

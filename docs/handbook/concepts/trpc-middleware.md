@@ -110,3 +110,7 @@ ctx.session to non-null for the procedure. A unit test checks the mapping."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 6. Middleware: errorMapper and protectedProcedure](../app-story.md#6-middleware-errormapper-and-protectedprocedure)

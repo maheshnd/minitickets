@@ -154,3 +154,8 @@ before closing, for Spot interruptions where SIGTERM comes before routing stops.
 ## 16. Status
 
 ✅ built. **Planned:** the wait-after-SIGTERM delay and a hard timeout inside `shutdown`.
+
+## Where it appears in the story
+
+- [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)
+- [App story: 15. Docker](../app-story.md#15-docker)

@@ -112,3 +112,7 @@ place, and app/ is just routing."
 
 ✅ built (as a convention). **To make it production-grade:** enforce "no tRPC in components" with a
 `no-restricted-imports` lint rule.
+
+## Where it appears in the story
+
+- [App story: 1. Browser → Next.js: layout, server vs client components, proxy guard](../app-story.md#1-browser--nextjs-layout-server-vs-client-components-proxy-guard)

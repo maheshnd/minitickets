@@ -107,3 +107,7 @@ anything."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 13. The budget](../infra-story.md#13-the-budget)

@@ -123,3 +123,7 @@ scanning, Inspector enhanced scanning or Trivy in CI, and fails the build on cri
    **Trivy** (or Grype) in the CI `docker` job against the built image.
 2. A **CI gate**: fail the build on CRITICAL findings, with a written exception process.
 3. **Dependency updates**: Dependabot or Renovate, so fixes arrive as pull requests.
+
+## Where it appears in the story
+
+- [Infra story: 12. ECR](../infra-story.md#12-ecr)

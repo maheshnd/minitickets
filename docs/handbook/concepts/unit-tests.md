@@ -102,3 +102,7 @@ well under a second and gate the CI quality job."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)

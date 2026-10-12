@@ -119,3 +119,8 @@ injects them as env vars when a task starts."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 6. Secrets Manager](../infra-story.md#6-secrets-manager)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

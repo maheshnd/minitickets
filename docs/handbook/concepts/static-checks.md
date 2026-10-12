@@ -99,3 +99,8 @@ breaking changes between the api and the web."
 ## 16. Status
 
 ✅ built. Possible next step: type-aware and import-boundary lint rules.
+
+## Where it appears in the story
+
+- [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)
+- [App story: 16. CI](../app-story.md#16-ci)

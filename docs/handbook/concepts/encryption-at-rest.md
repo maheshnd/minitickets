@@ -105,3 +105,7 @@ query can read."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)

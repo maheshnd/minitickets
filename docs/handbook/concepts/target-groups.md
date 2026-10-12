@@ -138,3 +138,8 @@ seconds so in-flight requests finish during deploys."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 3. Target groups](../infra-story.md#3-target-groups)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

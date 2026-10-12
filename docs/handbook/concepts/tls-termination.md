@@ -125,3 +125,8 @@ again to RDS and Valkey."
 
 ✅ built as a dev compromise. **To make it production-grade:** custom domain, ACM certificate on the
 ALB, HTTPS listener, `https-only` origin.
+
+## Where it appears in the story
+
+- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

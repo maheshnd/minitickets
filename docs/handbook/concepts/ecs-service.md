@@ -126,3 +126,8 @@ the new version never gets healthy."
 ## 16. Status
 
 ✅ built. **To make it production-grade:** 2+ tasks across AZs, on-demand base, auto scaling.
+
+## Where it appears in the story
+
+- [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

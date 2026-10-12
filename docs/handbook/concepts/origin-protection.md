@@ -134,3 +134,8 @@ distribution sends. Everything else gets a timeout or a 403."
 
 ✅ built. **To make it production-grade:** rotate the secret, HTTPS on the edge-to-ALB hop, or a
 private origin.
+
+## Where it appears in the story
+
+- [Infra story: 2. The ALB: security group, listener, rules, secret header](../infra-story.md#2-the-alb-security-group-listener-rules-secret-header)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

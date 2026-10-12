@@ -296,7 +296,7 @@ flowchart LR
 `/health`, `/ready`, tRPC plugin); `api/server.ts` → `listen`, `shutdown`. Cards:
 [fastify-app](concepts/fastify-app.md), [trust-proxy](concepts/trust-proxy.md),
 [cors](concepts/cors.md), [structured-logging](concepts/structured-logging.md),
-[log-redaction](concepts/log-redaction.md), [health-checks](concepts/health-checks.md),
+[log-redaction](concepts/log-redaction.md), [correlation-ids](concepts/correlation-ids.md) (the per-request `reqId`), [health-checks](concepts/health-checks.md),
 [graceful-shutdown](concepts/graceful-shutdown.md).
 
 ### 5. See it yourself
@@ -1246,10 +1246,10 @@ flowchart LR
 | Defence | Where | Attack or mistake it stops |
 | ------- | ----- | -------------------------- |
 | CORS with one exact origin + credentials | `api/app.ts` | Other sites reading our api with the user's cookie |
-| `SameSite=Lax` + JSON-only mutations (415 otherwise) | `api/procedures/auth.ts`; tRPC/Fastify | CSRF from forms on other sites |
+| `SameSite=Lax` + JSON-only mutations (415 otherwise) | `api/procedures/auth.ts`; tRPC/Fastify | CSRF from forms on other sites ([csrf](concepts/csrf.md)) |
 | `HttpOnly` session cookie | `api/procedures/auth.ts` | Session theft through XSS |
 | `Secure` cookie in production | `api/procedures/auth.ts` | Cookie sent over plain HTTP |
-| React escaping, no `dangerouslySetInnerHTML` | `web/` | Stored or reflected XSS |
+| React escaping, no `dangerouslySetInnerHTML` | `web/` | Stored or reflected XSS ([xss](concepts/xss.md)) |
 | `getSafeNext` | `web/features/auth/lib/safe-next.ts` | Open redirect to a phishing site |
 | Zod on every input, length caps | `packages/shared`, procedures | Malformed input, huge passwords slowing argon2 |
 | argon2id (OWASP minimum) | `api/services/auth.ts` | Cheap cracking of a leaked database |

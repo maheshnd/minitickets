@@ -129,3 +129,8 @@ so they can't be interrupted; production would add an on-demand base."
 ## 16. Status
 
 ✅ built for dev. Production needs an on-demand base (see [high-availability](high-availability.md)).
+
+## Where it appears in the story
+
+- [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

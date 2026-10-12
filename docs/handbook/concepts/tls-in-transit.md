@@ -130,3 +130,8 @@ plain hop is CloudFront to the ALB, a dev compromise."
 ## 16. Status
 
 ✅ built. **To make it production-grade:** HTTPS on the CloudFront → ALB hop.
+
+## Where it appears in the story
+
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)
+- [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)

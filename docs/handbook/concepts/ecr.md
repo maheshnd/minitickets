@@ -118,3 +118,8 @@ keeps 10 tagged images. The push script tags with the git SHA; ECS pulls with th
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 12. ECR](../infra-story.md#12-ecr)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

@@ -112,3 +112,7 @@ always speaks HTTP/1.1 to our load balancer."
 ## 16. Status
 
 🟡 partial: browser ↔ edge only.
+
+## Where it appears in the story
+
+- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)

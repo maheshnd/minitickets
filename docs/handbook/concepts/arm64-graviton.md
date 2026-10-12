@@ -113,3 +113,8 @@ script builds `linux/arm64` with buildx, because an image must match the task's 
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

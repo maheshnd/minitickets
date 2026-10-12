@@ -97,7 +97,20 @@ For every future feature or infra step, in the SAME commit:
   `00-big-picture.md`
 - add an ADR in `docs/handbook/decisions/` if a design decision was made
 - add new words to `docs/handbook/glossary.md`
+- every concept card has a "Where it appears in the story" section linking the exact chapter(s)
+  in `app-story.md` / `infra-story.md` / `00-big-picture.md`
 - `pnpm docs:check` must pass
+
+### Story placement rule
+
+- New features go in the story **where a request meets them**, in the chapter for that stop.
+- Something off the main path (a background job, a webhook, a retry queue) becomes a **side path**
+  chapter right after the step where it branches off, with a diagram of the branch point.
+- Never add a standalone story file. The stories are `app-story.md`, `infra-story.md` and
+  `00-big-picture.md`.
+- `pnpm docs:check` fails if a ✅ or 🟡 card is linked from no story chapter, if a card's story link
+  is broken or not mirrored by the chapter, or if a ✅ AWS card is missing from the "Components"
+  table in `00-big-picture.md`.
 
 ## Handbook changelog rule
 

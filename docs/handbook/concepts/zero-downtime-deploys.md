@@ -188,3 +188,9 @@ zero-downtime for deploys, but not for failures."
 🟡 partial. **To make it production-grade:** 2+ tasks, expand-and-contract migrations, migrations in
 the deploy pipeline, and the planned **wait-after-SIGTERM** delay in `shutdown` (section 4) so a Spot
 interruption does not turn the last few requests into 503s.
+
+## Where it appears in the story
+
+- [Infra story: 3. Target groups](../infra-story.md#3-target-groups)
+- [Infra story: The deploy story](../infra-story.md#the-deploy-story)
+- [Infra story: What we'd change for production](../infra-story.md#what-wed-change-for-production)

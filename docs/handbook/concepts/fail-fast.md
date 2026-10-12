@@ -125,3 +125,8 @@ themselves. The gap is Postgres, which has no connection or statement timeout ye
 
 🟡 partial. **To make it production-grade:** pg `connectionTimeoutMillis` and a `statement_timeout`,
 per-request deadlines, alarms on 5xx.
+
+## Where it appears in the story
+
+- [App story: 5. The tRPC context](../app-story.md#5-the-trpc-context)
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)

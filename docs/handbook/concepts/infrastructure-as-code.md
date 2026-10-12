@@ -120,3 +120,7 @@ stay encrypted in state."
 ## 16. Status
 
 ✅ built. **To make it production-grade:** previews and applies in CI, policy checks, drift detection.
+
+## Where it appears in the story
+
+- [Infra story: 14. Pulumi and the switches](../infra-story.md#14-pulumi-and-the-switches)

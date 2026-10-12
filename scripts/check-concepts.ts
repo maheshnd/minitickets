@@ -12,6 +12,11 @@
 //   5. Every link to a concepts/<slug>.md card, in any handbook file, points to a card that exists.
 //   6. Every handbook page (except CHANGELOG.md) has the history line right under its title:
 //      History: see [CHANGELOG.md](…) or run `pnpm docs:history`
+//   7. Story placement. Every card has a "Where it appears in the story" section, and:
+//      - each link in it points to a real chapter (a "## " heading) of app-story.md,
+//        infra-story.md or 00-big-picture.md, and that chapter links back to the card;
+//      - a ✅ or 🟡 card is linked from at least one story chapter (no orphan cards);
+//      - a ✅ AWS card appears in the "components" table of 00-big-picture.md.
 // It prints every problem it finds, then exits with code 1 if there was at least one.
 
 import { execFileSync } from "node:child_process";
@@ -81,6 +86,94 @@ function whereInCodeSection(cardText: string): string {
 function cardAnchorFiles(cardText: string): string[] {
   const section = whereInCodeSection(cardText);
   return [...section.matchAll(/^- Anchor: `([^`]+)`/gm)].map((match) => match[1]);
+}
+
+// 7. Story chapters: file -> chapter id -> the card slugs that chapter links.
+//    A chapter is everything under a "## " heading, up to the next one. WHY "## " only: the
+//    sub-headings inside a chapter (### 1. In one line …) repeat in every chapter.
+const STORY_FILES = ["app-story.md", "infra-story.md", "00-big-picture.md"];
+type Chapter = { text: string; cards: Set<string> };
+
+// GitHub's heading id: lower-case, drop punctuation, each space becomes a hyphen.
+function headingId(heading: string): string {
+  return heading.toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").replace(/\s/g, "-");
+}
+
+function readChapters(): Map<string, Map<string, Chapter>> {
+  const result = new Map<string, Map<string, Chapter>>();
+  for (const file of STORY_FILES) {
+    const chapters = new Map<string, Chapter>();
+    let current: Chapter | undefined;
+    for (const line of readFileSync(path.join(HANDBOOK, file), "utf8").split("\n")) {
+      const heading = line.match(/^## (.*)/);
+      if (heading) {
+        current = { text: heading[1].trim(), cards: new Set() };
+        chapters.set(headingId(current.text), current);
+        continue;
+      }
+      if (!current) continue;
+      for (const link of line.matchAll(/\(concepts\/([a-z0-9-]+)\.md\)/g)) current.cards.add(link[1]);
+    }
+    result.set(file, chapters);
+  }
+  return result;
+}
+
+function checkStoryPlacement(cardSlugs: string[]) {
+  const chapters = readChapters();
+  const linkedFromStory = new Set<string>();
+  for (const byId of chapters.values()) {
+    for (const chapter of byId.values()) for (const card of chapter.cards) linkedFromStory.add(card);
+  }
+
+  // The "components" table of the big picture: table rows under a heading that contains "components".
+  const bigPicture = readFileSync(path.join(HANDBOOK, "00-big-picture.md"), "utf8");
+  const componentsStart = bigPicture.search(/^## .*components/im);
+  const componentsRest = componentsStart === -1 ? "" : bigPicture.slice(componentsStart + 1);
+  const componentsEnd = componentsRest.search(/^## /m);
+  const componentsSection = componentsEnd === -1 ? componentsRest : componentsRest.slice(0, componentsEnd);
+  const inComponentsTable = new Set(
+    [...componentsSection.matchAll(/^\|.*\(concepts\/([a-z0-9-]+)\.md\)/gm)].map((match) => match[1]),
+  );
+  if (componentsStart === -1) problems.push('00-big-picture.md: there is no "## … Components" section with a table');
+
+  for (const slug of cardSlugs) {
+    const cardFile = `docs/handbook/concepts/${slug}.md`;
+    const text = readFileSync(path.join(CARDS, `${slug}.md`), "utf8");
+    const status = text.match(/^Area: (.*?) · Status: (\S+)/m);
+    const area = status?.[1] ?? "";
+    const symbol = status?.[2] ?? "";
+    const built = symbol === "✅" || symbol === "🟡";
+
+    // 7a. The card has the section, and its links are real and point back.
+    const start = text.search(/^## Where it appears in the story/m);
+    if (start === -1) {
+      problems.push(`${cardFile}: missing the heading "## Where it appears in the story"`);
+    } else {
+      const rest = text.slice(start + 1);
+      const end = rest.search(/^## /m);
+      const section = end === -1 ? rest : rest.slice(0, end);
+      const links = [...section.matchAll(/\]\(\.\.\/([^)#\s]+\.md)#([^)\s]+)\)/g)];
+      if (built && links.length === 0) problems.push(`${cardFile}: "Where it appears in the story" has no chapter link`);
+      for (const link of links) {
+        const chapter = chapters.get(link[1])?.get(link[2]);
+        if (!chapter) problems.push(`${cardFile}: links to ${link[1]}#${link[2]}, but that chapter does not exist`);
+        else if (!chapter.cards.has(slug)) {
+          problems.push(`${cardFile}: links to ${link[1]} "${chapter.text}", but that chapter does not link back to this card`);
+        }
+      }
+    }
+
+    // 7b. No orphan cards.
+    if (built && !linkedFromStory.has(slug)) {
+      problems.push(`${cardFile}: ${symbol} card is not linked from any story chapter (app-story, infra-story or 00-big-picture)`);
+    }
+
+    // 7c. ✅ AWS cards appear in the components table.
+    if (symbol === "✅" && area.startsWith("AWS ") && !inComponentsTable.has(slug)) {
+      problems.push(`${cardFile}: ✅ AWS card is missing from the components table in 00-big-picture.md`);
+    }
+  }
 }
 
 function main() {
@@ -161,6 +254,9 @@ function main() {
       problems.push(`${file}: line 3 (under the title and an empty line) must be: ${expected}`);
     }
   }
+
+  // Check 7: story placement.
+  checkStoryPlacement(cardSlugs);
 
   // Report.
   if (problems.length > 0) {

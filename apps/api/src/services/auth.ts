@@ -44,7 +44,8 @@ export async function login(input: { email: string; password: string }) {
 
   // 2. ALWAYS run one argon2 verify. For an unknown email we verify against the dummy hash
   //    and throw the result away. Without this, "unknown email" would answer in a few
-  //    milliseconds and "wrong password" in ~50 ms, and an attacker could measure the
+  //    milliseconds and "wrong password" only after the slow argon2 verify (about 10 ms measured
+  //    on a dev laptop; depends on CPU and argon2 settings), and an attacker could measure the
   //    difference to find out which emails have accounts. Equal timing hides that.
   const passwordOk = await verify(user?.passwordHash ?? DUMMY_HASH, input.password);
 

@@ -41,8 +41,8 @@ Step by step:
 
 **Measured** on the owner's laptop against a local api: 20 logins with a wrong password for a known
 email averaged **0.0099 s**; 20 for an unknown email averaged **0.0090 s**. (One run, one machine;
-not a statistical test. The code comment estimates "~50 ms" for a verify; on this laptop it was
-faster.)
+not a statistical test. The code comment says "about 10 ms measured on a dev laptop; depends on CPU and
+argon2 settings", which matches this run.)
 
 **The gap:** `auth.signup` returns 409 "Email already registered", so anyone can test an email at
 signup. The e2e test even checks that message.
@@ -119,3 +119,7 @@ limiting."
 
 🟡 partial. **To make it production-grade:** email-verified signup with one response for both
 cases, the same for password reset, and rate limiting on auth endpoints.
+
+## Where it appears in the story
+
+- [App story: 8. The service](../app-story.md#8-the-service)

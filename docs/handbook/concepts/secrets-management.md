@@ -120,3 +120,7 @@ from Secrets Manager at task start. Everything else passes only ARNs."
 ## 16. Status
 
 ✅ built. **To make it production-grade:** rotation everywhere, runtime reads, secret scanning in CI.
+
+## Where it appears in the story
+
+- [Infra story: 6. Secrets Manager](../infra-story.md#6-secrets-manager)

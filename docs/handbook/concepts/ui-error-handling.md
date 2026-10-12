@@ -126,3 +126,7 @@ session."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)

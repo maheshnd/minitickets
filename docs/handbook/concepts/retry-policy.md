@@ -106,3 +106,8 @@ would come back as 'Email already registered'."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
+- [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)

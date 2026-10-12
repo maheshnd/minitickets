@@ -109,3 +109,7 @@ For things like payments I'd add idempotency keys stored in Redis."
 
 🟡 partial. **To make it production-grade:** idempotency keys for create operations (tickets),
 stored with a TTL; return the original response on replay.
+
+## Where it appears in the story
+
+- [App story: 7. The procedure](../app-story.md#7-the-procedure)

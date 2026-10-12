@@ -121,3 +121,7 @@ edge doesn't compress them; Next.js gzips pages itself and the API doesn't compr
 
 🟡 partial (the concept map listed this as ✅; corrected in Phase 2 after checking AWS's docs).
 **To make it production-grade:** compression for api responses, measured first.
+
+## Where it appears in the story
+
+- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)

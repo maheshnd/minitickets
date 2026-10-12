@@ -108,3 +108,7 @@ procedure reads ctx.session, so nobody can forget the lookup."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 5. The tRPC context](../app-story.md#5-the-trpc-context)

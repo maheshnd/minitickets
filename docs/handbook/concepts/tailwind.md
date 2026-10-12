@@ -102,3 +102,7 @@ actually use."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 1. Browser → Next.js: layout, server vs client components, proxy guard](../app-story.md#1-browser--nextjs-layout-server-vs-client-components-proxy-guard)

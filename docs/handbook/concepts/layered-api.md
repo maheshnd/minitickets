@@ -122,3 +122,7 @@ and Redis calls are in queries."
 
 ✅ built (as a convention). **To make it production-grade:** a lint rule (`no-restricted-imports`)
 so services cannot import `db/` or `redis/`.
+
+## Where it appears in the story
+
+- [App story: 7. The procedure](../app-story.md#7-the-procedure)

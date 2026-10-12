@@ -134,3 +134,8 @@ dev."
 
 ✅ built for dev. **To make it production-grade:** Multi-AZ, deletion protection, final snapshot,
 longer backups.
+
+## Where it appears in the story
+
+- [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

@@ -36,10 +36,13 @@ export function createTargetGroups(inputs: TargetGroupsInputs): TargetGroupsOutp
   //    targetType "ip": Fargate tasks have their own IPs (awsvpc network mode gives every task its
   //      own network card). There is no EC2 instance to point at, so the list holds task IPs.
   //      The other common value, "instance", only works when containers run on our own EC2 machines.
-  //    deregistrationDelay 30: when a task is stopping (a deploy, a scale-in, a Spot interruption),
-  //      the ALB stops sending it NEW requests at once, but keeps it in the list for 30 seconds
-  //      ("draining") so requests already in flight can finish. Only then does ECS send SIGTERM,
-  //      and our graceful shutdown (docs/05-database.md, docs/11-docker.md) closes cleanly.
+  //    deregistrationDelay 30: when a task is stopping, the ALB stops sending it NEW requests at
+  //      once, but keeps it in the list for 30 seconds ("draining") so requests already in flight
+  //      can finish. For a normal deploy (and a scale-in) this order is confirmed from the AWS
+  //      docs: draining first, then ECS sends SIGTERM, and our graceful shutdown
+  //      (docs/05-database.md, docs/11-docker.md) closes cleanly. For a Spot interruption the
+  //      AWS docs do NOT say that draining finishes before SIGTERM, so do not rely on it there.
+  //      See docs/handbook/concepts/graceful-shutdown.md.
   //      The default is 300 s: every deploy would wait 5 minutes for nothing. Our requests take
   //      milliseconds, so 30 s is plenty.
   //    No `name`: Pulumi adds a random suffix (minitickets-dev-api-tg-1a2b3c4). Some changes (like

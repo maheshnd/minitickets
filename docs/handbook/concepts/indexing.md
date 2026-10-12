@@ -101,3 +101,7 @@ come from real query plans, because each one slows writes."
 
 🟡 partial. **To make it production-grade:** slow-query logging, `EXPLAIN ANALYZE` in reviews,
 indexes for ticket queries when they exist.
+
+## Where it appears in the story
+
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)

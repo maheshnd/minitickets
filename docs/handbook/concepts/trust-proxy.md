@@ -126,3 +126,7 @@ nobody."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)

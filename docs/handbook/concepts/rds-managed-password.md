@@ -126,3 +126,8 @@ tasks keep the old password, so production should read it at runtime or use IAM 
 ## 16. Status
 
 ✅ built, with the rotation limitation documented in [docs/17](../../17-infra-ecs-api.md), section 3.17.
+
+## Where it appears in the story
+
+- [Infra story: 6. Secrets Manager](../infra-story.md#6-secrets-manager)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

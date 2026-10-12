@@ -143,3 +143,8 @@ fixed 403, so nothing reaches a task unless a rule says so."
 
 ✅ built. **To make it production-grade:** HTTPS listener with ACM, deletion protection, access
 logs, 5xx alarms.
+
+## Where it appears in the story
+
+- [Infra story: 2. The ALB: security group, listener, rules, secret header](../infra-story.md#2-the-alb-security-group-listener-rules-secret-header)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

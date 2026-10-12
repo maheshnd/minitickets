@@ -128,6 +128,8 @@ STRUCTURE OF EVERY CHAPTER AND EVERY CONCEPT CARD (same headings always)
 14. Follow-up questions interviewers ask (with short answers)
 15. Say it in 30 seconds
 16. Status + "to make it production-grade" (if partial)
+    Cards only: then an unnumbered last heading "Where it appears in the story" (links to the
+    chapter(s) that cover the concept).
 
 concepts/<slug>.md
 - One card per concept, same 16 headings (skip ones that truly don't
@@ -195,4 +197,16 @@ For every future feature or infra step, in the SAME commit:
 - update concept-map.md, the relevant story chapter, 00-big-picture.md
 - add an ADR if a design decision was made
 - add new words to glossary.md
+- every concept card has a "Where it appears in the story" heading linking the exact chapter(s)
+  in app-story.md / infra-story.md / 00-big-picture.md
 - pnpm docs:check must pass
+
+STORY PLACEMENT RULES (enforced by docs:check)
+- New features go where a request meets them: in the chapter for that stop of the journey.
+- Things off the main path (background jobs, webhooks, queues) become a "side path" chapter right
+  after the step where they branch, with a diagram of the branch point.
+- Never add a standalone story file.
+- docs:check fails if: a ✅ or 🟡 card is not linked from at least one story chapter (no orphan
+  cards); a card's "Where it appears in the story" link points to a missing chapter or to a chapter
+  that does not link back; a story links to a missing card; a ✅ AWS card is missing from the
+  "Components" table in 00-big-picture.md.

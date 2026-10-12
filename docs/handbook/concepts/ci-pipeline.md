@@ -114,3 +114,7 @@ images with layer caching. The token is read-only. Deploys are still manual; CD 
 
 ✅ built for CI. **To make it production-grade:** CD with OIDC, image digests, migrations as a
 gated step, branch protection.
+
+## Where it appears in the story
+
+- [App story: 16. CI](../app-story.md#16-ci)

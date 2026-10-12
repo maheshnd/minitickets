@@ -139,3 +139,8 @@ breaker; the api fails fast with short timeouts instead."
 
 🟡 partial. **To make it production-grade:** alarm-based rollback; app breakers where dependencies can
 hang.
+
+## Where it appears in the story
+
+- [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+- [Infra story: The deploy story](../infra-story.md#the-deploy-story)

@@ -120,3 +120,7 @@ origin; locally it calls localhost:4000 and includes credentials so the cookie c
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 3. The tRPC client](../app-story.md#3-the-trpc-client)

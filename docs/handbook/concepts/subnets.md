@@ -134,3 +134,8 @@ because we skip the NAT gateway, and their security groups let in only the ALB."
 ## 16. Status
 
 ✅ built. **To make it production-grade:** tasks in private subnets with NAT or VPC endpoints.
+
+## Where it appears in the story
+
+- [Infra story: 10. The network: VPC, subnets, route tables, internet gateway](../infra-story.md#10-the-network-vpc-subnets-route-tables-internet-gateway)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

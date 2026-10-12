@@ -121,3 +121,8 @@ it."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 7. The procedure](../app-story.md#7-the-procedure)
+- [App story: 13. Validation at boundaries](../app-story.md#13-validation-at-boundaries)

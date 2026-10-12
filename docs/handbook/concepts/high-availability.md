@@ -121,3 +121,7 @@ replica with failover, at roughly double the cost."
 ## 16. Status
 
 🟡 partial. **To make it production-grade:** the "HA version" column above.
+
+## Where it appears in the story
+
+- [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)

@@ -170,6 +170,38 @@ sequenceDiagram
 - **Wrong password:** the service throws `UnauthorizedError`, `errorMapper` turns it into tRPC
   `UNAUTHORIZED`, the browser gets HTTP 401, and the form shows the message under the button.
 
+## 4. Components
+
+Every AWS piece that is built today, with the card that explains it. `pnpm docs:check` fails if a
+✅ AWS card is missing from this table.
+
+| Component | Area | What it does for us | Card |
+| --- | --- | --- | --- |
+| CloudFront distribution | AWS Network | The public HTTPS front door | [`cloudfront`](concepts/cloudfront.md) |
+| ALB, listener and rules | AWS Network | Routes `/trpc/*` to api, the rest to web | [`alb`](concepts/alb.md) |
+| Target groups | AWS Network | The lists of healthy task IPs per service | [`target-groups`](concepts/target-groups.md) |
+| VPC | AWS Network | The private network everything lives in | [`vpc`](concepts/vpc.md) |
+| Subnets (public and private) | AWS Network | The floors of the VPC | [`subnets`](concepts/subnets.md) |
+| Route tables and internet gateway | AWS Network | Where each subnet's traffic goes | [`route-tables`](concepts/route-tables.md) |
+| Security groups | AWS Network | Stateful firewalls between the pieces | [`security-groups`](concepts/security-groups.md) |
+| Regions and availability zones | AWS Network | Where the resources physically run | [`regions-and-azs`](concepts/regions-and-azs.md) |
+| Origin protection (prefix list + secret header) | AWS Network | Only CloudFront may reach the ALB | [`origin-protection`](concepts/origin-protection.md) |
+| Same-origin path routing | AWS Network | One public host for pages and `/trpc` | [`same-origin-routing`](concepts/same-origin-routing.md) |
+| TLS termination | AWS Network | Where HTTPS ends (CloudFront; plain HTTP to the ALB) | [`tls-termination`](concepts/tls-termination.md) |
+| ECS cluster and capacity providers | AWS Compute | The group that tasks run in | [`ecs-cluster`](concepts/ecs-cluster.md) |
+| ECS service | AWS Compute | Keeps the desired number of tasks running | [`ecs-service`](concepts/ecs-service.md) |
+| Task definition | AWS Compute | The recipe for a task | [`task-definition`](concepts/task-definition.md) |
+| Fargate | AWS Compute | Runs containers with no servers to manage | [`fargate`](concepts/fargate.md) |
+| Fargate Spot | AWS Compute | Cheap spare capacity that AWS can take back | [`fargate-spot`](concepts/fargate-spot.md) |
+| ARM64 (Graviton) tasks | AWS Compute | The CPU type of the images and tasks | [`arm64-graviton`](concepts/arm64-graviton.md) |
+| Execution role and task role | AWS Compute | IAM roles for ECS and for our code | [`execution-vs-task-role`](concepts/execution-vs-task-role.md) |
+| ECS Exec | AWS Compute | A shell inside a running task | [`ecs-exec`](concepts/ecs-exec.md) |
+| ECR repositories | AWS Compute | Where the Docker images are stored | [`ecr`](concepts/ecr.md) |
+| RDS Postgres instance | AWS Data | The database for users | [`rds-postgres`](concepts/rds-postgres.md) |
+| RDS-managed master password | AWS Data | The database password kept in Secrets Manager | [`rds-managed-password`](concepts/rds-managed-password.md) |
+| Secrets Manager secrets | AWS Data | Passwords and tokens injected at task start | [`secrets-manager`](concepts/secrets-manager.md) |
+| ElastiCache Valkey | AWS Data | The session store | [`elasticache-valkey`](concepts/elasticache-valkey.md) |
+
 ## How this connects
 
 - **Uses:** the step docs, especially [07 login](../07-login-session.md),

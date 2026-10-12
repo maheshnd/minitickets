@@ -112,3 +112,7 @@ storage remains."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 14. Pulumi and the switches](../infra-story.md#14-pulumi-and-the-switches)

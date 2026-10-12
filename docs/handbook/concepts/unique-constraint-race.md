@@ -116,3 +116,7 @@ turns Postgres's 23505 into a ConflictError, which becomes a 409 under the email
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 8. The service](../app-story.md#8-the-service)

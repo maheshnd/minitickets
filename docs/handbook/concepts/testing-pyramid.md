@@ -101,3 +101,7 @@ integration tests for queries and services against real stores, which is what I'
 
 🟡 partial. **To make it production-grade:** integration tests for `queries/` and `services/` using
 the CI service containers.
+
+## Where it appears in the story
+
+- [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)

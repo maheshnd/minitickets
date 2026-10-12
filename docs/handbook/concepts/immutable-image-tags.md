@@ -107,3 +107,8 @@ records which."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 12. ECR](../infra-story.md#12-ecr)
+- [Infra story: The deploy story](../infra-story.md#the-deploy-story)

@@ -108,3 +108,7 @@ it, so with many tasks I'd add RDS Proxy."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)

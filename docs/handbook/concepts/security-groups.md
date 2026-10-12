@@ -136,3 +136,8 @@ the database groups don't even have outbound rules."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 11. Security groups](../infra-story.md#11-security-groups)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

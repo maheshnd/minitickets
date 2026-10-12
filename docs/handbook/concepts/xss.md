@@ -108,3 +108,7 @@ Content-Security-Policy, which should come before tickets bring user-written con
 
 🟡 partial. **To make it production-grade:** a strict Content-Security-Policy (nonces), a sanitiser
 for any rich text, security headers checked in CI.
+
+## Where it appears in the story
+
+- [App story: The app security story](../app-story.md#the-app-security-story)

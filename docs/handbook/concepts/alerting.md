@@ -96,3 +96,8 @@ on-call channel."
 ## 16. Status
 
 🟡 partial. **To make it production-grade:** the alarm list in section 9.
+
+## Where it appears in the story
+
+- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)
+- [Infra story: 13. The budget](../infra-story.md#13-the-budget)

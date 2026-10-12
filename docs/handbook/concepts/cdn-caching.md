@@ -123,3 +123,7 @@ one user's answer can never be served to another."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)

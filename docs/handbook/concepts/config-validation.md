@@ -121,3 +121,7 @@ user's request."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 13. Validation at boundaries](../app-story.md#13-validation-at-boundaries)

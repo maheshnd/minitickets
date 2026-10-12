@@ -132,3 +132,9 @@ baked in."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 3. The tRPC client](../app-story.md#3-the-trpc-client)
+- [Infra story: 2. The ALB: security group, listener, rules, secret header](../infra-story.md#2-the-alb-security-group-listener-rules-secret-header)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

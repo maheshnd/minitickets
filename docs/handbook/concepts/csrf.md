@@ -116,3 +116,7 @@ it's one origin anyway. The missing piece is an explicit Origin check on writes,
 
 🟡 partial. **To make it production-grade:** the planned Origin check on mutations (or
 `Sec-Fetch-Site`), and a rule/test that no query changes data.
+
+## Where it appears in the story
+
+- [App story: The app security story](../app-story.md#the-app-security-story)

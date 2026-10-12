@@ -124,3 +124,8 @@ plugin on the laptop. No port is opened; we use it to check `/ready` from inside
 ## 16. Status
 
 ✅ built. **To make it production-grade:** session logging and a restricted break-glass role.
+
+## Where it appears in the story
+
+- [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

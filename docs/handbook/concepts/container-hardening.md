@@ -109,3 +109,7 @@ Next steps would be a read-only root filesystem and digest-pinned base images."
 
 ✅ built. **To make it production-grade:** `readonlyRootFilesystem`, digest-pinned bases, CI
 scanning ([image-scanning](image-scanning.md)).
+
+## Where it appears in the story
+
+- [App story: 15. Docker](../app-story.md#15-docker)

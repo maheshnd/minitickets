@@ -154,3 +154,8 @@ task role. All of them can only be assumed by ECS for our account."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 5. IAM roles](../infra-story.md#5-iam-roles)
+- [Big picture: 4. Components](../00-big-picture.md#4-components)

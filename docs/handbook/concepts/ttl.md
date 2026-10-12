@@ -103,3 +103,7 @@ step."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 8. The service](../app-story.md#8-the-service)

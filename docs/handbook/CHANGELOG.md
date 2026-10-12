@@ -17,11 +17,37 @@ flowchart LR
    uncommitted changes).
 2. Add a new entry at the top: `## YYYY-MM-DD · <commit subject>`, a `Why:` line, and one line per
    changed file: which sections were added or changed, and why.
-3. A commit can't contain its own hash, so write `Commit: filled in by the next handbook commit`,
+3. A commit can't contain its own hash, so write `Commit: 97f9cab`,
    and replace that text in the **previous** entry with its real hash
    (`git log -1 --format=%h -- docs/handbook`).
 
 `pnpm docs:history` (no arguments) shows the last change date and commit of every file.
+
+---
+
+## 2026-10-12 · docs(handbook): story placement rules + comment fixes
+
+Commit: filled in by the next handbook commit
+
+Why: every concept should be findable from the story, and `docs:check` should keep it that way.
+Also two code comments (comment-only changes) said more than we know.
+
+- `HANDBOOK_SPEC.md`: added the "Where it appears in the story" heading to the card structure, the
+  living-handbook list, and a new "Story placement rules" section (where features go, side paths,
+  no standalone story file, what `docs:check` enforces).
+- `00-big-picture.md`: new section "4. Components", a table of every ✅ AWS resource with its card
+  (needed by the new `docs:check` rule).
+- `app-story.md`: chapter 4 now links `correlation-ids`; "The app security story" table links `csrf`
+  and `xss`. Why: these three cards were not linked from any chapter.
+- `concepts/*.md` (all 107 cards): new last heading "Where it appears in the story" with links to
+  the exact chapters. Why: the new placement rule.
+- `concepts/user-enumeration.md`: section 4, the timing note now quotes the corrected code comment
+  ("about 10 ms measured on a dev laptop"). Why: the old "~50 ms" was never measured.
+
+Code changes in the same commit (comments only): `infra/src/entry/target-groups.ts` (draining before
+SIGTERM is confirmed for normal deploys, not documented for Spot interruptions),
+`apps/api/src/services/auth.ts` (login timing comment), `scripts/check-concepts.ts` (check 7),
+`CLAUDE.md` (story placement rule).
 
 ---
 

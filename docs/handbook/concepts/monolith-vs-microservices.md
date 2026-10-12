@@ -104,3 +104,7 @@ only when a team or workload needs its own lifecycle; first likely a queue worke
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 12. Monorepo and shared types](../app-story.md#12-monorepo-and-shared-types)

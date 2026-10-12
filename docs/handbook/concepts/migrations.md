@@ -122,3 +122,7 @@ task definition once on on-demand Fargate. Drizzle records what ran, so reruns a
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)

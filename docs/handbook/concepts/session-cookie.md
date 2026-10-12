@@ -115,3 +115,7 @@ that page JavaScript can't see it."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 7. The procedure](../app-story.md#7-the-procedure)

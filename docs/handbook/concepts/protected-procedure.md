@@ -108,3 +108,7 @@ shows a fake cookie passes the guard but gets 401 here."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 6. Middleware: errorMapper and protectedProcedure](../app-story.md#6-middleware-errormapper-and-protectedprocedure)

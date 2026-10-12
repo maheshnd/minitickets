@@ -105,3 +105,7 @@ requests."
 ## 16. Status
 
 🟡 partial: the default only, and one target today.
+
+## Where it appears in the story
+
+- [Infra story: 3. Target groups](../infra-story.md#3-target-groups)

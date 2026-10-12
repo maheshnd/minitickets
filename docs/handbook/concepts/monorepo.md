@@ -110,3 +110,7 @@ tsconfig, and Docker installs only what each app needs with --filter."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 12. Monorepo and shared types](../app-story.md#12-monorepo-and-shared-types)

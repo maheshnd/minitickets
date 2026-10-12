@@ -114,3 +114,7 @@ caller per port, and CI's token is read-only."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [Infra story: 5. IAM roles](../infra-story.md#5-iam-roles)

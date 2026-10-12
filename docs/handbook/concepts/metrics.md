@@ -104,3 +104,7 @@ be golden-signal alarms from the ALB."
 ## 16. Status
 
 🟡 partial. **To make it production-grade:** golden-signal dashboards, custom metrics, SLOs.
+
+## Where it appears in the story
+
+- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)

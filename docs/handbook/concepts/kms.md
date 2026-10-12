@@ -110,3 +110,7 @@ would come with cross-account or compliance needs."
 
 🟡 partial. **To make it production-grade:** customer-managed keys where sharing, revocation or audit
 require them.
+
+## Where it appears in the story
+
+- [Infra story: 6. Secrets Manager](../infra-story.md#6-secrets-manager)

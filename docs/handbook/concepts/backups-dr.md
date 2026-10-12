@@ -114,3 +114,7 @@ snapshots, cross-region copies and regular restore tests."
 
 🟡 partial. **To make it production-grade:** longer retention, final snapshot, deletion protection,
 cross-region copies, restore drills.
+
+## Where it appears in the story
+
+- [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)

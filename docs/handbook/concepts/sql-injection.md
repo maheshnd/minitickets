@@ -108,3 +108,7 @@ the string in the params. Validation is a second layer, and there's no raw SQL i
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 9. The query](../app-story.md#9-the-query)

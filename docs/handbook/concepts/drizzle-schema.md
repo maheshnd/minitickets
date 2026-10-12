@@ -113,3 +113,7 @@ us typed, parameterised queries."
 ## 16. Status
 
 ✅ built.
+
+## Where it appears in the story
+
+- [App story: 9. The query](../app-story.md#9-the-query)
