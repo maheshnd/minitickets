@@ -20,6 +20,9 @@ const EnvSchema = z.object({
   // How many proxies stand in front of the API (see ./trust-proxy.ts). 0 = none (local dev,
   // Docker, CI). On AWS it is 2: CloudFront, then the load balancer (set in the task definition).
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  // The lowest log level that is printed. "info" hides debug lines (like "db query: …"); start
+  // the API with LOG_LEVEL=debug to see them, e.g. when counting database queries.
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
 // 2. Check process.env once, when the API starts: the app settings and the database settings.

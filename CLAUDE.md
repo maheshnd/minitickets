@@ -54,12 +54,31 @@ Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both
 - TypeScript strict everywhere; validate all external input (requests, env) with Zod.
 - Shared input schemas live in `packages/shared`, not in the apps.
 - Build only what the current step asks for, then stop. Don't build ahead.
-- Each step gets a `docs/NN-<name>.md`. See "Docs rule" below.
+- Each step gets a `docs/NN-<name>.md`, written later in a handbook catch-up step (see "Workflow"
+  below). See "Docs rule" below for how to write it.
 - For UI changes, verify in a headless browser before reporting done. Say clearly what was and wasn't verified.
+
+## Workflow: feature steps, then a handbook catch-up
+
+Docs are written in batches, not in every feature step.
+
+**During a feature step:**
+- Write code + tests + clear numbered inline comments (1., 2., 3. …: WHAT each part does and WHY).
+- Do NOT update the handbook (`docs/handbook/`), the step docs (`docs/NN-*.md`,
+  `docs/00-architecture.md`), and do NOT add `@concept` anchors.
+- Instead, append ONE entry to `docs/handbook/PENDING.md` (create it if missing). Max ~10 lines:
+  step name, concepts covered, key files (path + function), real measured numbers, anything unsure.
+
+**In a "handbook catch-up" step** (its own step, when the owner asks for it):
+- Read `PENDING.md` and the git changes since the last catch-up.
+- Do everything the "Docs rule", "Living handbook rule" and "Handbook changelog rule" below ask
+  for, for all pending steps at once (step docs, `00-architecture.md`, anchors, cards, stories,
+  ADRs, glossary, CHANGELOG).
+- Then clear `PENDING.md` (leave only its title and intro).
 
 ## Docs rule
 
-Every `docs/NN-*.md` is written for a beginner.
+Every `docs/NN-*.md` is written for a beginner (written in a handbook catch-up step).
 
 - Short sentences, simple everyday words. Explain any technical word the first time it appears.
 - Every important concept gets a diagram. Use Mermaid code blocks (they render on GitHub): flowchart
@@ -89,7 +108,8 @@ Every `docs/NN-*.md` is written for a beginner.
 ## Living handbook rule
 
 `docs/handbook/` explains every concept, tied to the code (spec: `docs/handbook/HANDBOOK_SPEC.md`).
-For every future feature or infra step, in the SAME commit:
+This is done in the handbook catch-up step (see "Workflow" above), NOT in each feature step.
+In the catch-up step, for every pending feature or infra step:
 - add `@concept: <slug>` anchors to the new code (`//` in TS/JS, `#` in Dockerfile, YAML, shell);
   comments only, never a behaviour change
 - add or update the concept cards in `docs/handbook/concepts/` (status 📋 -> 🟡 -> ✅)
@@ -115,7 +135,8 @@ For every future feature or infra step, in the SAME commit:
 ## Handbook changelog rule
 
 Every commit that changes anything in `docs/handbook/` adds an entry at the TOP of
-`docs/handbook/CHANGELOG.md` (newest first):
+`docs/handbook/CHANGELOG.md` (newest first). Exception: a feature step that only appends to
+`PENDING.md` (it is a to-do list, not a handbook page; the catch-up step's entry covers it).
 - date (YYYY-MM-DD) and the commit subject
 - each changed file, one line each: which sections were added or changed, and why
   (`pnpm docs:history --since <previous handbook commit>` lists the files and changed headings)

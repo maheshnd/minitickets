@@ -47,3 +47,37 @@ export async function getUpcomingFromCache(): Promise<string | null> {
 export async function setUpcomingInCache(json: string, ttlSeconds: number): Promise<void> {
   await withTimeout(redis.set(UPCOMING_KEY, json, "EX", ttlSeconds), CACHE_TIMEOUT_MS);
 }
+
+// 6. The Redis key of the REBUILD LOCK for the list above. Whoever holds it is the one API
+//    instance allowed to rebuild the list from Postgres right now. Same "v1" as the cache key, so
+//    a v2 deploy also gets its own lock.
+export const UPCOMING_LOCK_KEY = "lock:events:upcoming:v1";
+
+// 7. Try to take the lock. One Redis command, so two instances can never both get it:
+//    - NX: only set the key if it does Not eXist yet (someone else holds it -> nothing happens);
+//    - PX: the key deletes itself after `ttlMs` milliseconds, so a holder that crashes can never
+//      block the rebuild forever;
+//    - the value is the caller's random token: it proves later who the lock belongs to.
+//    Redis answers "OK" when the key was set (we hold the lock) and null when it already existed.
+export async function tryLockUpcomingRebuild(token: string, ttlMs: number): Promise<boolean> {
+  const reply = await withTimeout(redis.set(UPCOMING_LOCK_KEY, token, "PX", ttlMs, "NX"), CACHE_TIMEOUT_MS);
+  return reply === "OK";
+}
+
+// 8. Release = delete the lock key, but ONLY if it still holds OUR token.
+//    WHY the check: our lock may have expired (the rebuild took longer than its TTL) and another
+//    instance may have taken it since. A plain DEL would then delete THEIR lock.
+//    WHY a Lua script: "GET, compare, DEL" as three separate commands leaves a gap in which the key
+//    can expire and be taken by someone else. Redis runs a script as one step: nothing else can run
+//    in between. KEYS[1] is the lock key, ARGV[1] our token. It returns 1 if deleted, 0 if not ours.
+const RELEASE_IF_OWNER = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end`;
+
+export async function releaseUpcomingRebuildLock(token: string): Promise<boolean> {
+  const deleted = await withTimeout(redis.eval(RELEASE_IF_OWNER, 1, UPCOMING_LOCK_KEY, token), CACHE_TIMEOUT_MS);
+  return deleted === 1;
+}

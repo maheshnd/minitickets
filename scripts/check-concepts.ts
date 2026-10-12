@@ -10,7 +10,7 @@
 //   3. Every file that holds an anchor is listed in its card (so cards never miss a place).
 //   4. concept-map.md links to every card.
 //   5. Every link to a concepts/<slug>.md card, in any handbook file, points to a card that exists.
-//   6. Every handbook page (except CHANGELOG.md) has the history line right under its title:
+//   6. Every handbook page (except CHANGELOG.md and PENDING.md) has the history line right under its title:
 //      History: see [CHANGELOG.md](…) or run `pnpm docs:history`
 //   7. Story placement. Every card has a "Where it appears in the story" section, and:
 //      - each link in it points to a real chapter (a "## " heading) of app-story.md,
@@ -244,9 +244,10 @@ function main() {
 
   // Check 6: the history line sits right under the title (line 1 "# …", line 2 empty, line 3 the
   //   history line). WHY: the pages hold no hand-written dates; this line tells readers where the
-  //   dates are. CHANGELOG.md is the history itself, so it is skipped.
+  //   dates are. CHANGELOG.md is the history itself, so it is skipped. PENDING.md is skipped too:
+  //   it is a to-do list for the next handbook catch-up step, not a handbook page.
   for (const file of handbookFiles) {
-    if (file === "docs/handbook/CHANGELOG.md") continue;
+    if (file === "docs/handbook/CHANGELOG.md" || file === "docs/handbook/PENDING.md") continue;
     const link = path.dirname(file) === "docs/handbook" ? "CHANGELOG.md" : "../CHANGELOG.md";
     const expected = `History: see [CHANGELOG.md](${link}) or run \`pnpm docs:history\``;
     const [title, blank, history] = readFileSync(path.join(ROOT, file), "utf8").split("\n");

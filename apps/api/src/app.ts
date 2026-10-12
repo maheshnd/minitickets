@@ -17,8 +17,10 @@ export async function buildApp() {
   // 1. Create the Fastify instance. The logger prints each request to the terminal.
   //    redact replaces these fields with "[Redacted]" if they ever appear in a log line,
   //    so passwords can never end up in log files. (We also never log request bodies or hashes.)
+  //    level: lines below this level are not printed (default "info"; see LOG_LEVEL in ./config/env.ts).
   const app = Fastify({
     logger: {
+      level: env.LOG_LEVEL,
       redact: {
         paths: [
           "password",
