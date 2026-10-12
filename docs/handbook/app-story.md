@@ -788,13 +788,16 @@ fails fast, both clients survive connection errors, and Postgres timeouts are th
 
 A second example request, this one public and with no login: a visitor opens `/events`. It was
 rendered in the browser in Step 21 (the baseline) and is rendered on the server, with streaming,
-since Step 22. Both paths are shown, because the measured comparison is the point.
+since Step 22. Since Feature 1, step 4 the api answers from a Redis cache when it can. Both rendering
+paths are shown, because the measured comparison is the point, and then the three cache paths.
 
 ### 1. In one line
 
 The web server asks the API for `events.list` (procedure → service → query → Postgres), renders the
 list into the HTML, streams it after the page frame, and the browser reuses that data instead of
-asking again; if the server cannot get it, the browser fetches it itself, as in Step 21.
+asking again; if the server cannot get it, the browser fetches it itself, as in Step 21. Inside the
+api, `events.list` first looks in Redis (cache-aside): a hit skips Postgres, a miss reads Postgres and
+fills Redis for 30-33 seconds, and a Redis failure falls back to Postgres.
 
 ### 2. Real-life comparison
 
@@ -837,6 +840,36 @@ sequenceDiagram
     Note over B: hydrate: useEvents finds the data, no request
 ```
 
+Inside the api, the cache-aside step: the three paths (hit, miss, Redis down):
+
+```mermaid
+flowchart TD
+    s["service: listUpcomingEvents"] --> g["GET events:upcoming:v1<br/>(100 ms deadline)"]
+    g -->|"HIT: valid JSON"| h["return the cached list<br/>log cache=hit"]
+    g -->|"MISS: no key, or invalid value"| p["read Postgres"]
+    p --> w["SET key EX 30-33 s"]
+    w --> m["return the list<br/>log cache=miss"]
+    g -->|"Redis down or slow"| e["warn, read Postgres,<br/>no SET"]
+    e --> x["return the list<br/>log cache=error"]
+```
+
+In time order, the first request after expiry and the next ones:
+
+```mermaid
+sequenceDiagram
+    participant A as api service
+    participant R as Redis
+    participant P as Postgres
+    A->>R: GET events:upcoming:v1
+    R-->>A: nil (expired)
+    A->>P: SELECT ... starts_at > now LIMIT 50
+    P-->>A: rows
+    A->>R: SET ... EX 31
+    Note over A,R: next requests for ~30 s:
+    A->>R: GET
+    R-->>A: JSON (Postgres not touched)
+```
+
 ### 4. Where in our code
 
 Web, server side: `web/app/events/page.tsx` → `EventsPage` (`force-dynamic`, `generateMetadata`,
@@ -848,8 +881,10 @@ Web, both sides: `web/features/events/components/event-list.tsx` → `EventList`
 Retry, empty); `event-list-skeleton.tsx` → `EventListSkeleton`; `event-card.tsx` → `EventCard`
 (sold out badge); `event-date.tsx` → `EventDate` (same text during hydration);
 `hooks/use-events.ts` → `useEvents` (`staleTime` 30 s).
-API: `api/procedures/events.ts` → `eventsRouter.list` (`.output(ListEventsOutput)`);
-`api/services/events.ts` → `listUpcomingEvents`; `api/queries/events.ts` → `listUpcoming`;
+API: `api/procedures/events.ts` → `eventsRouter.list` (`.output(ListEventsOutput)`, adds `cache` to the
+request log); `api/services/events.ts` → `listUpcomingEvents` (the cache-aside logic, TTL + jitter, Zod check on
+read, fallback); `api/queries/events-cache.ts` → `getUpcomingFromCache`, `setUpcomingInCache`, `UPCOMING_KEY`,
+`withTimeout` (the only Redis code for this); `api/queries/events.ts` → `listUpcoming`;
 `api/db/schema/events.ts` → `events` (with `events_starts_at_idx`); `api/drizzle/0002_mixed_karen_page.sql`
 (the migration that creates it); `api/db/seed.ts`; `packages/shared/src/schemas/events.ts`.
 Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [streaming-suspense](concepts/streaming-suspense.md),
@@ -859,6 +894,8 @@ Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [streaming-suspense](concepts/strea
 [tanstack-query](concepts/tanstack-query.md) (second example), [layered-api](concepts/layered-api.md),
 [feature-folders](concepts/feature-folders.md), [drizzle-schema](concepts/drizzle-schema.md),
 [indexing](concepts/indexing.md), [explain-analyze](concepts/explain-analyze.md),
+[cache-aside](concepts/cache-aside.md), [ttl](concepts/ttl.md), [cache-key-versioning](concepts/cache-key-versioning.md),
+[graceful-degradation](concepts/graceful-degradation.md), [fail-fast](concepts/fail-fast.md),
 [validation-at-boundaries](concepts/validation-at-boundaries.md),
 [ui-error-handling](concepts/ui-error-handling.md), [config-validation](concepts/config-validation.md).
 
@@ -867,6 +904,11 @@ Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [streaming-suspense](concepts/strea
 `pnpm --filter @minitickets/api db:seed`, then `curl -s localhost:3000/events | grep -o "Indie Rock" | wc -l`
 (2: the HTML and the cache JSON; it was 0 in Step 21). DevTools → Network: only `auth.me`, no
 `events.list`. The api's own log shows the web server's `GET /trpc/events.list` for every page view.
+Cache: `redis-cli DEL events:upcoming:v1`, call `events.list` twice, read the api log
+(`"cache":"miss"`, then `"cache":"hit"`) and run `redis-cli TTL events:upcoming:v1` (30-33).
+**Break the cache on purpose:** start a second api on another port with `REDIS_URL=redis://localhost:6399` (nothing
+listens there): `events.list` still answers 200, with a warning and `"cache":"error"`
+([docs/24](../24-events-cache.md#what-happens-when-redis-fails)).
 **Break it on purpose:** start the web app with `API_INTERNAL_URL` pointing at a port where nothing
 listens: the page still works but falls back to the browser fetch (and the web log says
 `prefetchEvents: events.list failed on the server`). Stop the api as well: after two quiet retries
@@ -877,8 +919,9 @@ the page shows "Something went wrong" and a Retry button.
 Same api layers as chapters 7-9 and the same query cache as chapter 2, now filled on the server and
 handed to the browser ([hydration](concepts/hydration.md)). Unlike `account.profile` it is a
 `publicProcedure`, so the web server forwards no cookie. Chapter 1's Server and Client Components
-meet here: an `async` Server Component fetches, a Client Component draws. Chapter 11 covers failures
-in the browser; `app/events/error.tsx` covers failures while the server renders. On AWS the web task
+meet here: an `async` Server Component fetches, a Client Component draws. The Redis client is the one from chapter 10, but
+here Redis is a cache, not the session store: its failure must not fail the request, unlike in chapter 5.
+Chapter 11 covers failures in the browser; `app/events/error.tsx` covers failures while the server renders. On AWS the web task
 cannot reach the api yet ([infra story 4](infra-story.md#4-ecs-cluster-service-task-definition-task-spot)).
 
 ### 7. Our settings and WHY
@@ -891,7 +934,12 @@ whole table. How much faster is yours to measure: the commands are in
 [explain-analyze](concepts/explain-analyze.md#5-see-it-yourself) (200 000 generated rows, before and after).
 Plain `CREATE INDEX`, not `CONCURRENTLY`, because drizzle's migrator runs in a transaction and the
 table is tiny.
-`force-dynamic` and no caching, so Step 22 changes only *where* the page renders. `staleTime` 30 s so
+`force-dynamic` and no page caching, so Step 22 changes only *where* the page renders. The api cache (Feature 1, step 4):
+key `events:upcoming:v1` (the version lets a deploy that changes the shape start fresh); TTL 30 s plus 0-3 s random
+jitter so many keys written together do not expire together; JSON with dates as ISO strings, checked with the shared Zod
+schema on read (a bad value counts as a miss, with a warning); a 100 ms deadline on Redis calls so a slow Redis cannot slow the
+page; no cache write after a Redis error. Staleness: the list may be ~33 s old (for example `seatsLeft`); booking will always
+check the database, so a stale list can never oversell. `staleTime` 30 s so
 the browser trusts the server's data. `prefetchQuery` so an api failure degrades to the Step 21 path.
 
 Measured on this laptop (production builds, same data, 12 rows; [docs/22](../22-events-ssr.md)). The
@@ -905,25 +953,35 @@ Postgres may still prefer a Seq Scan, so the index matters when the table grows:
 | Lighthouse mobile LCP, median of 3 | 3012 ms | 2457 ms |
 | Lighthouse performance score, median of 3 | 93 | 98 |
 
+Measured api-side, same method as Step 21 (`responseTime` in the api log, median of 10 calls,
+12 rows, laptop; [docs/24](../24-events-cache.md#measured-miss-vs-hit)): **cache miss 2.15 ms, cache hit 0.77 ms**.
+The Step 21 baseline without a cache was about 1.8 ms. A miss is not faster than no cache: it does the same query
+plus a `GET` and a `SET`. With 12 rows the saving is small in absolute terms; the point is that a hit does no
+database work at all, so it stays flat as the table and the traffic grow.
+
 ### 8. Trade-offs
 
-Always fresh and now in the first HTML, but every visitor still causes a database read, and now also
-a render on the web server (TTFB rose because the page is no longer a static file). The web server
+Fresh at render time and now in the first HTML. Before the cache every visitor caused a database read; now about one read per
+30 s does, at the price of up to ~33 s of staleness and one more moving part (Redis). Every visitor still causes a
+render on the web server (TTFB rose because the page is no longer a static file). The web server
 depends on reaching the api. The index makes that read cheap as the table grows, at the price of a
 little extra work on every insert, update of `starts_at` and delete, plus the disk space for the
 index; so we index only what a query plan asks for (not `seats_left`, which bookings will change often).
 
 ### 9. Alternatives and when to choose them
 
-A cache in front of the query, or a cached page, for a hot list that changes rarely: planned next,
-measured against both rows of the table above. Client-only rendering stays right for private screens.
+A cached page (CDN or Next.js) instead of an api cache: not built. **Next steps (📋):** invalidate the key when an event
+changes, so the list is fresh sooner than 30 s, and protect against a cache stampede when the key expires under load.
+Client-only rendering stays right for private screens.
 For the query itself: a composite index (📖) when a filter is added next to the sort; a partial index
 (📖) if the list only showed events with seats left; keyset pagination (📋) instead of `OFFSET` if the
 list gets pages. All three are explained in [indexing](concepts/indexing.md#9-alternatives-and-when-to-choose-them).
 
 ### 10. What breaks, and how we'd notice
 
-The table is empty (seed not run): "No upcoming events". The index is missing (migration `0002` not
+The table is empty (seed not run): "No upcoming events". Redis down or slow: warning `events cache read failed, falling back to Postgres`, `"cache":"error"`, the page
+still works and Postgres takes the whole load (no alarm on this yet). A bad cached value: warning and a miss. A stale
+list for ≤ 33 s after an edit. The index is missing (migration `0002` not
 applied): the page still works, but the query reads and sorts the whole table, which only shows with
 many rows (check with `EXPLAIN`, [explain-analyze](concepts/explain-analyze.md)). Postgres ignoring the
 index on a tiny table is normal, not a failure. The web server cannot reach the api:
@@ -944,6 +1002,10 @@ schema. Lead: we measured before and after on production builds: titles in the H
 deployment dependency (still missing on AWS). On the database side, the same baseline-first habit: a
 B-tree on `starts_at` turns "Seq Scan + Sort" into "Index Scan under a Limit", checked with `EXPLAIN
 (ANALYZE, BUFFERS)` ([indexing](concepts/indexing.md), [explain-analyze](concepts/explain-analyze.md)).
+Then a cache-aside layer in Redis: api time 2.15 ms on a miss, 0.77 ms on a hit (median of 10, laptop). The design
+questions are staleness (≤ 33 s, safe because booking reads Postgres), what happens when Redis fails (fall back, never fail
+the request, but then Postgres must carry the full load and we need an alarm on `cache=error`), and the next risks:
+invalidation and stampede.
 
 ### 14. Follow-up questions interviewers ask
 
@@ -952,19 +1014,25 @@ not fetch again?* Same query key and a 30 s `staleTime`. *What if the server's c
 is not in the cache, and the browser fetches it like in Step 21. *Why index `starts_at` and not
 `seats_left`?* The query filters, sorts and limits on `starts_at`; nothing reads by `seats_left`, and it
 will be written on every booking. *Why might Postgres ignore the index?* On 12 rows one page is cheaper
-to read than an index walk.
+to read than an index walk. *Can the cached list cause overselling?* No: booking will check the database inside its own
+transaction. *What if Redis is down?* The cache read throws, we log a warning and read Postgres; the request succeeds.
+*What if it is slow?* A 100 ms deadline. *Why a version in the key?* So new code never reads old-shaped data after a deploy.
+*Why validate cached JSON?* It was written by another version of the code. *Why jitter?* So keys written together do not
+expire together.
 
 ### 15. Say it in 30 seconds
 
 "Visiting /events, the Next.js server calls our public events.list procedure, streams the frame first
 and the list right after, and hands TanStack Query's cache to the browser, so there's no second call.
 We kept the client-rendered version as a measured baseline: SSR put the events in the HTML and took
-Lighthouse from 93 to 98, at the cost of a per-request render."
+Lighthouse from 93 to 98, at the cost of a per-request render. The api then checks Redis first: 0.77 ms on a hit against
+2.15 ms on a miss, a 30-second TTL with jitter, and if Redis fails we just read Postgres."
 
 ### 16. Status
 
-✅ built locally (CSR baseline, SSR with streaming, and the `starts_at` index). SSR on AWS: 🟡, the web
-task cannot reach the api yet ([server-to-server-calls](concepts/server-to-server-calls.md)). Caching is planned.
+✅ built locally (CSR baseline, SSR with streaming, the `starts_at` index, and the Redis cache-aside). SSR on AWS: 🟡, the web
+task cannot reach the api yet ([server-to-server-calls](concepts/server-to-server-calls.md)). The api cache
+([cache-aside](concepts/cache-aside.md)) is ✅ locally; invalidation and stampede protection are 📋.
 
 ---
 

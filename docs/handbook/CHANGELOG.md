@@ -25,9 +25,38 @@ flowchart LR
 
 ---
 
-## 2026-10-12 · feat(events): index on events.starts_at, EXPLAIN ANALYZE explained
+## 2026-10-12 · feat(events): cache-aside for events.list in Redis, with graceful degradation
 
 Commit: filled in by the next handbook commit
+
+Why: Feature 1, step 4 puts Redis in front of the `events.list` query. The handbook must explain
+cache-aside, TTL with jitter, versioned keys, staleness (and why booking is not affected) and what happens
+when Redis fails, tied to the new code. The previous entry's placeholder was replaced with its real hash.
+`pnpm docs:history --since 121f77b` lists the files and headings below.
+
+- `concepts/cache-aside.md`: new card (✅). The three steps, hit/miss diagrams, staleness, trade-offs;
+  invalidation and stampede named as next steps (📋).
+- `concepts/cache-key-versioning.md`: new card (✅). Why `events:upcoming:v1`, what bumping does.
+- `concepts/graceful-degradation.md`: new card (✅). Fail open, the 100 ms deadline, not writing after an error.
+- `concepts/ttl.md`: new "second TTL" (cache TTL with jitter), anchors in `events.ts` and `events-cache.ts`.
+- `concepts/fail-fast.md`: step 5 added (a per-call deadline for a slow Redis), new anchor.
+- `concepts/unit-tests.md`: two new anchors and table rows (events service and events-cache tests).
+- `app-story.md`: chapter 10b: cache-aside diagrams (hit / miss / Redis down), code list, settings,
+  measured miss vs hit, trade-offs, alternatives (invalidation, stampede as next steps), failure modes,
+  interview answers, status.
+- `concept-map.md`: new rows `cache-aside` (📖 → ✅), `cache-key-versioning`, `graceful-degradation`;
+  `cache-invalidation` and `cache-stampede` 📖 → 📋; `ttl` and `fail-fast` rows list the new anchors.
+- `00-big-picture.md`: intro, Valkey box, laptop diagram, the "public request" paragraph and the
+  components table mention the events cache.
+- `decisions/0002-events-cache-aside-fail-open.md`: new ADR (logic in the service, fail open, skip the write after an error).
+- `glossary.md`: new Cache invalidation (server), Cache key version, Graceful degradation, Staleness (server cache);
+  Cache-aside, Cache hit/miss, Cache stampede, Fail fast, Jitter, Timeout, TTL updated.
+
+---
+
+## 2026-10-12 · feat(events): index on events.starts_at, EXPLAIN ANALYZE explained
+
+Commit: 121f77b
 
 Why: Feature 1, step 3 adds the first non-key index (`events_starts_at_idx`) after the no-index
 baseline of steps 21 and 22, so the handbook must explain B-tree indexes properly and teach how to

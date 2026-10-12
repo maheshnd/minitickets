@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Feature 1, step 3 (index on `events.starts_at`, `EXPLAIN ANALYZE` explained: [23](23-events-index.md)). Before that: Feature 1, step 2 (`/events` rendered on the server with streaming, CSR vs SSR measured: [22](22-events-ssr.md)); before that: Feature 1, step 1 (events list, no caching: [21](21-events-list.md)), Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
+Last updated: Feature 1, step 4 (Redis cache-aside for `events.list`, graceful degradation when Redis fails: [24](24-events-cache.md)). Before that: Feature 1, step 3 (index on `events.starts_at`, `EXPLAIN ANALYZE` explained: [23](23-events-index.md)). Before that: Feature 1, step 2 (`/events` rendered on the server with streaming, CSR vs SSR measured: [22](22-events-ssr.md)); before that: Feature 1, step 1 (events list, no caching: [21](21-events-list.md)), Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
 `trustProxy`) and the deploy-day runbook ([20](20-deploy-day.md)).
 
 The same system explained **by concept** (interview-ready, tied to the code) is in the
@@ -18,9 +18,9 @@ flowchart TB
         web["web<br/>Next.js :3000"]
         api["api<br/>Fastify + tRPC :4000"]
         pg[("Postgres<br/>users, events<br/>(index on events.starts_at)")]
-        redis[("Redis")]
+        redis[("Redis<br/>sessions + events cache<br/>(events:upcoming:v1, 30 s)")]
     end
-    planned["planned: caching"]
+    planned["planned: cache invalidation,<br/>stampede protection"]
     browser -->|"pages"| web
     browser -->|"/trpc (auth, forms)"| api
     web -->|"server to server<br/>API_INTERNAL_URL"| api
@@ -32,7 +32,7 @@ flowchart TB
 `/events` is rendered on the server: the web server calls `events.list` itself (server to server,
 `API_INTERNAL_URL`) and streams the HTML with the events in it; the browser reuses that data and
 does not call `events.list` again ([22](22-events-ssr.md)). Every other page still calls the api
-from the browser. Nothing is cached yet. The planned boxes come in later steps, each measured
+from the browser. The api caches the `events.list` answer in Redis for about 30 seconds ([24](24-events-cache.md)); if Redis fails it reads Postgres. The planned boxes come in later steps, each measured
 against the baselines in [doc 21](21-events-list.md) and [doc 22](22-events-ssr.md). In the AWS diagram below, the `events` table
 exists on RDS once the new migration is run (`pnpm infra:migrate`); the seed script is a laptop and CI tool only.
 
@@ -169,3 +169,4 @@ service outside our VPC too.
 | [21](21-events-list.md) | Events list (read path baseline) | `events` table with 3 CHECK constraints, `db:seed` (12 events), `events.list` (public), `/events` page (client-side rendering), Events header link | 05 (database), 09 (procedure and hook pattern) |
 | [22](22-events-ssr.md) | Events SSR + streaming | `/events` rendered on the server: per-request `QueryClient`, server tRPC client (`API_INTERNAL_URL`, Zod-checked), prefetch + dehydrate + `HydrationBoundary`, `<Suspense>` streaming, `error.tsx`, `EventDate` (no hydration mismatch); CSR vs SSR measured. AWS: 🟡 (needs Service Connect, planned) | 21 (events list), 04 (TanStack Query, tRPC client), 11 (docker compose) |
 | [23](23-events-index.md) | Events index + `EXPLAIN ANALYZE` | Migration `0002`: B-tree index `events_starts_at_idx` on `events (starts_at)` (serves `listUpcoming`: filter + order by + limit on one column); handbook cards `indexing` ✅ and `explain-analyze` 📖. No AWS change (the migration runs with `infra:migrate`) | 21 (events table, `listUpcoming`), 05 (migrations) |
+| [24](24-events-cache.md) | Events cache (cache-aside in Redis) | `queries/events-cache.ts` (`GET`/`SET EX` on `events:upcoming:v1`, 100 ms deadline), cache-aside logic in `services/events.ts` (TTL 30 s + 0-3 s jitter, Zod check on read, fallback to Postgres when Redis fails), `cache` field on the request log; handbook cards `cache-aside`, `cache-key-versioning`, `graceful-degradation` ✅, `ttl`, `fail-fast` updated. No AWS change (ElastiCache Valkey already exists) | 21 (`listUpcoming`, Zod schema), 07 (Redis client), 23 (index) |

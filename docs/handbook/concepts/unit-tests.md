@@ -29,9 +29,10 @@ flowchart LR
 - Anchor: `vitest.config.mts` · `include`: which files are unit tests (e2e `*.spec.ts` are never picked up).
 - Anchor: `packages/shared/src/schemas/auth.test.ts` · `SignupInput`: trims/lowercases email; mismatch error on `confirmPassword`.
 - Anchor: `apps/web/src/features/auth/lib/safe-next.test.ts` · `getSafeNext`: 6 cases including 4 attacks.
-- Anchor: `apps/api/src/services/events.test.ts` · `listUpcomingEvents`: service test with an in-memory fake of the query layer (no database).
+- Anchor: `apps/api/src/queries/events-cache.test.ts` · `getUpcomingFromCache`, `setUpcomingInCache`: fake Redis client; checks the key, the `EX` TTL and the 100 ms timeout (fake timers).
+- Anchor: `apps/api/src/services/events.test.ts` · `listUpcomingEvents`: service test with in-memory fakes of the query layer and the cache layer (no Postgres, no Redis): hit, miss, Redis error, corrupt value.
 
-Our test files (5 files, 19 tests when I ran `pnpm test` for this card):
+Our test files (7 files, 34 tests when I last ran `pnpm test`):
 
 | File | What it checks |
 | ---- | -------------- |
@@ -40,6 +41,8 @@ Our test files (5 files, 19 tests when I ran `pnpm test` for this card):
 | `apps/api/src/config/database.test.ts` | Local vs AWS database settings, SSL on, clear errors |
 | `apps/api/src/trpc/init.test.ts` | Error mapping ([in-process-api-tests](in-process-api-tests.md)) |
 | `apps/api/src/config/trust-proxy.test.ts` | Real client IP behind proxies ([in-process-api-tests](in-process-api-tests.md)) |
+| `apps/api/src/services/events.test.ts` | `events.list` rules, and the cache-aside paths with fake cache and query layers ([cache-aside](cache-aside.md)) |
+| `apps/api/src/queries/events-cache.test.ts` | Cache key, `EX` TTL and the 100 ms timeout, with a fake Redis client |
 
 ## 5. See it yourself
 

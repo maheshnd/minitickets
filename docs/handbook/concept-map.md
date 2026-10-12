@@ -143,12 +143,13 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | ------- | ------ | ----------------- | ---- |
 | CDN caching: hashed static files cached, per-user answers never | ✅ | `infra/entry/cdn.ts` → `orderedCacheBehaviors` (`/_next/static/*` cached; `/trpc/*` not), `defaultCacheBehavior` | [`cdn-caching`](concepts/cdn-caching.md) |
 | Compression at the edge (gzip / Brotli) | 🟡 | `infra/entry/cdn.ts` → `compress: true`. Works only on `/_next/static/*`: `CachingDisabled` (pages, `/trpc/*`) has compression off. | [`compression`](concepts/compression.md) |
-| TTL (time to live) | ✅ | `api/queries/sessions.ts` → `SESSION_TTL_SECONDS`; `api/procedures/auth.ts` → `maxAge` | [`ttl`](concepts/ttl.md) |
-| Cache-aside | 📖 | Explain-only (Redis holds sessions; it is not a cache in front of Postgres) | `cache-aside` · P5 |
+| TTL (time to live) | ✅ | `api/queries/sessions.ts` → `SESSION_TTL_SECONDS`; `api/procedures/auth.ts` → `maxAge`; `api/services/events.ts` → `BASE_TTL_SECONDS` + jitter (events cache) | [`ttl`](concepts/ttl.md) |
+| Cache-aside (Redis in front of Postgres) | ✅ | `api/services/events.ts` → `listUpcomingEvents`; `api/queries/events-cache.ts` → `getUpcomingFromCache`, `setUpcomingInCache` | [`cache-aside`](concepts/cache-aside.md) |
+| Cache key versioning | ✅ | `api/queries/events-cache.ts` → `UPCOMING_KEY` (`events:upcoming:v1`) | [`cache-key-versioning`](concepts/cache-key-versioning.md) |
 | Read-through, write-through, write-behind | 📖 | Explain-only | `cache-write-strategies` · P5 |
 | Eviction policies (LRU and others) | 📖 | Explain-only | `cache-eviction` · P5 |
-| Server-side cache invalidation | 📖 | Explain-only | `cache-invalidation` · P5 |
-| Cache stampede / thundering herd | 📖 | Explain-only | `cache-stampede` · P5 |
+| Server-side cache invalidation | 📋 | Planned: the next step after cache-aside. Today the list is up to ~33 s stale (booking will check the database, not the cache) | `cache-invalidation` · P5 |
+| Cache stampede / thundering herd | 📋 | Planned (after invalidation). Not handled yet: the 0-3 s TTL jitter only spreads expiry of many keys | `cache-stampede` · P5 |
 | Load testing and profiling | 📖 | Explain-only | `load-testing` · P5 |
 
 ## Async & Events
@@ -176,7 +177,8 @@ browser waits.
 | Graceful shutdown (and PID 1 signals) | ✅ | `api/server.ts` → `shutdown`; `apps/api/Dockerfile` → `CMD` (exec form); `infra/entry/target-groups.ts` → `deregistrationDelay`. Planned: a short wait after SIGTERM before closing. | [`graceful-shutdown`](concepts/graceful-shutdown.md) |
 | Health checks: liveness vs readiness | ✅ | `api/app.ts` → `/health`, `/ready`; `infra/compute/task.ts` → `healthCheck`; `infra/entry/target-groups.ts` → `healthCheck` | [`health-checks`](concepts/health-checks.md) |
 | Retry policy: retry only what is safe | ✅ | `web/providers/query-provider.tsx` → `shouldRetry`, `mutations: { retry: 0 }` | [`retry-policy`](concepts/retry-policy.md) |
-| Fail fast and timeouts when a dependency is down | 🟡 | `api/redis/client.ts` → `maxRetriesPerRequest`, `enableOfflineQueue`; `api/db/client.ts` → `pool.on("error")`. Postgres has no connection or statement timeout (corrected in Phase 3). | [`fail-fast`](concepts/fail-fast.md) |
+| Fail fast and timeouts when a dependency is down | 🟡 | `api/redis/client.ts` → `maxRetriesPerRequest`, `enableOfflineQueue`; `api/queries/events-cache.ts` → `withTimeout` (100 ms); `api/db/client.ts` → `pool.on("error")`. Postgres has no connection or statement timeout (corrected in Phase 3). | [`fail-fast`](concepts/fail-fast.md) |
+| Graceful degradation (keep working when a helper fails) | ✅ | `api/services/events.ts` → `listUpcomingEvents` (`try`/`catch` around the cache); `api/queries/events-cache.ts` → `CACHE_TIMEOUT_MS` | [`graceful-degradation`](concepts/graceful-degradation.md) |
 | Circuit breaker | 🟡 | `infra/compute/service.ts` → `deploymentCircuitBreaker` (deploys only; no circuit breaker in app code) | [`circuit-breaker`](concepts/circuit-breaker.md) |
 | Zero-downtime deploys: rolling update + draining | 🟡 | `infra/compute/service.ts` → `createApiService` (ECS rolling defaults); `infra/entry/target-groups.ts` → `deregistrationDelay` | [`zero-downtime-deploys`](concepts/zero-downtime-deploys.md) |
 | Vertical vs horizontal scaling | 🟡 | `infra/compute/service.ts` → `desiredCount: 1`; the api is stateless, so it can scale out | [`scaling`](concepts/scaling.md) |

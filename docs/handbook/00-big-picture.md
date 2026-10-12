@@ -6,7 +6,7 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 store users in Postgres and sessions in Redis, and run on AWS behind CloudFront and a load balancer.
 
 Today it can sign up, log in, show a private dashboard, log out and list upcoming events
-(`/events`, rendered on the server with streaming, not cached yet; its query uses an index on `starts_at`). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
+(`/events`, rendered on the server with streaming; the api answers it from a Redis cache for 30 s, and its query uses an index on `starts_at`). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
 Every name below is a real name from the code.
 
 ## 1. The whole system today
@@ -19,7 +19,7 @@ flowchart TB
     web["web task<br/>Next.js :3000"]
     api["api task<br/>Fastify + tRPC :4000"]
     rds[("RDS Postgres 17<br/>users, events<br/>(index on starts_at)")]
-    valkey[("ElastiCache Valkey<br/>sessions")]
+    valkey[("ElastiCache Valkey<br/>sessions + events cache")]
     aws["ECR · Secrets Manager<br/>CloudWatch Logs"]
     ci["GitHub Actions CI<br/>(CD: planned)"]
     browser -->|"https"| cf
@@ -28,7 +28,7 @@ flowchart TB
     alb --> api
     web -.->|"planned: Service Connect<br/>(SSR of /events)"| api
     api -->|"TLS :5432"| rds
-    api -->|"TLS :6379"| valkey
+    api -->|"TLS :6379<br/>sessions, events cache"| valkey
     aws -.->|"image, secrets at start; logs out"| api
     aws -.-> web
     ci -.->|"tests only today"| aws
@@ -58,7 +58,7 @@ flowchart LR
     browser -->|"/trpc, cross-origin<br/>CORS + cookie"| api["api :4000<br/>pnpm dev"]
     web -->|"/events: server to server<br/>API_INTERNAL_URL"| api
     api --> pg[("Postgres<br/>Docker")]
-    api --> redis[("Redis<br/>Docker")]
+    api --> redis[("Redis<br/>Docker<br/>sessions + events cache")]
 ```
 
 | | Laptop (`pnpm dev`) | AWS |
@@ -97,8 +97,10 @@ A logged-in user opens `https://<id>.cloudfront.net/dashboard` on AWS:
 
 A public request takes a different first half: for `/events` the **web server** calls `events.list`
 itself (server to server), streams the HTML with the events in it, and the browser reuses that data
-without calling the api. The api side is the same three layers, without the session check
-([app story: 10b](app-story.md#10b-reading-events)).
+without calling the api. The api side is the same three layers, without the session check, plus a cache step: the service
+looks in Redis for `events:upcoming:v1` first, and only on a miss (or when Redis fails) reads Postgres
+([app story: 10b](app-story.md#10b-reading-events), [cache-aside](concepts/cache-aside.md),
+[graceful-degradation](concepts/graceful-degradation.md)).
 
 ## 3. The life of a login request
 
@@ -211,7 +213,7 @@ Every AWS piece that is built today, with the card that explains it. `pnpm docs:
 | RDS Postgres instance | AWS Data | The database for users | [`rds-postgres`](concepts/rds-postgres.md) |
 | RDS-managed master password | AWS Data | The database password kept in Secrets Manager | [`rds-managed-password`](concepts/rds-managed-password.md) |
 | Secrets Manager secrets | AWS Data | Passwords and tokens injected at task start | [`secrets-manager`](concepts/secrets-manager.md) |
-| ElastiCache Valkey | AWS Data | The session store | [`elasticache-valkey`](concepts/elasticache-valkey.md) |
+| ElastiCache Valkey | AWS Data | The session store, and the events list cache (30 s) | [`elasticache-valkey`](concepts/elasticache-valkey.md) |
 
 ## How this connects
 

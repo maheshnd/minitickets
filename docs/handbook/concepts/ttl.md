@@ -2,12 +2,13 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Performance & Caching · Status: ✅ built · Step doc: [07 login](../../07-login-session.md)
+Area: Performance & Caching · Status: ✅ built · Step doc: [07 login](../../07-login-session.md), [24 events cache](../../24-events-cache.md)
 
 ## 1. In one line
 
 A **TTL** is how long a piece of data lives before it expires by itself; our sessions have a 7-day
-TTL in Redis, and the cookie has the same 7-day `Max-Age`, so both end together.
+TTL in Redis, and the cookie has the same 7-day `Max-Age`, so both end together. The cached events
+list has a short TTL of 30 seconds plus 0-3 seconds of random jitter.
 
 ## 2. Real-life comparison
 
@@ -28,6 +29,8 @@ flowchart LR
 - Anchor: `apps/api/src/queries/sessions.ts` · `SESSION_TTL_SECONDS`, `create` (`"EX"`).
 - Anchor: `apps/api/src/services/auth.ts` · `SESSION_MAX_AGE_SECONDS = sessions.SESSION_TTL_SECONDS`.
 - Anchor: `apps/api/src/procedures/auth.ts` · `login` → `maxAge: authService.SESSION_MAX_AGE_SECONDS`.
+- Anchor: `apps/api/src/services/events.ts` · `BASE_TTL_SECONDS`, `MAX_JITTER_SECONDS`: the events cache TTL, chosen per write.
+- Anchor: `apps/api/src/queries/events-cache.ts` · `setUpcomingInCache` (`"EX"`): Redis deletes the key when the TTL ends.
 
 Step by step:
 
@@ -36,6 +39,12 @@ Step by step:
 3. Redis deletes the key after 604,800 seconds; no cleanup job.
 4. The browser deletes the cookie at the same time.
 5. Fixed, not sliding: activity does not extend the session.
+
+**The second TTL, a cache TTL** ([cache-aside](cache-aside.md)): the events list lives 30 s + a random
+0-3 s. Here the TTL is a *staleness limit*, not a security limit: it says how old a browsing list may
+be. The **jitter** is there so that, with many keys written at the same moment, they do not all expire
+together and send a burst of reads to Postgres. We have one key today, so this is a habit, not a fix
+for a measured problem. The service picks the TTL (a business decision), the query file only passes it to Redis.
 
 Other TTL-like settings in the system (from the infra side): CloudFront cache TTLs on
 `/_next/static/*` ([cdn-caching](cdn-caching.md)), CloudWatch Logs retention
@@ -49,6 +58,10 @@ docker exec minitickets-redis-1 redis-cli TTL "<that key>"                      
 ```
 
 The `Set-Cookie` of a login shows `Max-Age=604800`.
+
+```bash
+docker exec minitickets-redis-1 redis-cli TTL events:upcoming:v1   # 30-33 right after a miss, then counting down
+```
 
 **Break it on purpose:** `SET` without `EX`. Sessions never expire in Redis, even after the cookie
 is gone; memory grows forever.

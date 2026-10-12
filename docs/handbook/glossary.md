@@ -114,16 +114,18 @@ flowchart LR
 
 - **Cache behavior (CloudFront)** – a rule for one URL path pattern: cache or not, which methods,
   what to forward. We have three.
-- **Cache hit / cache miss** – the answer was / was not already stored in the cache.
+- **Cache hit / cache miss** – the answer was / was not already stored in the cache. Ours: the request log says `"cache":"hit"`, `"miss"` or `"error"` (Redis failed, Postgres answered).
 - **Cache key** – what makes two requests count as "the same" for a cache. For our `/_next/static/*`
   files: the path (plus the normalised `Accept-Encoding`).
 - **Cache mount** – a BuildKit folder kept between builds but never part of the image. Ours keeps
   pnpm's download store.
 - **Cache policy (CloudFront)** – how long to keep a copy and what makes two requests "the same".
   We use AWS's `Managed-CachingOptimized` and `Managed-CachingDisabled`.
-- **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together.
+- **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together. 📋 Not handled yet; planned after invalidation.
 - **cache() (React)** – a React function that remembers a result for the length of one server request. Ours: `getQueryClient` gives each request its own `QueryClient`.
-- **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache. Not used by us.
+- **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache (with a TTL). Ours: `events.list` and Redis key `events:upcoming:v1` ([cache-aside](concepts/cache-aside.md)).
+- **Cache invalidation (server)** – deleting or updating a cached value when the data behind it changes, so it is fresh sooner than its TTL. 📋 Planned: the step after cache-aside.
+- **Cache key version** – a number in the key name (`…:v1`). Change it when the cached data's shape changes, so new code never reads old-shaped data ([cache-key-versioning](concepts/cache-key-versioning.md)).
 - **Canary deploy** – send a small share of traffic to the new version first, then more if it is healthy.
 - **CAP theorem** – a distributed data store that is split by a network failure must choose between
   answering (availability) and always giving the latest data (consistency).
@@ -277,7 +279,8 @@ flowchart LR
 ## F
 
 - **Fail fast** – stop with a clear error as early as possible instead of continuing in a broken
-  state. Ours: env validation at startup; Redis commands with no offline queue.
+  state. Ours: env validation at startup; Redis commands with no offline queue; a 100 ms deadline on
+  the events cache calls.
 - **Fail open (ALB)** – when every target in a group is unhealthy, the ALB sends traffic to all of
   them anyway.
 - **Fargate** – ECS without servers to manage: AWS finds a machine for each task.
@@ -308,6 +311,7 @@ flowchart LR
 - **gp3** – AWS's current general-purpose SSD disk type. Our RDS disk is 20 GB gp3.
 - **Grace period (health check)** – the time after a task starts during which ECS ignores failed ALB
   health checks. Ours: 60 seconds.
+- **Graceful degradation** – when a helper part fails, keep working in a reduced way instead of failing. Ours: Redis down or slow → `events.list` reads Postgres, logs a warning, still answers 200 ([card](concepts/graceful-degradation.md)).
 - **Graceful shutdown** – on a stop signal, stop taking new requests, finish the running ones,
   close connections, then exit.
 - **GraphQL** – an API style where the client asks for exactly the fields it needs in one query.
@@ -368,7 +372,7 @@ flowchart LR
 ## J
 
 - **Jitter** – a small random amount added to a delay, so many clients don't retry or expire at the
-  same moment.
+  same moment. Ours: 0-3 random seconds on top of the 30 s events cache TTL.
 - **JSON** – a text format for data, e.g. `{"userId": "…"}`.
 - **JWT (JSON Web Token)** – a signed token that carries user data itself, so the server does not
   look up a session. We use server-side sessions instead.
@@ -657,6 +661,7 @@ flowchart LR
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
 - **ssmmessages** – the AWS Systems Manager channels that ECS Exec uses.
 - **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Ours: `/events` since Step 22, with streaming ([card](concepts/csr-vs-ssr.md)).
+- **Staleness (server cache)** – how old a cached answer may be. Ours: the events list is up to ~33 s old; booking will read the database, never the cache, so staleness cannot cause overselling.
 - **Stale (TanStack Query)** – a cached answer that may be out of date and will be refetched on the
   next trigger (mount, window focus). With `staleTime` 0 (the default), answers are stale at once.
 - **staleTime (TanStack Query)** – how long an answer counts as fresh before it may be refetched. Default 0. Ours: 30 s for `useEvents`, so data from the server is not fetched again.
@@ -696,7 +701,7 @@ flowchart LR
 - **Testcontainers** – a library that starts real databases in Docker for tests. A way to add our
   missing integration tests.
 - **Testing pyramid** – many fast unit tests, fewer integration tests, few slow end-to-end tests.
-- **Timeout** – the longest we wait for an answer before giving up.
+- **Timeout** – the longest we wait for an answer before giving up. Ours: 100 ms for the events cache calls.
 - **timestamptz** – Postgres's `timestamp with time zone`: stores an exact instant. Our
   `users.created_at`.
 - **Timing attack** – learning a secret by measuring how long the server takes to answer. Our login
@@ -714,7 +719,7 @@ flowchart LR
 - **trustProxy** – the Fastify setting that reads the real visitor IP from `X-Forwarded-For`.
   Ours trusts 2 hops on AWS.
 - **TTFB (time to first byte)** – the time from sending a request until the first byte of the answer arrives.
-- **TTL (time to live)** – how long a stored value lives before it is deleted automatically.
+- **TTL (time to live)** – how long a stored value lives before it is deleted automatically. Ours: 7 days for sessions, 30-33 s for the cached events list.
 - **Twelve-factor config** – keep configuration in environment variables, not in the code or the image.
 - **Type narrowing** – TypeScript learning a more exact type after a check. `isAuthed` narrows
   `ctx.session` from `{…} | null` to `{…}`.

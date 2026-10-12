@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Reliability · Status: 🟡 partial (Redis fails fast; Postgres has no connection timeout) · Step doc: [05 database](../../05-database.md), [07 login](../../07-login-session.md)
+Area: Reliability · Status: 🟡 partial (Redis fails fast; Postgres has no connection timeout) · Step doc: [05 database](../../05-database.md), [07 login](../../07-login-session.md), [24 events cache](../../24-events-cache.md)
 
 ## 1. In one line
 
@@ -29,6 +29,7 @@ flowchart LR
 
 - Anchor: `apps/api/src/redis/client.ts` · `maxRetriesPerRequest: 1`, `enableOfflineQueue: false`, `redis.on("error")`.
 - Anchor: `apps/api/src/db/client.ts` · `pool.on("error")`.
+- Anchor: `apps/api/src/queries/events-cache.ts` · `CACHE_TIMEOUT_MS`, `withTimeout`: a 100 ms deadline on the events cache read and write.
 
 Step by step:
 
@@ -42,6 +43,12 @@ Step by step:
    (verified in the installed `pg-pool` source: the timeout is only armed when the option is set).
    If Postgres refuses connections, the error is immediate; if the network silently drops packets,
    a new connection waits until the operating system gives up. No `statement_timeout` either.
+
+5. **Added in Feature 1, step 4: a deadline per call.** The client settings above only help when Redis is
+   *disconnected*. A Redis that is connected but *slow* would still make every page wait for it. So the
+   events cache read and write race a 100 ms timer (`withTimeout`); when the timer wins, the call fails
+   and the service reads Postgres ([graceful-degradation](graceful-degradation.md)). Unit-tested with a
+   fake Redis that never answers (`events-cache.test.ts`). I did not measure a real slow Redis.
 
 **Measured** with a local api instance whose `REDIS_URL` pointed at a port with nothing listening:
 login answered **500 in 0.019 s**; the log said
