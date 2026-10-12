@@ -830,6 +830,7 @@ sequenceDiagram
     W-->>B: chunk 1: header, heading, skeleton
     W->>A: GET /trpc/events.list (server to server)
     A->>D: where starts_at > now order by starts_at limit 50
+    Note over D: events_starts_at_idx: jump to now,<br/>read 50 index entries, stop
     D-->>A: rows
     A-->>W: events JSON
     W-->>B: chunk 2: list HTML + dehydrated cache
@@ -849,14 +850,16 @@ Retry, empty); `event-list-skeleton.tsx` → `EventListSkeleton`; `event-card.ts
 `hooks/use-events.ts` → `useEvents` (`staleTime` 30 s).
 API: `api/procedures/events.ts` → `eventsRouter.list` (`.output(ListEventsOutput)`);
 `api/services/events.ts` → `listUpcomingEvents`; `api/queries/events.ts` → `listUpcoming`;
-`api/db/schema/events.ts` → `events`; `api/db/seed.ts`; `packages/shared/src/schemas/events.ts`.
+`api/db/schema/events.ts` → `events` (with `events_starts_at_idx`); `api/drizzle/0002_mixed_karen_page.sql`
+(the migration that creates it); `api/db/seed.ts`; `packages/shared/src/schemas/events.ts`.
 Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [streaming-suspense](concepts/streaming-suspense.md),
 [hydration](concepts/hydration.md), [server-to-server-calls](concepts/server-to-server-calls.md),
 [server-client-components](concepts/server-client-components.md),
 [db-check-constraints](concepts/db-check-constraints.md), [seed-data](concepts/seed-data.md),
 [tanstack-query](concepts/tanstack-query.md) (second example), [layered-api](concepts/layered-api.md),
 [feature-folders](concepts/feature-folders.md), [drizzle-schema](concepts/drizzle-schema.md),
-[indexing](concepts/indexing.md), [validation-at-boundaries](concepts/validation-at-boundaries.md),
+[indexing](concepts/indexing.md), [explain-analyze](concepts/explain-analyze.md),
+[validation-at-boundaries](concepts/validation-at-boundaries.md),
 [ui-error-handling](concepts/ui-error-handling.md), [config-validation](concepts/config-validation.md).
 
 ### 5. See it yourself
@@ -881,11 +884,19 @@ cannot reach the api yet ([infra story 4](infra-story.md#4-ecs-cluster-service-t
 ### 7. Our settings and WHY
 
 `limit 50` so one request cannot return an unbounded list; `now` passed into the query so the service
-owns the meaning of "upcoming"; no index on `starts_at` yet, because a later step measures first.
+owns the meaning of "upcoming"; an index on `starts_at` (Feature 1, step 3), added only *after* the
+no-index baseline was recorded, because the filter, the sort and the limit all use that column: Postgres
+jumps to "now" in the sorted index and stops after 50 rows, instead of a Seq Scan plus a Sort of the
+whole table. How much faster is yours to measure: the commands are in
+[explain-analyze](concepts/explain-analyze.md#5-see-it-yourself) (200 000 generated rows, before and after).
+Plain `CREATE INDEX`, not `CONCURRENTLY`, because drizzle's migrator runs in a transaction and the
+table is tiny.
 `force-dynamic` and no caching, so Step 22 changes only *where* the page renders. `staleTime` 30 s so
 the browser trusts the server's data. `prefetchQuery` so an api failure degrades to the Step 21 path.
 
-Measured on this laptop (production builds, same data; [docs/22](../22-events-ssr.md)):
+Measured on this laptop (production builds, same data, 12 rows; [docs/22](../22-events-ssr.md)). The
+index came later and these numbers were not re-measured; with 12 rows, which fit in one page,
+Postgres may still prefer a Seq Scan, so the index matters when the table grows:
 
 | | CSR (Step 21) | SSR + streaming (Step 22) |
 | --- | --- | --- |
@@ -898,19 +909,29 @@ Measured on this laptop (production builds, same data; [docs/22](../22-events-ss
 
 Always fresh and now in the first HTML, but every visitor still causes a database read, and now also
 a render on the web server (TTFB rose because the page is no longer a static file). The web server
-depends on reaching the api.
+depends on reaching the api. The index makes that read cheap as the table grows, at the price of a
+little extra work on every insert, update of `starts_at` and delete, plus the disk space for the
+index; so we index only what a query plan asks for (not `seats_left`, which bookings will change often).
 
 ### 9. Alternatives and when to choose them
 
 A cache in front of the query, or a cached page, for a hot list that changes rarely: planned next,
 measured against both rows of the table above. Client-only rendering stays right for private screens.
+For the query itself: a composite index (📖) when a filter is added next to the sort; a partial index
+(📖) if the list only showed events with seats left; keyset pagination (📋) instead of `OFFSET` if the
+list gets pages. All three are explained in [indexing](concepts/indexing.md#9-alternatives-and-when-to-choose-them).
 
 ### 10. What breaks, and how we'd notice
 
-The table is empty (seed not run): "No upcoming events". The web server cannot reach the api:
+The table is empty (seed not run): "No upcoming events". The index is missing (migration `0002` not
+applied): the page still works, but the query reads and sorts the whole table, which only shows with
+many rows (check with `EXPLAIN`, [explain-analyze](concepts/explain-analyze.md)). Postgres ignoring the
+index on a tiny table is normal, not a failure. The web server cannot reach the api:
 slower page, browser fetch, a log line from `prefetchEvents`. `API_INTERNAL_URL` missing: the error
 boundary with an error id. The api is down entirely: the browser's error state and Retry button. The
 query gets slow as the table grows: the list chunk arrives later (the frame does not), and nothing alerts us yet.
+Adding an index to a big live table is its own risk: plain `CREATE INDEX` blocks writes while it runs, and
+`CONCURRENTLY` cannot run in a migration transaction ([indexing](concepts/indexing.md#10-what-breaks-and-how-wed-notice)).
 
 ### 13. Interview answers at 3 levels
 
@@ -920,13 +941,18 @@ it behind `<Suspense>`, and `HydrationBoundary` hands the cache to the client ho
 makes no data request; layers keep HTTP, rules and SQL apart; output is validated with a shared Zod
 schema. Lead: we measured before and after on production builds: titles in the HTML, Lighthouse 93 →
 98, TTFB 0.6 → 2.1 ms because a static file became a render; and the new web → api path is a
-deployment dependency (still missing on AWS).
+deployment dependency (still missing on AWS). On the database side, the same baseline-first habit: a
+B-tree on `starts_at` turns "Seq Scan + Sort" into "Index Scan under a Limit", checked with `EXPLAIN
+(ANALYZE, BUFFERS)` ([indexing](concepts/indexing.md), [explain-analyze](concepts/explain-analyze.md)).
 
 ### 14. Follow-up questions interviewers ask
 
 *Why is `now` a parameter?* The caller decides the clock, so tests can fix it. *Why does the browser
 not fetch again?* Same query key and a 30 s `staleTime`. *What if the server's call fails?* The list
-is not in the cache, and the browser fetches it like in Step 21.
+is not in the cache, and the browser fetches it like in Step 21. *Why index `starts_at` and not
+`seats_left`?* The query filters, sorts and limits on `starts_at`; nothing reads by `seats_left`, and it
+will be written on every booking. *Why might Postgres ignore the index?* On 12 rows one page is cheaper
+to read than an index walk.
 
 ### 15. Say it in 30 seconds
 
@@ -937,8 +963,8 @@ Lighthouse from 93 to 98, at the cost of a per-request render."
 
 ### 16. Status
 
-✅ built locally (CSR baseline and SSR with streaming). SSR on AWS: 🟡, the web task cannot reach the
-api yet ([server-to-server-calls](concepts/server-to-server-calls.md)). Caching is planned.
+✅ built locally (CSR baseline, SSR with streaming, and the `starts_at` index). SSR on AWS: 🟡, the web
+task cannot reach the api yet ([server-to-server-calls](concepts/server-to-server-calls.md)). Caching is planned.
 
 ---
 

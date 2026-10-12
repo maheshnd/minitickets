@@ -6,7 +6,7 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 store users in Postgres and sessions in Redis, and run on AWS behind CloudFront and a load balancer.
 
 Today it can sign up, log in, show a private dashboard, log out and list upcoming events
-(`/events`, rendered on the server with streaming, not cached yet). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
+(`/events`, rendered on the server with streaming, not cached yet; its query uses an index on `starts_at`). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
 Every name below is a real name from the code.
 
 ## 1. The whole system today
@@ -18,7 +18,7 @@ flowchart TB
     alb["ALB :80<br/>/trpc/* → api, rest → web"]
     web["web task<br/>Next.js :3000"]
     api["api task<br/>Fastify + tRPC :4000"]
-    rds[("RDS Postgres 17<br/>users, events")]
+    rds[("RDS Postgres 17<br/>users, events<br/>(index on starts_at)")]
     valkey[("ElastiCache Valkey<br/>sessions")]
     aws["ECR · Secrets Manager<br/>CloudWatch Logs"]
     ci["GitHub Actions CI<br/>(CD: planned)"]

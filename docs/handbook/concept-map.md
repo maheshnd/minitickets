@@ -86,7 +86,7 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | WebSockets, Server-Sent Events, long polling | 📖 | Explain-only | `realtime-transports` · P5 |
 | API gateway | 📖 | Explain-only | `api-gateway` · P5 |
 | API versioning | 📖 | Explain-only | `api-versioning` · P5 |
-| Pagination (offset vs cursor) | 📖 | Explain-only | `pagination` · P5 |
+| Pagination (offset vs cursor) | 📖 | Explain-only (`listUpcoming` has `limit 50`, no offset; keyset is explained in [`indexing`](concepts/indexing.md)) | `pagination` · P5 |
 
 ## Data
 
@@ -98,7 +98,8 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | Seed data (safe to run twice) | ✅ | `api/db/seed.ts` → `rows`, `onConflictDoNothing()` | [`seed-data`](concepts/seed-data.md) |
 | Connection pooling | ✅ | `api/db/client.ts` → `pool` (`max: 10`) | [`connection-pooling`](concepts/connection-pooling.md) |
 | Unique constraint vs check-then-insert (race condition) | ✅ | `api/services/auth.ts` → `signup`; `api/queries/users.ts` → `create`, `isUniqueViolation` | [`unique-constraint-race`](concepts/unique-constraint-race.md) |
-| Indexes (B-tree) | 🟡 | `api/db/schema/users.ts` → `email … .unique()` (Postgres backs it with an index). `events` has none yet. | [`indexing`](concepts/indexing.md) |
+| Indexes (B-tree) | ✅ | `api/db/schema/events.ts` → `events` (`index("events_starts_at_idx")`); `api/queries/events.ts` → `listUpcoming`; `api/db/schema/users.ts` → `email … .unique()`. Composite, partial and keyset pagination: 📖 / 📋, in the card | [`indexing`](concepts/indexing.md) |
+| EXPLAIN and EXPLAIN ANALYZE (reading query plans) | 📖 | Explain-only (run by hand in `psql`; the card has a runbook for `listUpcoming`) | [`explain-analyze`](concepts/explain-analyze.md) |
 | SQL vs NoSQL | ✅ | `api/db/schema/users.ts` → `users` (SQL); `api/queries/sessions.ts` → `keyFor` (key-value) | [`sql-vs-nosql`](concepts/sql-vs-nosql.md) |
 | Transactions and ACID | 📖 | Explain-only (every write today is one statement) | `acid-transactions` · P5 |
 | Isolation levels | 📖 | Explain-only | `isolation-levels` · P5 |

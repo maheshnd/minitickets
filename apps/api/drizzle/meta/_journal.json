@@ -15,6 +15,13 @@
       "when": 1791829825295,
       "tag": "0001_salty_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791840749809,
+      "tag": "0002_mixed_karen_page",
+      "breakpoints": true
     }
   ]
 }

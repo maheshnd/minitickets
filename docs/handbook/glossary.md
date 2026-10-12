@@ -80,7 +80,7 @@ flowchart LR
 - **Breakpoint (CSS)** – a screen width where the layout changes. Tailwind's `sm:` prefix applies
   from the small breakpoint up.
 - **B-tree index** – the default kind of database index: a sorted tree that makes lookups by a
-  column fast.
+  column fast, and walks in order, so it also serves `ORDER BY` and `LIMIT`. Ours: `events_starts_at_idx`.
 - **Backpressure** – a way for a busy part of a system to tell callers to slow down instead of
   collapsing.
 - **Backup / snapshot** – a saved copy of a database at a point in time. RDS keeps ours for 1 day.
@@ -96,6 +96,7 @@ flowchart LR
 - **Budget action** – an AWS Budgets feature that applies an IAM policy or stops resources when a
   threshold is reached. Not used by us.
 - **Budget (AWS Budgets)** – an AWS feature that emails when spending passes a limit. Ours: $20 a month.
+- **Buffers (EXPLAIN)** – the 8 kB pages a plan step touched. `shared hit` = found in Postgres's memory cache, `shared read` = read from disk. Shown by `EXPLAIN (ANALYZE, BUFFERS)`.
 - **Build argument (ARG)** – a value passed to `docker build` (`--build-arg`). Ours:
   `NEXT_PUBLIC_API_URL` in the web Dockerfile, empty by default.
 - **BuildKit** – Docker's modern build engine. Gives cache mounts (`RUN --mount=type=cache`) and the
@@ -161,6 +162,7 @@ flowchart LR
   TypeScript types directly.
 - **Coerce (Zod)** – convert before checking: `z.coerce.number()` turns the env string `"4000"` into
   the number `4000`.
+- **Composite index** – one index on several columns, like `(user_id, created_at)`. Sorted by the first column, then the second inside each first value, so it only helps queries that use the leading column(s). 📖 explain-only for us.
 - **Concept map** – [concept-map.md](concept-map.md): the hub table of every concept.
 - **Condition (IAM)** – an extra "only if" in a policy statement, e.g. only when
   `aws:SourceAccount` is our account.
@@ -184,6 +186,7 @@ flowchart LR
   origin unless that origin allows it.
 - **Cost Anomaly Detection** – an AWS feature that alerts on unusual spending. Not used by us.
 - **CQRS** – using separate models for writing data and for reading it.
+- **CREATE INDEX CONCURRENTLY** – a way to build an index without blocking writes to the table. Slower, and it cannot run inside a transaction, so it does not fit in a drizzle migration. Plain `CREATE INDEX` blocks writes while it runs.
 - **Credential stuffing** – trying username/password pairs leaked from other sites. User enumeration
   and missing rate limits make it easier.
 - **CSR (client-side rendering)** – the browser gets the page frame and then fetches the data and draws it. Ours: `/events` in Step 21; since Step 22 only the fallback when the server could not fetch ([card](concepts/csr-vs-ssr.md)).
@@ -267,7 +270,7 @@ flowchart LR
   write logs.
 - **Expand and contract** – changing a database schema in safe steps: add the new shape, move the code, then remove the old shape.
 - **EXPLAIN** – a Postgres command that shows how a query will run (index scan or sequential scan).
-  `EXPLAIN ANALYZE` also runs it and shows real timings.
+  `EXPLAIN ANALYZE` also runs it and shows real timings. See [explain-analyze](concepts/explain-analyze.md).
 - **Explain-only (📖)** – a handbook status: not in our app and not planned; explained only.
 - **Explicit deny** – a `"Effect": "Deny"` statement. It beats every allow.
 
@@ -298,6 +301,7 @@ flowchart LR
 
 - **gcTime (TanStack Query)** – how long an unused cache entry is kept before it is deleted. Default
   5 minutes in the browser.
+- **generate_series** – a Postgres function that produces a list of numbers, like `generate_series(1, 200000)`. We use it to make 200 000 fake rows for `EXPLAIN` experiments.
 - **Global service** – an AWS service that exists once per account, not per region (IAM,
   CloudFront, Budgets).
 - **Golden signals** – the four basic service measurements: latency, traffic, errors, saturation.
@@ -318,6 +322,7 @@ flowchart LR
   **Readiness** = can it do real work right now (`/ready`).
 - **High availability (HA)** – the system keeps working when one part (a task, an AZ) fails.
 - **Horizontal scaling** – more copies of a server. **Vertical scaling** – a bigger server.
+- **HOT update (Postgres)** – "heap-only tuple": an update that changes no indexed column, so Postgres does not need to touch the indexes. One reason not to index columns that change often, like `seats_left`.
 - **HTML-limited bot (Next.js)** – a crawler or link-preview bot that reads only HTML. Next.js recognises them by user agent and waits for the page metadata before streaming. The list includes `Chrome-Lighthouse`.
 - **HTTP status code** – the 3-digit result of an HTTP request: 200 OK, 400 bad input, 401 not logged in, 403 forbidden, 404 not found, 409 conflict, 500 server error, 503 unavailable.
 - **HTTP/2, HTTP/3** – newer HTTP versions that are faster over one connection. CloudFront speaks
@@ -345,6 +350,7 @@ flowchart LR
 - **Image scanning** – checking an image's packages for known vulnerabilities. ECR scans ours on push.
 - **import type** – a TypeScript import used only for type checking and removed from the output. The
   web uses it for `AppRouter`, so no api code reaches the browser.
+- **Index Scan** – a plan step that walks an index to the matching spot and then reads those table rows. Seen for `listUpcoming` with `events_starts_at_idx`.
 - **Init process** – a tiny PID 1 that forwards signals and cleans up finished child processes
   (`initProcessEnabled` on our api task).
 - **In-process test** – a test that calls the API's code directly (no real network), e.g. with `createCallerFactory` or Fastify's `inject`.
@@ -356,6 +362,7 @@ flowchart LR
 - **Internet gateway (IGW)** – the VPC's door to the public internet.
 - **Invalidate / clear (TanStack Query)** – invalidate marks cached answers stale and refetches the
   ones in use; clear deletes the whole cache. Login invalidates `auth.me`; logout clears everything.
+- **Invalid index** – an index left half-built when `CREATE INDEX CONCURRENTLY` fails. It costs writes but is never used. Find it with `pg_index.indisvalid`, drop it, and retry.
 - **Isolation level** – how much concurrent database transactions may see of each other's changes.
 
 ## J
@@ -369,6 +376,7 @@ flowchart LR
 ## K
 
 - **Kafka** – a distributed log for event streams; consumers read at their own pace and can replay.
+- **Keyset (cursor) pagination** – getting the next page by remembering the last row seen (`where (starts_at, id) > (…) order by starts_at, id limit 50`) instead of skipping rows with `OFFSET`. Stays fast on deep pages. 📋 planned for us if the list needs pages.
 - **Key-value store** – a database that stores a value under a key and finds it by that key only.
   Redis and Valkey are key-value stores.
 - **KMS (Key Management Service)** – AWS's service for encryption keys. We use AWS-managed keys.
@@ -455,6 +463,7 @@ flowchart LR
 - **OAuth 2.0** – a standard for letting an app act for a user at another service. **PKCE** protects the authorization-code flow against stolen codes.
 - **Offline queue (ioredis)** – commands that ioredis holds while disconnected and sends after
   reconnecting. We turn it off so commands fail at once.
+- **OFFSET** – an SQL clause that skips N rows. Postgres still produces the skipped rows, so deep pages get slower. See Keyset pagination.
 - **OIDC federation** – letting an outside system (like GitHub Actions) get AWS role credentials
   without stored keys.
 - **On-demand** – normal capacity that AWS never takes back (the opposite of Spot).
@@ -479,6 +488,7 @@ flowchart LR
 - **Parse vs validate** – validating says yes or no; parsing also returns a cleaned, typed value (`"
    Bob@X.com "` → `"bob@x.com"`). Zod parses.
 - **Partial (🟡)** – a handbook status: part of the concept is in our code.
+- **Partial index** – an index on only some rows of a table, like `… (starts_at) where seats_left > 0`. Smaller, but only used when the query's `WHERE` implies the index's. 📖 explain-only for us.
 - **Partition (ARN)** – the first part of an ARN: which AWS (`aws`, `aws-cn`, `aws-us-gov`).
 - **Partitioning** – splitting one big table into parts inside one database. **Sharding** splits data across several databases.
 - **Passkey** – a login that uses a key stored on the user's device instead of a password
@@ -494,6 +504,7 @@ flowchart LR
 - **PITR (point-in-time recovery)** – restoring a database to any second inside its backup retention
   window.
 - **Planned (📋)** – a handbook status: not built yet, but a step doc says we will build it.
+- **Planner (query planner)** – the part of Postgres that picks the cheapest way to run a query, using estimates from table statistics. `EXPLAIN` shows what it chose.
 - **Playwright** – the tool our end-to-end tests use to drive a real browser.
 - **Policy (IAM)** – a JSON document of Allow/Deny statements.
 - **PostCSS** – a tool that transforms CSS with plugins. Tailwind v4 runs as a PostCSS plugin in our
@@ -598,6 +609,7 @@ flowchart LR
 - **Security group** – a stateful firewall attached to a resource; it lists what is allowed in
   and out. We have five: alb, web, api, db, redis.
 - **Seed data** – sample rows a script puts into a fresh database. Ours: `pnpm --filter @minitickets/api db:seed` ([card](concepts/seed-data.md)).
+- **Selectivity** – how much of a table a condition keeps. A condition that keeps few rows is selective, and an index helps. If it keeps most rows, a Seq Scan is cheaper.
 - **Sequential scan** – Postgres reading every row of a table to find matches; what happens without
   a useful index.
 - **Server Component** – a React component rendered only on the server; it sends HTML and no
@@ -692,6 +704,7 @@ flowchart LR
 - **TLS (Transport Layer Security)** – the encryption under HTTPS, `rediss://` and Postgres SSL.
 - **TLS termination** – the place where the encrypted connection ends and is decrypted. For
   browsers that is CloudFront.
+- **Top-N heapsort** – the sort method Postgres uses for `ORDER BY … LIMIT N`: it keeps only the best N rows in memory instead of sorting everything. Seen in the no-index plan for `listUpcoming`.
 - **Transit gateway** – a hub that joins many VPCs and on-premises networks. Not used by us.
 - **Transpile** – convert source code into another form of code (TypeScript → JavaScript). Next.js
   transpiles `@minitickets/shared` because it ships TypeScript.

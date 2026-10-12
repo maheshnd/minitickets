@@ -25,9 +25,38 @@ flowchart LR
 
 ---
 
-## 2026-10-12 · feat(events): render /events on the server with streaming, CSR vs SSR measured
+## 2026-10-12 · feat(events): index on events.starts_at, EXPLAIN ANALYZE explained
 
 Commit: filled in by the next handbook commit
+
+Why: Feature 1, step 3 adds the first non-key index (`events_starts_at_idx`) after the no-index
+baseline of steps 21 and 22, so the handbook must explain B-tree indexes properly and teach how to
+read query plans. No timings are recorded: the cards give commands, and every reader runs them to see
+their own numbers. Code changes in this commit only add the index and `@concept` anchors.
+
+- `concepts/indexing.md`: rewritten (🟡 → ✅). New: B-tree picture and Seq Scan vs Index Scan diagram,
+  anchors for `events.ts` and `listUpcoming`, costs of indexes and when not to add one, why Postgres
+  ignores an index, production `CREATE INDEX CONCURRENTLY` (not allowed in a transaction, drizzle's
+  migrator uses one, invalid indexes), composite (📖), partial (📖) and keyset vs OFFSET (📋), 3-level
+  interview answers.
+- `concepts/explain-analyze.md`: new card (📖 explain-only): plan as a tree, a line-by-line table for
+  reading `EXPLAIN` output, the "Try it yourself" runbook (200 000 rows with `generate_series`, before
+  and after, drop and recreate the index, reset), why a small table keeps a Seq Scan.
+- `app-story.md`: chapter 10b: sequence diagram note, code list (migration), cards, settings (the
+  index and why plain `CREATE INDEX`), trade-offs, alternatives, failure modes, interview answers,
+  status. The measured table is explicitly marked as taken before the index.
+- `concept-map.md`: `indexing` row 🟡 → ✅ with the new anchors; new `explain-analyze` row (📖);
+  pagination row points to the keyset explanation.
+- `00-big-picture.md`: intro and the RDS box mention the `starts_at` index.
+- `glossary.md`: Buffers (EXPLAIN), Composite index, CREATE INDEX CONCURRENTLY, generate_series,
+  HOT update, Index Scan, Invalid index, Keyset pagination, OFFSET, Partial index, Planner,
+  Selectivity, Top-N heapsort; B-tree index and EXPLAIN entries updated.
+
+---
+
+## 2026-10-12 · feat(events): render /events on the server with streaming, CSR vs SSR measured
+
+Commit: 34d3d0b
 
 Why: Feature 1, step 2 renders `/events` on the web server (prefetch + dehydrate +
 `HydrationBoundary`, `<Suspense>` streaming, `error.tsx`, a server-only `API_INTERNAL_URL`) and

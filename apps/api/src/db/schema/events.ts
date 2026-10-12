@@ -1,11 +1,11 @@
-import { check, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // @concept: drizzle-schema
 // The `events` table: one row per event people can book seats for.
 // @concept: db-check-constraints
 // @concept: indexing
-// No extra indexes on purpose: we add one in a later step and measure the difference with EXPLAIN.
+// One extra index, on starts_at: it serves listUpcoming (see queries/events.ts). Added in Feature 1, step 3.
 export const events = pgTable(
   "events",
   {
@@ -25,5 +25,8 @@ export const events = pgTable(
     check("events_total_seats_positive", sql`${table.totalSeats} > 0`),
     check("events_seats_left_not_negative", sql`${table.seatsLeft} >= 0`),
     check("events_seats_left_within_total", sql`${table.seatsLeft} <= ${table.totalSeats}`),
+    // 4. A B-tree index on starts_at, the one column listUpcoming filters AND sorts on.
+    //    Without it Postgres reads every row and sorts them; with it, it jumps to "now" and reads 50 rows.
+    index("events_starts_at_idx").on(table.startsAt),
   ],
 );
