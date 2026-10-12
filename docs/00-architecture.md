@@ -6,6 +6,9 @@ Boxes marked "planned" are not built yet.
 Last updated: Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
 `trustProxy`) and the deploy-day runbook ([20](20-deploy-day.md)).
 
+The same system explained **by concept** (interview-ready, tied to the code) is in the
+[handbook](handbook/README.md); start with its [big picture](handbook/00-big-picture.md).
+
 ## 1. The whole system
 
 ```mermaid

@@ -12,6 +12,7 @@
     "test:e2e": "pnpm --filter @minitickets/web test:e2e",
     "lint": "eslint .",
     "test": "vitest run",
+    "docs:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-concepts.ts",
     "images:push": "bash scripts/push-images.sh",
     "infra:migrate": "bash scripts/run-migrations.sh",
     "infra:graph": "cd infra && pulumi stack graph deps.dot"

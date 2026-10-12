@@ -36,6 +36,7 @@ docs/            One file per step, in plain English.
 pnpm install      install everything
 pnpm dev          run web (:3000) and api (:4000) together
 pnpm typecheck    tsc --noEmit in every package
+pnpm docs:check   handbook and code agree (@concept anchors <-> cards <-> concept map)
 pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
 cd infra && pulumi preview   show what infra would change (read-only). The owner runs `pulumi up`.
@@ -83,6 +84,19 @@ Every `docs/NN-*.md` is written for a beginner.
   (a) the TRUST POLICY: who is allowed to use this role
   (b) the PERMISSION POLICY: what the role is allowed to do
   (c) which resource the role is attached to
+
+## Living handbook rule
+
+`docs/handbook/` explains every concept, tied to the code (spec: `docs/handbook/HANDBOOK_SPEC.md`).
+For every future feature or infra step, in the SAME commit:
+- add `@concept: <slug>` anchors to the new code (`//` in TS/JS, `#` in Dockerfile, YAML, shell);
+  comments only, never a behaviour change
+- add or update the concept cards in `docs/handbook/concepts/` (status 📋 -> 🟡 -> ✅)
+- update `concept-map.md`, the relevant story chapter (`infra-story.md` / `app-story.md`) and
+  `00-big-picture.md`
+- add an ADR in `docs/handbook/decisions/` if a design decision was made
+- add new words to `docs/handbook/glossary.md`
+- `pnpm docs:check` must pass
 
 ## Safety rules
 

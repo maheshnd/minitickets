@@ -33,6 +33,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # The handbook and the code must agree: every @concept anchor has a card and vice versa.
+      - run: pnpm docs:check
 
   # Real browser tests against the real app, Postgres and Redis.
   e2e:
