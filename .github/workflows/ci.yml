@@ -53,6 +53,9 @@ jobs:
       REDIS_URL: redis://localhost:6379
       # Baked into the web app at build time (`next build`), so it must be set before the build.
       NEXT_PUBLIC_API_URL: http://localhost:4000
+      # @concept: server-to-server-calls
+      # Read by the web SERVER at request time (not baked in): where it calls the API to render /events.
+      API_INTERNAL_URL: http://localhost:4000
 
     # Service containers: GitHub starts them before the steps and waits for the healthchecks.
     # Same pinned versions and healthchecks as docker-compose.yml.

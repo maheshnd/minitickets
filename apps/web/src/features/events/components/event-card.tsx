@@ -1,11 +1,9 @@
 import type { Event } from "@minitickets/shared";
-
-// @concept: csr-vs-ssr
-// The database stores startsAt in UTC. Intl.DateTimeFormat (no timezone given) shows it in the
-// viewer's own timezone and language, so the same event reads differently in Paris and Tokyo.
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
+import { EventDate } from "./event-date";
 
 // One event: title, when, where, and how many seats are left.
+// The date is its own small component (EventDate), because it must render the same text on the
+// server and in the browser during hydration, then switch to the viewer's timezone.
 export function EventCard({ event }: { event: Event }) {
   const soldOut = event.seatsLeft === 0;
 
@@ -19,7 +17,9 @@ export function EventCard({ event }: { event: Event }) {
           </span>
         )}
       </div>
-      <p className="mt-1 text-sm text-gray-700">{dateFormat.format(new Date(event.startsAt))}</p>
+      <p className="mt-1 text-sm text-gray-700">
+        <EventDate iso={event.startsAt} />
+      </p>
       <p className="text-sm text-gray-600">{event.venue}</p>
       <p className="mt-3 text-sm text-gray-600">
         {soldOut ? "No seats left" : `${event.seatsLeft} of ${event.totalSeats} seats left`}

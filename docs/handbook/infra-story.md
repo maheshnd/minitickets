@@ -337,6 +337,21 @@ failure.
 
 On-demand base + Spot; 2+ tasks across AZs; auto scaling; EC2 capacity for steady heavy load.
 
+**Planned: the web task calling the api task.** Server-side rendering of `/events` (app story 10b)
+needs the web task to call the api directly ([server-to-server-calls](concepts/server-to-server-calls.md)).
+Today nothing allows it: the ALB accepts only CloudFront, the api group accepts only the alb group,
+and the web task definition has no `API_INTERNAL_URL`. The planned fix is ECS Service Connect with a
+Cloud Map namespace (the api becomes `http://api:4000` inside the VPC) plus one rule api ← web on
+4000 ([service-connect](concepts/service-connect.md)). Other options: an internal ALB, or calling
+the public CloudFront URL ([docs/22](../22-events-ssr.md), section 7).
+
+```mermaid
+flowchart LR
+    web["web task"] -.->|"planned: Service Connect<br/>http://api:4000"| api["api task"]
+    alb["ALB<br/>(CloudFront only)"] --> web
+    alb --> api
+```
+
 ### 10. What breaks, and how we'd notice
 
 Stopped reasons: `CannotPullContainerError`, `ResourceInitializationError: unable to pull secrets`,
@@ -369,7 +384,7 @@ health checks, circuit breaker rollback and ECS Exec for debugging."
 
 ### 16. Status
 
-✅ built (dev sizing).
+✅ built (dev sizing). Planned: Service Connect so the web task can reach the api (SSR on AWS is 🟡 until then).
 
 ---
 

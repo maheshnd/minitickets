@@ -22,22 +22,51 @@ test("/events shows upcoming seeded events, not past ones, and the sold out badg
   await expect(page.getByRole("banner").getByRole("link", { name: "Events" })).toBeVisible();
 });
 
-test("a failing API shows the error message and a Retry button that recovers", async ({ page }) => {
-  // 1. Make the first events.list calls fail (a 500), then let later calls through.
-  //    The leading * matters: the tRPC client batches calls made together, so the URL can be
-  //    /trpc/auth.me,events.list (the header's "me" query travels in the same request).
-  let calls = 0;
-  await page.route("**/trpc/*events.list*", (route) => {
-    calls += 1;
-    return calls <= 3 ? route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) : route.continue();
+// @concept: csr-vs-ssr
+// @concept: streaming-suspense
+test.describe("with JavaScript disabled", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("the server's HTML already contains the event titles (server rendering)", async ({ page }) => {
+    // 1. No JavaScript runs, so nothing can fetch in the browser: whatever is here came from the server.
+    const response = await page.goto("/events");
+    const html = await response!.text();
+    expect(html).toContain("Indie Rock Showcase");
+    expect(html).toContain("Symphony Under the Stars");
+
+    // 2. The titles are real elements in the page, not just text inside a script.
+    //    They are "attached", not "visible": with streaming, React sends the finished list in a
+    //    hidden <div> after the skeleton, and a small inline script swaps it in. Without JavaScript
+    //    that swap never runs, so a no-JS visitor still sees the skeleton (see docs/22-events-ssr.md).
+    await expect(page.getByRole("heading", { name: "Indie Rock Showcase", includeHidden: true })).toBeAttached();
+    await expect(page).toHaveTitle("Upcoming events | MiniTickets");
   });
-  await page.goto("/events");
-
-  // 2. The query retries twice on a 500 (retry-policy), then shows the error.
-  //    (Next.js also has an invisible role="alert" element, so we pick ours by its text.)
-  await expect(page.getByRole("alert").filter({ hasText: "Something went wrong" })).toBeVisible({ timeout: 10_000 });
-
-  // 3. Retry works.
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("main").getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
 });
+
+// @concept: hydration
+test("the browser makes no events.list request: hydration reuses the server's data", async ({ page }) => {
+  // 1. Record every request the BROWSER sends. (The web server's own call to the API happens on
+  //    the server, so Playwright never sees it.) The tRPC client batches, so a browser fetch would
+  //    show up as /trpc/events.list or /trpc/auth.me,events.list: matching "events.list" catches both.
+  const eventsCalls: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("events.list")) eventsCalls.push(request.url());
+  });
+
+  // 2. Load the page and wait for the header's auth.me call. It is sent by a query after React has
+  //    hydrated, so when it arrives every query on the page has had its chance to fetch.
+  const authMe = page.waitForResponse((response) => response.url().includes("auth.me"));
+  await page.goto("/events");
+  await authMe;
+  await page.waitForLoadState("networkidle");
+
+  // 3. The events are on screen, yet the browser never asked the API for them.
+  await expect(page.getByRole("main").getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
+  expect(eventsCalls).toEqual([]);
+});
+
+// The old test "a failing API shows the error message and a Retry button" was removed in Step 22.
+// It made the BROWSER's events.list call fail with page.route(), but the browser no longer makes
+// that call (the test above proves it), and Playwright cannot reach the web server's call to the
+// API. The failure paths (API down -> the browser fetches itself; missing API_INTERNAL_URL ->
+// app/events/error.tsx) were checked by hand on a separate server; see docs/22-events-ssr.md.

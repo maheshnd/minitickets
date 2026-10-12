@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Frontend · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md), [09 dashboard](../../09-dashboard.md)
+Area: Frontend · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md), [09 dashboard](../../09-dashboard.md), [22 events SSR](../../22-events-ssr.md)
 
 ## 1. In one line
 
@@ -33,7 +33,8 @@ flowchart TB
 - Anchor: `apps/web/src/features/auth/components/login-form.tsx` · `handleSubmit` → `onError`: 400 field errors, 401 message under the form, else generic.
 - Anchor: `apps/web/src/features/account/hooks/use-profile.ts` · `useProfile`: a 401 sends the user to `/login?next=/dashboard`.
 - Anchor: `apps/web/src/features/account/components/profile-card.tsx` · `ProfileCard`: loading, generic error, or data.
-- Anchor: `apps/web/src/features/events/components/event-list.tsx` · `EventList`: loading skeleton, generic error with a Retry button, empty state.
+- Anchor: `apps/web/src/features/events/components/event-list.tsx` · `EventList`: loading skeleton, generic error with a Retry button, empty state (only reached when the browser fetches by itself since Step 22).
+- Anchor: `apps/web/src/app/events/error.tsx` · `EventsError`: Next.js error boundary for `/events`: generic message, `error.digest` as an id, Retry calls `retry()`.
 
 Step by step:
 
@@ -48,6 +49,12 @@ Step by step:
    internals, and the UI never shows raw errors either.
 6. Profile: a 401 means the cookie exists but the session doesn't (expired, logged out elsewhere).
    `useProfile` redirects; `ProfileCard` keeps showing "Loading…" meanwhile instead of an error.
+7. Errors **while the server renders** a page (Step 22, `/events`): a failed `events.list` call on the
+   server is not an error for the user (the browser fetches instead, step 5 applies). Anything that
+   *throws* during the render (a missing `API_INTERNAL_URL`, a bug) is caught by `app/events/error.tsx`.
+   In production Next.js hides the server error's message; the boundary shows our generic text and
+   `Error id: <digest>`, the id of the full error in the web server's log. Retry calls `retry()`,
+   which asks the server to render the page again.
 
 ## 5. See it yourself
 

@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Feature 1, step 1 (events list, no caching: [21](21-events-list.md)). Before that: Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
+Last updated: Feature 1, step 2 (`/events` rendered on the server with streaming, CSR vs SSR measured: [22](22-events-ssr.md)). Before that: Feature 1, step 1 (events list, no caching: [21](21-events-list.md)), Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
 `trustProxy`) and the deploy-day runbook ([20](20-deploy-day.md)).
 
 The same system explained **by concept** (interview-ready, tied to the code) is in the
@@ -20,17 +20,20 @@ flowchart TB
         pg[("Postgres<br/>users, events")]
         redis[("Redis")]
     end
-    planned["planned: events index,<br/>caching, server rendering"]
-    browser --> web
-    web --> api
+    planned["planned: events index,<br/>caching"]
+    browser -->|"pages"| web
+    browser -->|"/trpc (auth, forms)"| api
+    web -->|"server to server<br/>API_INTERNAL_URL"| api
     api --> pg
     api --> redis
     planned -.-> api
 ```
 
-The first events feature is built: `/events` (client-side rendering) calls `events.list`, which reads
-the `events` table. Nothing is cached yet. The planned boxes come in later steps, each measured
-against the baseline in [doc 21](21-events-list.md). In the AWS diagram below, the `events` table
+`/events` is rendered on the server: the web server calls `events.list` itself (server to server,
+`API_INTERNAL_URL`) and streams the HTML with the events in it; the browser reuses that data and
+does not call `events.list` again ([22](22-events-ssr.md)). Every other page still calls the api
+from the browser. Nothing is cached yet. The planned boxes come in later steps, each measured
+against the baselines in [doc 21](21-events-list.md) and [doc 22](22-events-ssr.md). In the AWS diagram below, the `events` table
 exists on RDS once the new migration is run (`pnpm infra:migrate`); the seed script is a laptop and CI tool only.
 
 ```mermaid
@@ -54,6 +57,7 @@ flowchart TB
     internet -.->|"blocked: alb group allows<br/>only CloudFront IPs"| alb
     alb -->|"everything else -> :3000"| webtask
     alb -->|"/trpc/* -> :4000"| apitask
+    webtask -.->|"planned: Service Connect<br/>(SSR of /events)"| apitask
     apitask -->|":5432"| rds
     apitask -->|":6379"| cache
     laptop -->|"push arm64 images<br/>tag = git SHA"| ecr
@@ -68,6 +72,9 @@ Reading the AWS diagram: the browser talks only to **CloudFront**, over HTTPS (f
 `*.cloudfront.net` certificate), so the Secure session cookie and login work ([19](19-infra-cloudfront.md)).
 CloudFront caches the built `/_next/static/*` files at the edge and passes everything else on.
 The hop from CloudFront to the ALB is plain http in dev (production: HTTPS there too).
+The dotted web → api arrow is **planned**: server rendering of `/events` needs the web task to call
+the api directly, and today nothing allows that (the ALB takes only CloudFront, the api takes only
+the ALB, and the web task has no `API_INTERNAL_URL`), so "SSR on AWS" is 🟡 ([22](22-events-ssr.md), section 7).
 Two locks keep everyone else out of the ALB: its security group allows port 80 **only** from
 CloudFront's IP ranges (a managed prefix list), and its listener answers **403** unless the request
 carries CloudFront's secret `X-Origin-Verify` header. Every other arrow into a box inside the VPC is
@@ -160,3 +167,4 @@ service outside our VPC too.
 | [19](19-infra-cloudfront.md) | AWS CloudFront + origin protection (switchable, part of entry) | CloudFront distribution (`*.cloudfront.net` HTTPS, 3 cache behaviors: static cached, `/trpc/*` and pages never cached), `appUrl`; alb group: port 80 from the CloudFront prefix list only (443 rule removed); `X-Origin-Verify` secret header, listener default 403 + 2 header rules; api `WEB_ORIGIN` = `appUrl`, `TRUST_PROXY_HOPS` = 2 + Fastify `trustProxy` | 13 (alb group), 18 (ALB, target groups, listener), 17 (api task definition) |
 | [20](20-deploy-day.md) | Deploy day (runbook) | Nothing new. One ordered runbook for the whole stack: prepare, push, data, compute + entry, migrate, verify, console tour, off, troubleshooting | 12 – 19 |
 | [21](21-events-list.md) | Events list (read path baseline) | `events` table with 3 CHECK constraints, `db:seed` (12 events), `events.list` (public), `/events` page (client-side rendering), Events header link | 05 (database), 09 (procedure and hook pattern) |
+| [22](22-events-ssr.md) | Events SSR + streaming | `/events` rendered on the server: per-request `QueryClient`, server tRPC client (`API_INTERNAL_URL`, Zod-checked), prefetch + dehydrate + `HydrationBoundary`, `<Suspense>` streaming, `error.tsx`, `EventDate` (no hydration mismatch); CSR vs SSR measured. AWS: 🟡 (needs Service Connect, planned) | 21 (events list), 04 (TanStack Query, tRPC client), 11 (docker compose) |

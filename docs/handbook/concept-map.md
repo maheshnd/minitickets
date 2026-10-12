@@ -52,10 +52,13 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | Feature folders: components use hooks, never tRPC | ✅ | `web/features/account/hooks/use-profile.ts` → `useProfile`; `web/features/account/components/profile-card.tsx` → `ProfileCard` | [`feature-folders`](concepts/feature-folders.md) |
 | Client state vs server state | ✅ | `web/features/auth/components/signup-form.tsx` → `useState` (form state); `useSignup` (server state) | [`state-management`](concepts/state-management.md) |
 | Forms: shared-schema validation, accessible errors, focus | ✅ | `web/features/auth/components/signup-form.tsx` → `validate`, `focusField`; `web/components/ui/input.tsx` → `Input` | [`accessible-forms`](concepts/accessible-forms.md) |
-| Showing API errors in the UI (field errors, 401 redirect) | ✅ | `signup-form.tsx` → `handleSubmit` (`onError`); `web/features/account/hooks/use-profile.ts` → `useProfile` | [`ui-error-handling`](concepts/ui-error-handling.md) |
+| Showing API errors in the UI (field errors, 401 redirect, error boundary) | ✅ | `signup-form.tsx` → `handleSubmit` (`onError`); `web/features/account/hooks/use-profile.ts` → `useProfile`; `web/app/events/error.tsx` → `EventsError` | [`ui-error-handling`](concepts/ui-error-handling.md) |
 | Tailwind CSS (utility classes) | ✅ | `apps/web/postcss.config.mjs`; `web/app/globals.css` | [`tailwind`](concepts/tailwind.md) |
-| Client-side vs server-side rendering | 🟡 | `web/features/events/hooks/use-events.ts` → `useEvents` (CSR built); SSR planned | [`csr-vs-ssr`](concepts/csr-vs-ssr.md) |
-| Rendering strategies: SSR, SSG, ISR, streaming | 📖 | Explain-only | `rendering-strategies` · P5 |
+| Client-side vs server-side rendering (both measured) | 🟡 | `web/app/events/page.tsx` → `EventsPage`; `web/features/events/server/prefetch-events.ts` → `prefetchEvents`; `web/features/events/hooks/use-events.ts` → `useEvents`. CSR ✅, SSR ✅ locally, SSR on AWS 🟡 | [`csr-vs-ssr`](concepts/csr-vs-ssr.md) |
+| Streaming with `<Suspense>` | ✅ | `web/app/events/page.tsx` → `EventsPage` (`<Suspense>`); `web/features/events/components/event-list-skeleton.tsx` → `EventListSkeleton` | [`streaming-suspense`](concepts/streaming-suspense.md) |
+| Hydration and handing server data to the browser (dehydrate, `HydrationBoundary`) | ✅ | `web/lib/trpc/server.ts` → `getQueryClient`; `web/app/events/page.tsx` → `EventListWithServerData`; `web/features/events/components/event-date.tsx` → `EventDate` | [`hydration`](concepts/hydration.md) |
+| Server-to-server calls: web server → api (`API_INTERNAL_URL`) | 🟡 | `web/lib/server-env.ts` → `getServerEnv`; `web/lib/trpc/server.ts` → `getServerTrpc`. Not on AWS yet | [`server-to-server-calls`](concepts/server-to-server-calls.md) |
+| Rendering strategies: SSG, ISR (SSR and streaming: see above) | 📖 | Explain-only | `rendering-strategies` · P5 |
 | Optimistic updates | 📖 | Explain-only | `optimistic-updates` · P5 |
 | Web performance: Core Web Vitals, bundle size, code splitting | 📖 | Explain-only | `web-vitals` · P5 |
 
@@ -71,7 +74,7 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | Layered architecture: procedures → services → queries | ✅ | `api/procedures/auth.ts` → `authRouter`; `api/services/auth.ts` → `login`; `api/queries/users.ts` → `findByEmail` | [`layered-api`](concepts/layered-api.md) |
 | Central error handling: business error → HTTP status | ✅ | `api/errors.ts` → `AppError`; `api/trpc/init.ts` → `codeByKind`, `errorFormatter`; `api/app.ts` → `setErrorHandler` | [`error-handling`](concepts/error-handling.md) |
 | Validation at boundaries: input and output schemas | ✅ | `api/procedures/auth.ts` → `.input(SignupInput)`, `.output(PublicUserSchema)`; `packages/shared/src/schemas/auth.ts` | [`validation-at-boundaries`](concepts/validation-at-boundaries.md) |
-| Config validation: fail fast at startup | ✅ | `api/config/env.ts` → `EnvSchema`; `api/config/database.ts` → `DatabaseEnvSchema` | [`config-validation`](concepts/config-validation.md) |
+| Config validation: fail fast at startup | ✅ | `api/config/env.ts` → `EnvSchema`; `api/config/database.ts` → `DatabaseEnvSchema`; `web/lib/server-env.ts` → `getServerEnv` (at request time) | [`config-validation`](concepts/config-validation.md) |
 | HTTP methods and status codes | ✅ | `api/trpc/init.ts` → `codeByKind`; `api/app.ts` → `/ready` (503) | [`http-status-codes`](concepts/http-status-codes.md) |
 | Idempotency | 🟡 | `api/services/auth.ts` → `logout` (idempotent). Signup has no idempotency key. | [`idempotency`](concepts/idempotency.md) |
 | Stateless API servers | ✅ | `api/queries/sessions.ts` (sessions live in Redis, not in process memory) | [`stateless-servers`](concepts/stateless-servers.md) |
@@ -235,6 +238,7 @@ browser waits.
 | Fargate Spot | ✅ | `infra/compute/service.ts` → `capacityProviderStrategies`; `scripts/run-migrations.sh` → `--launch-type FARGATE` (not Spot) | [`fargate-spot`](concepts/fargate-spot.md) |
 | Execution role vs task role | ✅ | `infra/compute/iam.ts` → `createIamRoles`; `infra/compute/web-iam.ts` → `createWebIamRole` | [`execution-vs-task-role`](concepts/execution-vs-task-role.md) |
 | ECS Exec: a shell inside a running task | ✅ | `infra/compute/iam.ts` → `taskExec`; `infra/compute/service.ts` → `enableExecuteCommand` | [`ecs-exec`](concepts/ecs-exec.md) |
+| ECS Service Connect / Cloud Map: web task → api task | 📋 | Not built. Planned for SSR on AWS (see [docs/22](../22-events-ssr.md), section 7) | [`service-connect`](concepts/service-connect.md) |
 | ARM64 (Graviton) images and tasks | ✅ | `infra/compute/task.ts` → `runtimePlatform`; `scripts/push-images.sh` → `--platform linux/arm64`; `infra/data/postgres.ts`, `infra/data/cache.ts` → `t4g` classes | [`arm64-graviton`](concepts/arm64-graviton.md) |
 | Auto scaling | 📖 | Explain-only | `autoscaling` · P5 |
 | EC2 vs Fargate vs EKS vs Lambda | 📖 | Explain-only (we only built Fargate) | `compute-options` · P5 |

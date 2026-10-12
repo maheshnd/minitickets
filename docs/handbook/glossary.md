@@ -36,6 +36,7 @@ flowchart LR
 - **Anchor (code anchor)** – a comment `@concept: <slug>` at the exact place a concept lives in the
   code. Checked by `pnpm docs:check`.
 - **API gateway** – a front door service that routes, authenticates and rate-limits API calls for many backends. Not used by us.
+- **API_INTERNAL_URL** – the address the web *server* uses to call the api (server to server). The browser never uses it. Ours: `apps/web/src/lib/server-env.ts`; `http://localhost:4000` locally, `http://api:4000` in docker compose, not set on AWS yet.
 - **App Router** – Next.js's routing system: the folders under `apps/web/src/app/` become URLs.
 - **App Runner** – AWS's simplest managed service for container web apps. Not used by us.
 - **argon2id** – a password-hashing algorithm that is slow and memory-hungry on purpose, so
@@ -50,6 +51,7 @@ flowchart LR
 - **Assistive technology** – tools people use to read or operate a page, like screen readers
   (VoiceOver, NVDA) or keyboard-only navigation.
 - **AssumeRole** – the STS call that "puts on" a role and returns temporary credentials.
+- **Async Server Component** – a Server Component written as an `async` function, so it can `await` data while it renders. Ours: `EventListWithServerData` in `apps/web/src/app/events/page.tsx`.
 - **Atomic** – happens completely or not at all, with nothing in between that others can see. A
   Postgres insert with a unique check is atomic.
 - **Attack surface** – everything an attacker could try to use: open ports, packages, endpoints.
@@ -119,6 +121,7 @@ flowchart LR
 - **Cache policy (CloudFront)** – how long to keep a copy and what makes two requests "the same".
   We use AWS's `Managed-CachingOptimized` and `Managed-CachingDisabled`.
 - **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together.
+- **cache() (React)** – a React function that remembers a result for the length of one server request. Ours: `getQueryClient` gives each request its own `QueryClient`.
 - **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache. Not used by us.
 - **Canary deploy** – send a small share of traffic to the new version first, then more if it is healthy.
 - **CAP theorem** – a distributed data store that is split by a network failure must choose between
@@ -142,6 +145,8 @@ flowchart LR
   retrying forever. ECS has one for deployments.
 - **Client Component** – a React component that also runs in the browser (it starts with
   `"use client"`), so it can have state and click handlers.
+- **Clock skew** – two computers' clocks disagree. It matters when one side judges the age of data stamped by the other.
+- **Cloud Map** – AWS's service registry: names (like `api`) and where each one runs right now. ECS Service Connect uses it. Not built (planned).
 - **CloudFront** – AWS's CDN. In our app: HTTPS in front of the ALB, `infra/src/entry/cdn.ts`.
 - **CloudTrail** – AWS's audit log of API calls made in an account.
 - **CloudWatch alarm** – watches one metric and notifies (for example through SNS) when it crosses a
@@ -150,6 +155,7 @@ flowchart LR
   each task writes its own **log stream** (a chapter) in it.
 - **CloudWatch Logs Insights** – a query language for searching and counting log lines in log
   groups.
+- **CLS (Cumulative Layout Shift)** – how much visible content moves while a page loads; 0 means nothing moved. A Core Web Vital. Ours: 0.084 on the client-rendered `/events` (the footer moved), usually 0 with SSR.
 - **Cluster (ECS)** – a named group that ECS services and tasks belong to. Ours: `minitickets-dev`.
 - **Codegen** – generating code (like an API client) from a schema file. tRPC avoids it by sharing
   TypeScript types directly.
@@ -180,7 +186,7 @@ flowchart LR
 - **CQRS** – using separate models for writing data and for reading it.
 - **Credential stuffing** – trying username/password pairs leaked from other sites. User enumeration
   and missing rate limits make it easier.
-- **CSR (client-side rendering)** – the browser gets the page frame and then fetches the data and draws it. Ours: `/events` ([card](concepts/csr-vs-ssr.md)).
+- **CSR (client-side rendering)** – the browser gets the page frame and then fetches the data and draws it. Ours: `/events` in Step 21; since Step 22 only the fallback when the server could not fetch ([card](concepts/csr-vs-ssr.md)).
 - **CSRF (cross-site request forgery)** – another website tricking your browser into sending a
   request to ours, with your cookie.
 - **Customer-managed key (KMS)** – a KMS key that you create and control (policy, rotation,
@@ -197,6 +203,7 @@ flowchart LR
   inspected instead of lost.
 - **Default deny (implicit deny)** – IAM's starting answer: anything not allowed is denied.
 - **Defense in depth** – several independent protections, so one mistake does not expose everything.
+- **Dehydrate / hydrate (TanStack Query)** – turn the query cache into plain JSON on the server (dehydrate) and load it into the browser's cache (hydrate). Ours: `prefetchEvents` and `HydrationBoundary`.
 - **Dependabot** – GitHub's bot that opens pull requests to update vulnerable or old dependencies.
   Not used by us.
 - **Deployment circuit breaker (ECS)** – stops an ECS deployment whose new tasks keep failing and
@@ -205,6 +212,7 @@ flowchart LR
   requests already in flight can finish. Ours: 30 seconds.
 - **Digest (image)** – the sha256 hash of an image's content. Unlike a tag, it can never point at
   different content.
+- **Digest (Next.js error)** – an id Next.js gives an error thrown on the server. The browser gets only the id; the full error is in the web server's log under the same id. Ours: shown as "Error id" by `app/events/error.tsx`.
 - **Directive ("use client")** – a string at the top of a file that tells Next.js this is a Client
   Component, sent to the browser as JavaScript.
 - **Disaster recovery (DR)** – how we get the system and its data back after a big failure.
@@ -216,6 +224,7 @@ flowchart LR
 - **Drift** – the real cloud no longer matches what the IaC code and state expect, usually because
   someone changed it by hand.
 - **Drizzle** – the TypeScript ORM (database library) we use to define tables and write queries.
+- **Dynamic rendering (Next.js)** – rendering a page on every request instead of once at build time. `export const dynamic = "force-dynamic"` forces it; the build output marks such pages `ƒ`. Ours: `/events`.
 - **DynamoDB** – AWS's managed NoSQL key-value and document database. Not used by us.
 
 ## E
@@ -239,6 +248,7 @@ flowchart LR
   `PORT=4000`.
 - **Envelope encryption** – data is encrypted with a data key, and the data key is encrypted with a
   KMS key.
+- **Error boundary** – a component that catches errors thrown while its children render and shows a fallback instead of a broken page. In Next.js it is an `error.tsx` file. Ours: `apps/web/src/app/events/error.tsx`.
 - **errorMapper** – our tRPC middleware that turns business errors into HTTP-style errors
   (`apps/api/src/trpc/init.ts`).
 - **esbuild** – a very fast JavaScript/TypeScript bundler. Builds our api (`apps/api/build.mjs`).
@@ -271,6 +281,7 @@ flowchart LR
 - **Fargate Spot** – Fargate on spare AWS capacity, much cheaper, but AWS can take it back with a
   2-minute warning.
 - **Fastify** – the Node.js web framework our api uses.
+- **FCP (First Contentful Paint)** – when the first text or image appears on screen.
 - **Feature flag** – a switch that turns a feature on or off without a new deploy.
 - **Feature folder** – `apps/web/src/features/<feature>/`: the components and hooks of one feature
   together.
@@ -307,13 +318,16 @@ flowchart LR
   **Readiness** = can it do real work right now (`/ready`).
 - **High availability (HA)** – the system keeps working when one part (a task, an AZ) fails.
 - **Horizontal scaling** – more copies of a server. **Vertical scaling** – a bigger server.
+- **HTML-limited bot (Next.js)** – a crawler or link-preview bot that reads only HTML. Next.js recognises them by user agent and waits for the page metadata before streaming. The list includes `Chrome-Lighthouse`.
 - **HTTP status code** – the 3-digit result of an HTTP request: 200 OK, 400 bad input, 401 not logged in, 403 forbidden, 404 not found, 409 conflict, 500 server error, 503 unavailable.
 - **HTTP/2, HTTP/3** – newer HTTP versions that are faster over one connection. CloudFront speaks
   them to browsers.
 - **HttpOnly** – a cookie flag: page JavaScript cannot read the cookie.
 - **HTTPS** – HTTP inside TLS: encrypted, and the server proves who it is.
 - **Hydration** – React attaching state and event handlers in the browser to HTML that the server
-  already rendered.
+  already rendered, without drawing it again ([card](concepts/hydration.md)).
+- **Hydration mismatch** – the server's HTML and the browser's first render differ, so React logs an error and redraws that part in the browser. We avoid one for dates with `EventDate`.
+- **HydrationBoundary** – a TanStack Query component that takes a dehydrated cache (JSON from the server) and puts it into the browser's cache. Ours: in `apps/web/src/app/events/page.tsx`.
 
 ## I
 
@@ -338,6 +352,7 @@ flowchart LR
   Ours: `read-secrets`, `ecs-exec`.
 - **Inspector (Amazon)** – AWS's vulnerability scanner, used by ECR's enhanced scanning. Not used by
   us.
+- **Internal ALB** – a load balancer with no public address, reachable only inside the VPC. One option for web → api on AWS; not built.
 - **Internet gateway (IGW)** – the VPC's door to the public internet.
 - **Invalidate / clear (TanStack Query)** – invalidate marks cached answers stale and refetches the
   ones in use; clear deletes the whole cache. Login invalidates `auth.me`; logout clears everything.
@@ -364,6 +379,7 @@ flowchart LR
 - **Latency** – the time a request takes to travel to the server and back.
 - **Layer (Docker)** – one cached step of an image build. Unchanged layers are reused.
 - **Layered architecture** – our api's split: procedures (HTTP edge) → services (business logic) → queries (data stores).
+- **LCP (Largest Contentful Paint)** – when the biggest text block or image in view was drawn. A Core Web Vital. Ours: the heading "Upcoming events" on `/events`.
 - **LCU (Load Balancer Capacity Unit)** – how ALB usage beyond its fixed hourly price is measured
   and billed.
 - **Least outstanding requests** – an ALB algorithm that picks the target with the fewest requests
@@ -371,6 +387,7 @@ flowchart LR
 - **Least privilege** – give every role, user or rule only the permissions it needs.
 - **Lifecycle policy (ECR)** – rules that delete old images automatically. Ours: untagged after 1
   day, keep the newest 10 tagged.
+- **Lighthouse** – Google's tool that loads a page in Chrome, simulates a slow phone and network (the mobile preset), and reports timings and a 0-100 performance score. We ran the CLI, version 13.5.0.
 - **Lint** – automatic checks for suspicious code patterns. Ours: ESLint (`pnpm lint`).
 - **Listener (ALB)** – the ALB's "ear" on one port (ours: HTTP 80). Its **rules** decide where each
   request goes; the **default action** applies when no rule matches (ours: 403).
@@ -395,6 +412,7 @@ flowchart LR
   use AWS's list of CloudFront's origin-facing addresses.
 - **Man-in-the-middle** – an attacker between two parties who reads or changes their traffic.
   Checking TLS certificates stops it.
+- **Median** – the middle value of a sorted list. One odd run moves it less than it moves the average.
 - **Memory-hard** – an algorithm that needs a lot of memory per try, which makes cracking with GPUs
   expensive. argon2id is memory-hard.
 - **Mermaid** – a text format for diagrams that GitHub renders. All handbook diagrams use it.
@@ -481,6 +499,7 @@ flowchart LR
 - **PostCSS** – a tool that transforms CSS with plugins. Tailwind v4 runs as a PostCSS plugin in our
   web app.
 - **Postgres (PostgreSQL)** – the SQL database we use. On AWS: RDS Postgres 17.
+- **Prefetch (TanStack Query)** – fetching a query before a component asks for it and keeping the answer in the cache. `prefetchQuery` never throws. Ours: `prefetchEvents`.
 - **Preflight** – an `OPTIONS` request a browser sends before some cross-origin requests, to ask
   CORS permission.
 - **preStop hook** – a Kubernetes step that runs before a container gets SIGTERM, often a short
@@ -584,9 +603,12 @@ flowchart LR
 - **Server Component** – a React component rendered only on the server; it sends HTML and no
   component JavaScript to the browser.
 - **Server state vs client state** – data owned by the server and cached in the browser (TanStack Query) vs data that exists only in the browser (form fields, `useState`).
+- **Server-to-server call** – one server calling another directly, not through a browser. Ours: the web server calls the api to render `/events` ([card](concepts/server-to-server-calls.md)).
+- **Service Connect (ECS)** – an ECS feature that gives services private names (like `http://api:4000`) other services can call inside the VPC, through a proxy in each task. Planned ([card](concepts/service-connect.md)).
 - **Service container (GitHub Actions)** – a Docker container (like Postgres) that a CI job starts
   next to its steps. Our e2e job uses Postgres 17.6 and Redis 7.4.5.
 - **Service (ECS)** – keeps the wanted number of tasks running and replaces failed ones.
+- **Service discovery** – how one service finds the current address of another by name, even after tasks are replaced.
 - **Service-linked role** – a role AWS creates and owns so a service can act in our account.
 - **Session** – the server's memory that a browser is logged in. Ours: a Valkey/Redis key
   `session:<sha256 of the id>` with a 7-day TTL.
@@ -595,6 +617,7 @@ flowchart LR
   secret.
 - **SHA-256** – a hash function. We store the SHA-256 of the session id, never the id itself.
 - **Shield / WAF** – AWS Shield protects against DDoS floods; WAF (web application firewall) blocks bad requests by rules. Not used by us.
+- **Sidecar** – a helper container that runs next to the main container in the same task (for example Service Connect's proxy).
 - **SIGKILL** – a signal that ends a process at once; it can't be caught. ECS sends it when the app
   hasn't exited `stopTimeout` (default 30 s) after SIGTERM.
 - **SIGTERM** – the polite "please stop" signal. Docker and ECS send it before killing a process.
@@ -604,7 +627,7 @@ flowchart LR
   with form-like content types). JSON POSTs are not simple, so they get a preflight.
 - **Site (same-site)** – the registrable domain (like `example.com`), ignoring subdomains and ports.
   SameSite cookies are about sites; CORS is about origins.
-- **Skeleton (loading)** – grey placeholder shapes shown while data loads, so the page does not jump. Ours: `EventList`.
+- **Skeleton (loading)** – grey placeholder shapes shown while data loads, so the page does not jump. Ours: `EventListSkeleton`.
 - **SLI / SLO / error budget** – a measured indicator (e.g. % successful requests), the target for it (e.g. 99.9%), and how much failure the target still allows.
 - **Sliding expiration** – a session that is extended on each use, so active users stay logged in.
   Ours is fixed: 7 days after login.
@@ -621,9 +644,10 @@ flowchart LR
 - **SQS** – AWS's managed message queue. Not used by us.
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
 - **ssmmessages** – the AWS Systems Manager channels that ECS Exec uses.
-- **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Planned for a later step; `/events` is CSR today ([card](concepts/csr-vs-ssr.md)).
+- **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Ours: `/events` since Step 22, with streaming ([card](concepts/csr-vs-ssr.md)).
 - **Stale (TanStack Query)** – a cached answer that may be out of date and will be refetched on the
   next trigger (mount, window focus). With `staleTime` 0 (the default), answers are stale at once.
+- **staleTime (TanStack Query)** – how long an answer counts as fresh before it may be refetched. Default 0. Ours: 30 s for `useEvents`, so data from the server is not fetched again.
 - **Standalone output (Next.js)** – a build mode that copies only the files the app needs into one small server folder.
 - **Stateful firewall** – remembers allowed connections, so replies are allowed automatically.
 - **Stateless server** – keeps no user data in its own memory between requests, so any copy can
@@ -632,8 +656,10 @@ flowchart LR
 - **Sticky sessions** – the load balancer keeps sending one client to the same target. Off for us.
 - **stopTimeout (ECS)** – seconds between SIGTERM and SIGKILL when ECS stops a container. Default
   30; we don't set it.
+- **Streaming (HTML)** – sending one HTTP response in pieces: the first piece leaves before the last is ready. Ours: `/events` sends the frame, then the list ([card](concepts/streaming-suspense.md)).
 - **STS (Security Token Service)** – the AWS service that hands out temporary credentials for roles.
 - **Subnet** – a slice of the VPC's address range that lives in one AZ.
+- **Suspense** – a React component that marks a part of the page that may wait, and shows a fallback (ours: the skeleton) until it is ready.
 - **Switch (Pulumi config switch)** – our on/off settings `dataEnabled`, `computeEnabled`,
   `entryEnabled` in `infra/index.ts`, used to save money.
 - **Symmetric / asymmetric encryption** – one shared key for both directions / a public key to encrypt and a private key to decrypt. TLS uses both.
@@ -674,6 +700,7 @@ flowchart LR
 - **Trust policy** – the resource-based policy on a role that says who may assume it.
 - **trustProxy** – the Fastify setting that reads the real visitor IP from `X-Forwarded-For`.
   Ours trusts 2 hops on AWS.
+- **TTFB (time to first byte)** – the time from sending a request until the first byte of the answer arrives.
 - **TTL (time to live)** – how long a stored value lives before it is deleted automatically.
 - **Twelve-factor config** – keep configuration in environment variables, not in the code or the image.
 - **Type narrowing** – TypeScript learning a more exact type after a check. `isAuthed` narrows
@@ -686,6 +713,7 @@ flowchart LR
 - **Unit test** – a small, fast test of one function. Ours use Vitest.
 - **User enumeration** – an attacker finding out which emails have accounts, from different answers
   or different response times.
+- **useSyncExternalStore** – a React hook for values that live outside React. Its third argument is the value used on the server and during hydration; we use it so `EventDate` renders the same text on both sides.
 - **UUID** – a 128-bit random id, hard to guess. Our `users.id`.
 
 ## V

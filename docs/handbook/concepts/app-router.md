@@ -27,7 +27,7 @@ flowchart LR
 
 - Anchor: `apps/web/src/app/page.tsx` · `HomePage`: the `/` route; it only picks the feature to show (`LandingPage`).
 - Anchor: `apps/web/src/app/dashboard/page.tsx` · `DashboardPage`: the `/dashboard` route; a frame plus `ProfileCard`.
-- Anchor: `apps/web/src/app/events/page.tsx` · `EventsPage`: the `/events` route; a frame plus `EventList`.
+- Anchor: `apps/web/src/app/events/page.tsx` · `EventsPage`: the `/events` route; the heading plus a `<Suspense>` around the server-fetched `EventList` (Step 22). Its `error.tsx` sits in the same folder: route files are found by name.
 
 Step by step:
 

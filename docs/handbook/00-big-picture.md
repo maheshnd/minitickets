@@ -6,7 +6,7 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 store users in Postgres and sessions in Redis, and run on AWS behind CloudFront and a load balancer.
 
 Today it can sign up, log in, show a private dashboard, log out and list upcoming events
-(`/events`, not cached yet). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
+(`/events`, rendered on the server with streaming, not cached yet). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
 Every name below is a real name from the code.
 
 ## 1. The whole system today
@@ -26,6 +26,7 @@ flowchart TB
     cf -->|"http + X-Origin-Verify"| alb
     alb --> web
     alb --> api
+    web -.->|"planned: Service Connect<br/>(SSR of /events)"| api
     api -->|"TLS :5432"| rds
     api -->|"TLS :6379"| valkey
     aws -.->|"image, secrets at start; logs out"| api
@@ -38,6 +39,9 @@ How to read it:
 - **Solid arrows** are requests while the app runs. **Dotted arrows** happen around it: ECS pulls
   the image from ECR and reads secrets from Secrets Manager when a task starts, and every log line
   goes to CloudWatch Logs.
+- **Planned:** the web task calling the api directly. Locally the web server renders `/events` by
+  calling the api itself; on AWS nothing allows web → api yet, so "SSR on AWS" is 🟡
+  ([server-to-server-calls](concepts/server-to-server-calls.md), [service-connect](concepts/service-connect.md)).
 - **Planned:** continuous deployment. Today CI only checks the code and builds the images
   ([docs/10](../10-ci.md)); images are pushed from a laptop with `pnpm images:push`
   ([docs/16](../16-infra-ecr.md)) and deployed with `pulumi up` by the owner.
@@ -52,6 +56,7 @@ The same app also runs on a laptop. There, nothing sits in front of the two serv
 flowchart LR
     browser["Browser"] -->|"pages"| web["web :3000<br/>pnpm dev"]
     browser -->|"/trpc, cross-origin<br/>CORS + cookie"| api["api :4000<br/>pnpm dev"]
+    web -->|"/events: server to server<br/>API_INTERNAL_URL"| api
     api --> pg[("Postgres<br/>Docker")]
     api --> redis[("Redis<br/>Docker")]
 ```
@@ -59,6 +64,7 @@ flowchart LR
 | | Laptop (`pnpm dev`) | AWS |
 | --- | --- | --- |
 | Where the browser sends `/trpc` | `http://localhost:4000/trpc` (another origin, so CORS applies) | `/trpc` on the same origin; the ALB routes it |
+| Where the web **server** calls the api (rendering `/events`) | `API_INTERNAL_URL` = `http://localhost:4000` | not possible yet (planned: Service Connect) |
 | Session store | Redis 7.4 in Docker | Valkey 8.2 on ElastiCache (Redis-compatible) |
 | Database settings | `DATABASE_URL`, no TLS | `DB_HOST` … `DB_PASSWORD`, TLS with a verified certificate |
 | Cookie `Secure` flag | off (`NODE_ENV` is not `production`) | on (HTTPS through CloudFront) |
@@ -89,8 +95,10 @@ A logged-in user opens `https://<id>.cloudfront.net/dashboard` on AWS:
 10. `.output(ProfileSchema)` keeps only `id`, `email`, `createdAt`. The JSON goes back through the
     ALB and CloudFront. TanStack Query caches it and `ProfileCard` shows the email.
 
-A public request takes the same road without the session check: `/events` calls `events.list`, which
-reaches Postgres through the same three layers ([app story: 10b](app-story.md#10b-reading-events)).
+A public request takes a different first half: for `/events` the **web server** calls `events.list`
+itself (server to server), streams the HTML with the events in it, and the browser reuses that data
+without calling the api. The api side is the same three layers, without the session check
+([app story: 10b](app-story.md#10b-reading-events)).
 
 ## 3. The life of a login request
 

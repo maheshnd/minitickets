@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Frontend · Status: ✅ built · Step doc: [04 signup form](../../04-signup-form.md), [07 login](../../07-login-session.md), [21 events list](../../21-events-list.md)
+Area: Frontend · Status: ✅ built · Step doc: [04 signup form](../../04-signup-form.md), [07 login](../../07-login-session.md), [21 events list](../../21-events-list.md), [22 events SSR](../../22-events-ssr.md)
 
 ## 1. In one line
 
@@ -31,7 +31,7 @@ Two components ask for the same key; there is one request and one cached answer.
 
 - Anchor: `apps/web/src/providers/query-provider.tsx` · `QueryProvider`: creates one `QueryClient` per browser tab with our retry rules.
 - Anchor: `apps/web/src/features/auth/hooks/use-me.ts` · `useMe`: `useQuery(trpc.auth.me.queryOptions())`.
-- Anchor: `apps/web/src/features/events/hooks/use-events.ts` · `useEvents`: `useQuery(trpc.events.list.queryOptions())`, a second example of the same pattern (key `events.list`).
+- Anchor: `apps/web/src/features/events/hooks/use-events.ts` · `useEvents`: `useQuery(trpc.events.list.queryOptions(undefined, { staleTime: 30_000 }))`, a second example of the same pattern (key `events.list`), filled from the server since Step 22.
 
 Step by step (first example, `useMe`):
 
@@ -47,14 +47,21 @@ Step by step (first example, `useMe`):
    `staleTime` 0 (an answer is "stale" right away), so the query is fetched again when a component
    mounts or the window gets focus again; unused entries are removed after `gcTime` 5 minutes
    (`3e5` ms in `removable.js`).
-6. **Defaults we change:** `retry` ([retry-policy](retry-policy.md)). Mutations never retry.
+6. **Defaults we change:** `retry` ([retry-policy](retry-policy.md)). Mutations never retry. `staleTime` only for `useEvents` (30 s, because its data comes from the server).
 
-**Second example: the events list.** `useEvents` is `useQuery(trpc.events.list.queryOptions())`.
-It has no input, so the key is just the procedure path. `EventList` shows `isPending` as a skeleton,
-`isError` as a message with a Retry button (`refetch()`), and `data` as cards. The default `retry`
-rule applies: a 500 is tried again twice before the error appears; we saw this in
-`e2e/events.spec.ts`. Because the header's `auth.me` and `events.list` start at the same moment,
-the tRPC client sends them in one batched request (`/trpc/auth.me,events.list`).
+**Second example: the events list.** `useEvents` is `useQuery(trpc.events.list.queryOptions(undefined, { staleTime: 30_000 }))`.
+It has no input, so the key is just the procedure path (`[["events","list"],{"type":"query"}]`).
+`EventList` shows `isPending` as a skeleton, `isError` as a message with a Retry button
+(`refetch()`), and `data` as cards.
+
+Since Step 22 the cache is usually **filled on the server**: `prefetchEvents` runs the same query in a
+per-request `QueryClient` on the web server, and `HydrationBoundary` copies the result into the
+browser's cache ([hydration](hydration.md)). That is why `useEvents` sets `staleTime` to 30 s: with
+the default 0, the browser would treat the server's fresh data as stale and fetch it again on mount
+(an e2e test caught exactly that when we removed it). The browser fetches only if the server could
+not; then the default `retry` rule applies (a 500 is tried twice more before the error shows). In
+Step 21, before SSR, the header's `auth.me` and `events.list` started at the same moment, so the tRPC
+client sent them in one batched request (`/trpc/auth.me,events.list`).
 
 ## 5. See it yourself
 

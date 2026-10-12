@@ -22,7 +22,7 @@ flowchart LR
     p --> s["10 Postgres / Redis"]
 ```
 
-Chapter 10b is a second example request, reading the public events list. Chapter 11 follows an error back to the UI. Chapters 12-16 are the ground under it:
+Chapter 10b is a second example request, reading the public events list; there the *web server* makes the api call and streams the HTML (server-side rendering), next to the browser-only baseline. Chapter 11 follows an error back to the UI. Chapters 12-16 are the ground under it:
 [monorepo](#12-monorepo-and-shared-types), [validation](#13-validation-at-boundaries),
 [tests](#14-the-testing-pyramid), [Docker](#15-docker), [CI](#16-ci). Then the
 [app security story](#the-app-security-story) and [what we'd change for production](#what-wed-change-for-production).
@@ -786,106 +786,159 @@ fails fast, both clients survive connection errors, and Postgres timeouts are th
 
 ## 10b. Reading events
 
-A second example request, this one public and with no login: a visitor opens `/events`.
+A second example request, this one public and with no login: a visitor opens `/events`. It was
+rendered in the browser in Step 21 (the baseline) and is rendered on the server, with streaming,
+since Step 22. Both paths are shown, because the measured comparison is the point.
 
 ### 1. In one line
 
-The browser asks for the page frame, then a hook calls `events.list`, which goes procedure →
-service → query → Postgres and comes back as JSON the cards are drawn from. No caching yet: this is
-the baseline.
+The web server asks the API for `events.list` (procedure → service → query → Postgres), renders the
+list into the HTML, streams it after the page frame, and the browser reuses that data instead of
+asking again; if the server cannot get it, the browser fetches it itself, as in Step 21.
 
 ### 2. Real-life comparison
 
-Asking the ticket office what is on. You walk in (page), the clerk at the desk (procedure) checks you
-asked a proper question, a manager (service) decides "upcoming means starting after now", and the
+Asking the ticket office what is on. In Step 21 you got an empty programme and had to ask at the desk
+yourself. Now the usher (web server) phones the office (API) before you arrive and hands you a printed
+programme; the front page (frame) comes first, the list a moment later, in the same envelope. The
+clerk (procedure) checks the question, a manager (service) decides "upcoming means after now", the
 archivist (query) pulls the folders from the cabinet (Postgres).
 
 ### 3. Picture it
 
+The two paths side by side (Step 21 dotted, Step 22 solid):
+
+```mermaid
+flowchart LR
+    b["Browser"] -->|"1. GET /events"| w["web server<br/>Next.js"]
+    w -->|"2. events.list<br/>API_INTERNAL_URL"| a["api<br/>procedure → service → query"]
+    a --> d[("Postgres")]
+    w -->|"3. HTML stream:<br/>frame, then list"| b
+    b -->|"4. hydrate, reuse cache"| b
+    b -.->|"Step 21 (and fallback):<br/>GET /trpc/events.list"| a
+```
+
+Step 22 in time order:
+
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant H as useEvents hook
-    participant P as events.list procedure
-    participant S as service
-    participant Q as query
+    participant W as web server (page.tsx)
+    participant A as api (events.list)
     participant D as Postgres
-    B->>H: EventList renders
-    H->>P: GET /trpc/events.list
-    P->>S: listUpcomingEvents()
-    S->>Q: listUpcoming(now)
-    Q->>D: where starts_at > now order by starts_at limit 50
-    D-->>B: rows, then JSON, then cards
+    B->>W: GET /events
+    W-->>B: chunk 1: header, heading, skeleton
+    W->>A: GET /trpc/events.list (server to server)
+    A->>D: where starts_at > now order by starts_at limit 50
+    D-->>A: rows
+    A-->>W: events JSON
+    W-->>B: chunk 2: list HTML + dehydrated cache
+    Note over B: hydrate: useEvents finds the data, no request
 ```
 
 ### 4. Where in our code
 
-`web/app/events/page.tsx` → `EventsPage`; `web/features/events/components/event-list.tsx` →
-`EventList` (loading, error + Retry, empty); `event-card.tsx` → `EventCard` (date format, sold out
-badge); `hooks/use-events.ts` → `useEvents`; `api/procedures/events.ts` → `eventsRouter.list`
-(`.output(ListEventsOutput)`); `api/services/events.ts` → `listUpcomingEvents`; `api/queries/events.ts`
-→ `listUpcoming`; `api/db/schema/events.ts` → `events`; `api/db/seed.ts`; `packages/shared/src/schemas/events.ts`.
-Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [db-check-constraints](concepts/db-check-constraints.md),
-[seed-data](concepts/seed-data.md), [tanstack-query](concepts/tanstack-query.md) (second example),
-[layered-api](concepts/layered-api.md), [feature-folders](concepts/feature-folders.md),
-[drizzle-schema](concepts/drizzle-schema.md), [indexing](concepts/indexing.md),
-[validation-at-boundaries](concepts/validation-at-boundaries.md),
-[ui-error-handling](concepts/ui-error-handling.md).
+Web, server side: `web/app/events/page.tsx` → `EventsPage` (`force-dynamic`, `generateMetadata`,
+`<Suspense>`), `EventListWithServerData` (awaits `prefetchEvents`, `<HydrationBoundary>`);
+`web/app/events/error.tsx` → `EventsError`; `web/features/events/server/prefetch-events.ts` →
+`prefetchEvents`; `web/lib/trpc/server.ts` → `getQueryClient`, `getServerTrpc`;
+`web/lib/server-env.ts` → `getServerEnv` (`API_INTERNAL_URL`).
+Web, both sides: `web/features/events/components/event-list.tsx` → `EventList` (loading, error +
+Retry, empty); `event-list-skeleton.tsx` → `EventListSkeleton`; `event-card.tsx` → `EventCard`
+(sold out badge); `event-date.tsx` → `EventDate` (same text during hydration);
+`hooks/use-events.ts` → `useEvents` (`staleTime` 30 s).
+API: `api/procedures/events.ts` → `eventsRouter.list` (`.output(ListEventsOutput)`);
+`api/services/events.ts` → `listUpcomingEvents`; `api/queries/events.ts` → `listUpcoming`;
+`api/db/schema/events.ts` → `events`; `api/db/seed.ts`; `packages/shared/src/schemas/events.ts`.
+Cards: [csr-vs-ssr](concepts/csr-vs-ssr.md), [streaming-suspense](concepts/streaming-suspense.md),
+[hydration](concepts/hydration.md), [server-to-server-calls](concepts/server-to-server-calls.md),
+[server-client-components](concepts/server-client-components.md),
+[db-check-constraints](concepts/db-check-constraints.md), [seed-data](concepts/seed-data.md),
+[tanstack-query](concepts/tanstack-query.md) (second example), [layered-api](concepts/layered-api.md),
+[feature-folders](concepts/feature-folders.md), [drizzle-schema](concepts/drizzle-schema.md),
+[indexing](concepts/indexing.md), [validation-at-boundaries](concepts/validation-at-boundaries.md),
+[ui-error-handling](concepts/ui-error-handling.md), [config-validation](concepts/config-validation.md).
 
 ### 5. See it yourself
 
-`pnpm --filter @minitickets/api db:seed`, then open `/events`. `curl localhost:4000/trpc/events.list`
-returns the JSON. In psql, inserting an event with `seats_left` bigger than `total_seats` fails with
-`events_seats_left_within_total`. **Break it on purpose:** stop the api and reload: after two quiet
-retries the page shows "Something went wrong" and a Retry button.
+`pnpm --filter @minitickets/api db:seed`, then `curl -s localhost:3000/events | grep -o "Indie Rock" | wc -l`
+(2: the HTML and the cache JSON; it was 0 in Step 21). DevTools → Network: only `auth.me`, no
+`events.list`. The api's own log shows the web server's `GET /trpc/events.list` for every page view.
+**Break it on purpose:** start the web app with `API_INTERNAL_URL` pointing at a port where nothing
+listens: the page still works but falls back to the browser fetch (and the web log says
+`prefetchEvents: events.list failed on the server`). Stop the api as well: after two quiet retries
+the page shows "Something went wrong" and a Retry button.
 
 ### 6. How it connects
 
-Same layers as chapters 7-9 and the same query cache as chapter 2. Unlike `account.profile` it is a
-`publicProcedure`, so there is no session check. Chapter 11 covers what happens when it fails.
+Same api layers as chapters 7-9 and the same query cache as chapter 2, now filled on the server and
+handed to the browser ([hydration](concepts/hydration.md)). Unlike `account.profile` it is a
+`publicProcedure`, so the web server forwards no cookie. Chapter 1's Server and Client Components
+meet here: an `async` Server Component fetches, a Client Component draws. Chapter 11 covers failures
+in the browser; `app/events/error.tsx` covers failures while the server renders. On AWS the web task
+cannot reach the api yet ([infra story 4](infra-story.md#4-ecs-cluster-service-task-definition-task-spot)).
 
 ### 7. Our settings and WHY
 
 `limit 50` so one request cannot return an unbounded list; `now` passed into the query so the service
-owns the meaning of "upcoming"; no index on `starts_at` yet, because the next step measures first.
+owns the meaning of "upcoming"; no index on `starts_at` yet, because a later step measures first.
+`force-dynamic` and no caching, so Step 22 changes only *where* the page renders. `staleTime` 30 s so
+the browser trusts the server's data. `prefetchQuery` so an api failure degrades to the Step 21 path.
+
+Measured on this laptop (production builds, same data; [docs/22](../22-events-ssr.md)):
+
+| | CSR (Step 21) | SSR + streaming (Step 22) |
+| --- | --- | --- |
+| Titles in raw HTML | no | yes |
+| TTFB, median of 20 | 0.6 ms | 2.1 ms |
+| Lighthouse mobile LCP, median of 3 | 3012 ms | 2457 ms |
+| Lighthouse performance score, median of 3 | 93 | 98 |
 
 ### 8. Trade-offs
 
-Simple and always fresh, but every visitor causes a database read, and the HTML has no events in it
-(client-side rendering).
+Always fresh and now in the first HTML, but every visitor still causes a database read, and now also
+a render on the web server (TTFB rose because the page is no longer a static file). The web server
+depends on reaching the api.
 
 ### 9. Alternatives and when to choose them
 
-Server rendering for faster first content and SEO; a cache in front of the query for hot, rarely
-changing lists. Both are planned as later steps, with this chapter as the "before" picture.
+A cache in front of the query, or a cached page, for a hot list that changes rarely: planned next,
+measured against both rows of the table above. Client-only rendering stays right for private screens.
 
 ### 10. What breaks, and how we'd notice
 
-The table is empty (seed not run): "No upcoming events". The api is down: the error state and Retry
-button. The query gets slow as the table grows: nothing alerts us yet.
+The table is empty (seed not run): "No upcoming events". The web server cannot reach the api:
+slower page, browser fetch, a log line from `prefetchEvents`. `API_INTERNAL_URL` missing: the error
+boundary with an error id. The api is down entirely: the browser's error state and Retry button. The
+query gets slow as the table grows: the list chunk arrives later (the frame does not), and nothing alerts us yet.
 
 ### 13. Interview answers at 3 levels
 
-Simple: the events page asks the api for the list and draws it. Senior: a client component's hook
-calls a public tRPC procedure; layers keep HTTP, rules and SQL apart; Postgres CHECK constraints stop
-bad seat counts; output is validated with a shared Zod schema. Lead: this is the uncached baseline
-(on this laptop, with 12 rows: first call 23.8 ms, then 1.3-3.3 ms, median about 1.8 ms), so later changes
-(index, cache, SSR) can be judged against numbers, not feelings.
+Simple: the server fetches the events and sends a finished page. Senior: an `async` Server Component
+prefetches `events.list` into a per-request TanStack cache through a server-side tRPC client, streams
+it behind `<Suspense>`, and `HydrationBoundary` hands the cache to the client hook, so the browser
+makes no data request; layers keep HTTP, rules and SQL apart; output is validated with a shared Zod
+schema. Lead: we measured before and after on production builds: titles in the HTML, Lighthouse 93 →
+98, TTFB 0.6 → 2.1 ms because a static file became a render; and the new web → api path is a
+deployment dependency (still missing on AWS).
 
 ### 14. Follow-up questions interviewers ask
 
-*Why is `now` a parameter?* The caller decides the clock, so tests can fix it. *Why `limit 50` without
-pagination?* It is a safety cap; real pagination comes when the list grows.
+*Why is `now` a parameter?* The caller decides the clock, so tests can fix it. *Why does the browser
+not fetch again?* Same query key and a 30 s `staleTime`. *What if the server's call fails?* The list
+is not in the cache, and the browser fetches it like in Step 21.
 
 ### 15. Say it in 30 seconds
 
-"Visiting /events renders a frame, then a TanStack Query hook calls a public tRPC procedure. The
-service asks one query for events starting after now, soonest first, max 50. It's client-rendered and
-uncached on purpose, so we have a baseline to measure indexes, caching and SSR against."
+"Visiting /events, the Next.js server calls our public events.list procedure, streams the frame first
+and the list right after, and hands TanStack Query's cache to the browser, so there's no second call.
+We kept the client-rendered version as a measured baseline: SSR put the events in the HTML and took
+Lighthouse from 93 to 98, at the cost of a per-request render."
 
 ### 16. Status
 
-✅ built (the baseline). Rendering on the server and caching are planned.
+✅ built locally (CSR baseline and SSR with streaming). SSR on AWS: 🟡, the web task cannot reach the
+api yet ([server-to-server-calls](concepts/server-to-server-calls.md)). Caching is planned.
 
 ---
 

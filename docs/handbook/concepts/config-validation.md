@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md), [17 ECS api](../../17-infra-ecs-api.md)
+Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md), [17 ECS api](../../17-infra-ecs-api.md), [22 events SSR](../../22-events-ssr.md)
 
 ## 1. In one line
 
@@ -30,6 +30,7 @@ flowchart LR
 
 - Anchor: `apps/api/src/config/env.ts` · `EnvSchema`, `env`: the app settings; exits on failure.
 - Anchor: `apps/api/src/config/database.ts` · `DatabaseEnvSchema`: local URL **or** the five AWS pieces, with SSL on AWS.
+- Anchor: `apps/web/src/lib/server-env.ts` · `ServerEnvSchema`, `getServerEnv`: the web server's own settings (`API_INTERNAL_URL`), checked at request time.
 
 Step by step:
 
@@ -46,6 +47,13 @@ Step by step:
 
 `apps/api/src/db/migrate.ts` validates only `DatabaseEnvSchema`, because a migration needs nothing
 else.
+
+**The web server** (Step 22) validates `API_INTERNAL_URL` with `z.url({ protocol: /^https?$/ })` in
+`getServerEnv`. Two differences from the api, on purpose: it runs the first time a page needs it, not
+at import, because `next build` imports every page and the Docker image is built without run-time
+settings; and it **throws** instead of `process.exit(1)`, so only `/events` fails (its error
+boundary shows a message) while other pages keep working. The thrown message names the field and
+says "copy API_INTERNAL_URL from apps/web/.env.example into apps/web/.env.local".
 
 ## 5. See it yourself
 

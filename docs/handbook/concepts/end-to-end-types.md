@@ -27,6 +27,7 @@ flowchart LR
 
 - Anchor: `apps/api/src/trpc/router.ts` · `export type AppRouter = typeof appRouter`.
 - Anchor: `apps/web/src/lib/trpc/client.ts` · `import type { AppRouter } from "@minitickets/api/router"`.
+- Anchor: `apps/web/src/lib/trpc/server.ts` · `import type { AppRouter }` again, for the web server's own client (`getServerTrpc`): typed calls over HTTP, still no api code in the web.
 
 Step by step:
 

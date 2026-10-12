@@ -25,9 +25,50 @@ flowchart LR
 
 ---
 
-## 2026-10-12 · feat(events): events list, read path baseline (no caching)
+## 2026-10-12 · feat(events): render /events on the server with streaming, CSR vs SSR measured
 
 Commit: filled in by the next handbook commit
+
+Why: Feature 1, step 2 renders `/events` on the web server (prefetch + dehydrate +
+`HydrationBoundary`, `<Suspense>` streaming, `error.tsx`, a server-only `API_INTERNAL_URL`) and
+measures it against the Step 21 client-rendered baseline. The handbook must show both paths, the new
+concepts, and that SSR does not work on AWS yet. Code changes in this commit add `@concept` anchors
+next to the new code.
+
+- `app-story.md`: chapter "10b. Reading events" rewritten for both paths (two diagrams: CSR vs SSR
+  side by side, and the SSR sequence browser → web server → api → Postgres → HTML stream → hydrate),
+  measured table, new cards linked; intro paragraph mentions server rendering.
+- `infra-story.md`: chapter 4 (ECS), sections 9 and 16: the planned web → api path (Service
+  Connect), why it is blocked today, with a diagram.
+- `00-big-picture.md`: both system diagrams show the web → api call (planned on AWS); new row in the
+  laptop vs AWS table; "The life of one request" explains the server-rendered public request.
+- `concept-map.md`: new rows `streaming-suspense` (✅), `hydration` (✅), `server-to-server-calls` (🟡),
+  `service-connect` (📋); `csr-vs-ssr` row updated (CSR ✅, SSR ✅ locally, AWS 🟡); UI errors and
+  config validation rows name the new files; "Rendering strategies" row narrowed to SSG/ISR.
+- `concepts/csr-vs-ssr.md`: rewritten for both paths with the measured CSR vs SSR numbers; anchors
+  moved (event-card.tsx no longer holds one; page.tsx, prefetch-events.ts and events.spec.ts do).
+- `concepts/hydration.md`, `concepts/streaming-suspense.md`, `concepts/server-to-server-calls.md`,
+  `concepts/service-connect.md` (📋, AWS Compute): new cards.
+- `concepts/server-client-components.md`: async Server Components that fetch, the events page tree
+  (diagram), updated Client Component list (9 files), story link to 10b.
+- `concepts/tanstack-query.md`: the events example now explains server prefetch and `staleTime`;
+  the old e2e retry claim was replaced (that test is gone).
+- `concepts/ui-error-handling.md`: `app/events/error.tsx` (error boundary, digest, `retry()`), step 7.
+- `concepts/config-validation.md`: the web server's `getServerEnv` (lazy, throws instead of exiting).
+- `concepts/end-to-end-types.md`, `concepts/app-router.md`: one "Anchor:" line each for the new code.
+- `decisions/0001-ssr-calls-api-over-http.md`: first ADR file (the README plans `decisions/` for
+  Phase 4): HTTP vs in-process vs direct DB, degrade to CSR vs fail, required setting.
+- `glossary.md`: API_INTERNAL_URL, Async Server Component, cache() (React), Clock skew, Cloud Map,
+  CLS, Dehydrate / hydrate, Digest (Next.js error), Dynamic rendering, Error boundary, FCP,
+  HTML-limited bot, Hydration mismatch, HydrationBoundary, Internal ALB, LCP, Lighthouse, Median,
+  Prefetch, Server-to-server call, Service Connect, Service discovery, Sidecar, staleTime, Streaming,
+  Suspense, TTFB, useSyncExternalStore; CSR, SSR, Skeleton and Hydration entries updated.
+
+---
+
+## 2026-10-12 · feat(events): events list, read path baseline (no caching)
+
+Commit: be8523a
 
 Why: Feature 1, step 1 adds the first public read path (`/events`). The handbook must explain it,
 and the new code needs anchors and cards. Handbook files only; code changes only add comments.

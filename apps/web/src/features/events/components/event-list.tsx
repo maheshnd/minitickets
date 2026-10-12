@@ -3,20 +3,17 @@
 import { Button } from "@/components/ui/button";
 import { useEvents } from "../hooks/use-events";
 import { EventCard } from "./event-card";
+import { EventListSkeleton } from "./event-list-skeleton";
 
 // The events page content. A Client Component because it uses a query.
+// When the server already fetched the events (app/events/page.tsx), the data is in the cache from
+// the first render, so it goes straight to step 4, on the server AND in the browser.
 export function EventList() {
   const events = useEvents();
 
-  // 1. Loading: grey placeholder cards, so the page does not jump when the real ones arrive.
+  // 1. Loading: only when the browser has to fetch by itself (the server could not).
   if (events.isPending) {
-    return (
-      <ul aria-label="Loading events" aria-busy="true" className="space-y-4">
-        {[0, 1, 2].map((i) => (
-          <li key={i} className="h-28 animate-pulse rounded-lg border border-gray-200 bg-gray-200" />
-        ))}
-      </ul>
-    );
+    return <EventListSkeleton />;
   }
 
   // @concept: ui-error-handling

@@ -127,7 +127,14 @@ services:
     # 2. ports: the web server listens on 3000 inside; 3100 on your machine avoids a clash with `pnpm dev`.
     ports:
       - "3100:3000"
-    # 3. depends_on: start after the API is healthy, so the first page load can already log in.
+    # @concept: server-to-server-calls
+    # 3. environment: read by the web SERVER when a request comes in (not baked into the image).
+    #    API_INTERNAL_URL is where the web server calls the API to render /events. Server to server,
+    #    so it uses the compose service name "api" and the container port 4000, unlike the
+    #    browser's NEXT_PUBLIC_API_URL above (localhost:4100, the address the BROWSER sees).
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    # 4. depends_on: start after the API is healthy, so the first page load can already log in.
     depends_on:
       api:
         condition: service_healthy
