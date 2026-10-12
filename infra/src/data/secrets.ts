@@ -30,6 +30,7 @@ export interface SecretsOutputs {
   redisUrlSecretArn: pulumi.Output<string>;
 }
 
+// @concept: secrets-manager
 export function createSecrets(inputs: SecretsInputs): SecretsOutputs {
   // 1. The secret (the safe itself, still empty)
   // WHAT: a Secrets Manager entry named "minitickets/dev/redis-url".

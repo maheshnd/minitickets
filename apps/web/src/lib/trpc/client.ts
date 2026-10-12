@@ -4,6 +4,7 @@ import { createTRPCContext } from "@trpc/tanstack-react-query";
 // It is erased at build time, so no server code ends up in the browser bundle.
 import type { AppRouter } from "@minitickets/api/router";
 
+// @concept: same-origin-routing
 // 1. The API's base URL, from apps/web/.env.local (local dev: http://localhost:4000).
 //    EMPTY or UNSET means "same origin": the browser calls "/trpc" on the same address that
 //    served the page. That is the AWS setup (Step 11f): one load balancer sends /trpc/* to the

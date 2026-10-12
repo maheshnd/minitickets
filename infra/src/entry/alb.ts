@@ -31,6 +31,7 @@ export interface AlbOutputs {
   albDnsName: pulumi.Output<string>;
 }
 
+// @concept: alb
 export function createAlb(inputs: AlbInputs): AlbOutputs {
   // 1. The load balancer
   // WHAT: an ALB named minitickets-dev with one node in each public subnet.

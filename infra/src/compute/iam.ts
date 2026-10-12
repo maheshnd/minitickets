@@ -35,6 +35,7 @@ export interface IamOutputs {
   taskRoleArn: pulumi.Output<string>;
 }
 
+// @concept: execution-vs-task-role
 export function createIamRoles(inputs: IamInputs): IamOutputs {
   // 1. Our AWS account id (a 12-digit number). The trust policies below need it.
   const accountId = aws.getCallerIdentityOutput().accountId;
@@ -85,6 +86,8 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     policyArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
   });
 
+  // @concept: least-privilege
+  // @concept: kms
   // 5. Our own policy: read exactly two secrets, nothing else.
   //    WHY only these two ARNs (not "*"): least privilege. If this role were ever misused, it
   //    still could not read any other secret in the account.
@@ -122,6 +125,7 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     tags: tagsFor(`${prefix}-api-task-role`),
   });
 
+  // @concept: ecs-exec
   // 7. ECS Exec permissions.
   //    WHAT: ECS Exec lets us open a shell INSIDE the running container from our laptop
   //      (aws ecs execute-command). The container then sits inside the VPC, so from that

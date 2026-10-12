@@ -21,6 +21,7 @@ export interface OriginSecretOutputs {
   headerValue: pulumi.Output<string>;
 }
 
+// @concept: origin-protection
 export function createOriginSecret(): OriginSecretOutputs {
   // 1. The header value
   // WHAT: a random 32-character string, created by Pulumi on our machine.

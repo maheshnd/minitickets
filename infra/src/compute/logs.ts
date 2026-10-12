@@ -22,6 +22,7 @@ export interface LogsOutputs {
   logGroupName: pulumi.Output<string>;
 }
 
+// @concept: cloudwatch-logs
 export function createLogs(service: "api" | "web"): LogsOutputs {
   // 1. Log group
   // WHAT: the book named /minitickets/dev/api (or /minitickets/dev/web).

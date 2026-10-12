@@ -1,3 +1,4 @@
+// @concept: infrastructure-as-code
 // Entry point of the Pulumi program. This is the ONLY file that connects layers:
 // each layer is a function with typed inputs and outputs, and the lines below pass the
 // outputs of one layer into the inputs of the next. Read top to bottom = dependency order.
@@ -37,6 +38,7 @@ const security = createSecurityGroups({ vpcId: network.vpcId });
 //    budget that emails nobody. Set it with: pulumi config set alertEmail you@example.com
 createBudget({ alertEmail: config.require("alertEmail") });
 
+// @concept: cost-switches
 // 4. The data layer ON/OFF switch (see docs/14-infra-data.md).
 //    WHY: RDS and ElastiCache are billed every hour they exist, used or not. The switch lets
 //    us run them only while we are working on AWS.
@@ -92,6 +94,7 @@ if (computeEnabled && !dataEnabled) {
   );
 }
 
+// @concept: immutable-image-tags
 // 9b. Which image to run: a git SHA tag pushed by `pnpm images:push`. No default on purpose:
 //     a "latest" default would hide WHICH code runs. require() stops with a clear error if it
 //     is missing, but only when compute is on (it is not needed otherwise).
@@ -263,6 +266,7 @@ export const apiSgId = security.apiSgId;
 export const dbSgId = security.dbSgId;
 export const redisSgId = security.redisSgId;
 
+// @concept: secrets-management
 // 26. Data layer outputs: addresses and secret ARNs only, never passwords or tokens.
 //    When the layer is off they are null. (undefined would make Pulumi print a warning for
 //    each one on every preview.)

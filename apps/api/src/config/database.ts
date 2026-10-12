@@ -47,6 +47,7 @@ export const DatabaseEnvSchema = z
       return z.NEVER;
     }
 
+    // @concept: tls-in-transit
     // 2d. AWS: the pieces, with SSL turned ON.
     //     WHY SSL: RDS refuses connections without it (rds.force_ssl = 1), and the password and
     //     all data would otherwise cross the network as plain text.

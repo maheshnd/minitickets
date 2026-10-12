@@ -12,6 +12,8 @@ flowchart LR
 
 ## A
 
+- **Access Analyzer (IAM)** – an AWS tool that finds unused permissions and resources shared outside
+  the account. Not used by us.
 - **AccessDenied** – the error AWS returns when IAM says no. It names the action and the resource.
 - **ACID** – four promises a database makes about a transaction: Atomic (all or nothing),
   Consistent (rules hold), Isolated (transactions don't see each other's half-done work), Durable
@@ -25,10 +27,13 @@ flowchart LR
 - **Alerting** – sending a person a message when a measurement crosses a limit. Ours: only the budget email.
 - **Allowed** – the second of our three connection questions: does IAM permit this call? See
   [aws-foundations, chapter 3](aws-foundations.md#3-the-three-questions-reach-allowed-password).
+- **ALPN** – the step inside the TLS handshake where browser and server agree on HTTP/2 or HTTP/1.1.
+- **alt-svc** – a response header in which a server advertises another protocol, for example HTTP/3.
 - **Anchor (code anchor)** – a comment `@concept: <slug>` at the exact place a concept lives in the
   code. Checked by `pnpm docs:check`.
 - **API gateway** – a front door service that routes, authenticates and rate-limits API calls for many backends. Not used by us.
 - **App Router** – Next.js's routing system: the folders under `apps/web/src/app/` become URLs.
+- **App Runner** – AWS's simplest managed service for container web apps. Not used by us.
 - **argon2id** – a password-hashing algorithm that is slow and memory-hungry on purpose, so
   guessing passwords from a stolen database is expensive.
 - **ARM64** – a CPU architecture. AWS's Graviton machines use it. Our images are built for
@@ -36,12 +41,16 @@ flowchart LR
 - **ARN (Amazon Resource Name)** – the full, unique address of one AWS resource, e.g.
   `arn:aws:iam::123456789012:role/minitickets-dev-api-task-role`.
 - **AssumeRole** – the STS call that "puts on" a role and returns temporary credentials.
+- **Aurora** – AWS's own MySQL- and Postgres-compatible database, with storage copied across 3 AZs.
+  Not used by us.
 - **Auth token (Valkey)** – the password of our cache. It sits inside the `rediss://` URL.
 - **Authentication (authN)** – proving who you are (login).
 - **Authorization (authZ)** – deciding what you may do once we know who you are.
 - **Auto scaling** – adding or removing copies (tasks, machines) automatically based on load. Not built.
 - **Availability zone (AZ)** – one isolated part of an AWS region, made of one or more data
   centres. We use two.
+- **AWS-managed key (KMS)** – a KMS key that AWS creates and controls for one service, like
+  `aws/rds` or `aws/secretsmanager`. We use these.
 - **AWS-managed policy** – an IAM policy written and updated by AWS, e.g.
   `AmazonECSTaskExecutionRolePolicy`.
 - **awslogs driver** – the ECS setting that copies everything a container prints to CloudWatch Logs.
@@ -61,15 +70,26 @@ flowchart LR
   `httpBatchLink` does it for calls made at the same moment.
 - **Blast radius** – how much damage one failure or one stolen credential can do.
 - **Blue/green deploy** – run the new version next to the old one, then switch all traffic at once.
-- **Brotli, gzip** – compression formats. CloudFront compresses responses with them.
+- **Brotli, gzip** – compression formats. CloudFront compresses our cached static files with them;
+  pages can only be compressed by Next.js itself (its default; not verified on AWS). See the
+  [compression card](concepts/compression.md).
+- **Budget action** – an AWS Budgets feature that applies an IAM policy or stops resources when a
+  threshold is reached. Not used by us.
 - **Budget (AWS Budgets)** – an AWS feature that emails when spending passes a limit. Ours: $20 a month.
+- **buildx** – Docker's builder that can build images for another CPU architecture
+  (`--platform linux/arm64`).
 - **Bulkhead** – walls inside a system so one overloaded part cannot sink the others.
+- **Burn rate** – how fast an error budget is being used up; SLO alerts fire on it.
+- **Burstable instance** – a small machine (the `t` families, like `t4g`) that saves up CPU credits
+  while idle and spends them under load.
 
 ## C
 
 - **Cache behavior (CloudFront)** – a rule for one URL path pattern: cache or not, which methods,
   what to forward. We have three.
 - **Cache hit / cache miss** – the answer was / was not already stored in the cache.
+- **Cache key** – what makes two requests count as "the same" for a cache. For our `/_next/static/*`
+  files: the path (plus the normalised `Accept-Encoding`).
 - **Cache policy (CloudFront)** – how long to keep a copy and what makes two requests "the same".
   We use AWS's `Managed-CachingOptimized` and `Managed-CachingDisabled`.
 - **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together.
@@ -78,6 +98,8 @@ flowchart LR
 - **CAP theorem** – a distributed data store that is split by a network failure must choose between
   answering (availability) and always giving the latest data (consistency).
 - **Capacity provider (ECS)** – the kind of machine tasks run on: `FARGATE` or `FARGATE_SPOT`.
+- **Capacity provider strategy (ECS)** – how a service splits its tasks between capacity providers
+  (a base plus weights). Ours: 100% `FARGATE_SPOT`.
 - **Card** – one handbook page about one concept, in `docs/handbook/concepts/<slug>.md`.
 - **CD (continuous deployment)** – automatically deploying every change that passes CI. Planned.
 - **CDN (content delivery network)** – servers around the world that serve content close to the
@@ -93,8 +115,12 @@ flowchart LR
   `"use client"`), so it can have state and click handlers.
 - **CloudFront** – AWS's CDN. In our app: HTTPS in front of the ALB, `infra/src/entry/cdn.ts`.
 - **CloudTrail** – AWS's audit log of API calls made in an account.
+- **CloudWatch alarm** – watches one metric and notifies (for example through SNS) when it crosses a
+  threshold. We have none yet.
 - **CloudWatch Logs** – AWS's log storage. A **log group** is one book (`/minitickets/dev/api`);
   each task writes its own **log stream** (a chapter) in it.
+- **CloudWatch Logs Insights** – a query language for searching and counting log lines in log
+  groups.
 - **Cluster (ECS)** – a named group that ECS services and tasks belong to. Ours: `minitickets-dev`.
 - **Concept map** – [concept-map.md](concept-map.md): the hub table of every concept.
 - **Condition (IAM)** – an extra "only if" in a policy statement, e.g. only when
@@ -104,6 +130,8 @@ flowchart LR
   one is slow. Ours: `pool` in `apps/api/src/db/client.ts`, at most 10.
 - **Container** – a packaged program with everything it needs, started from an image.
 - **Container Insights** – extra, paid CloudWatch metrics per ECS task. Off in our cluster.
+- **Content hash** – a fingerprint of a file's content put into its name (`main-3f9a1c.js`), so new
+  content always gets a new name.
 - **Content-Security-Policy (CSP)** – a response header that tells the browser which scripts may run. Not set by us yet.
 - **Context (tRPC)** – the `ctx` object built once per request by `createContext`; every procedure receives it.
 - **Contract testing** – checking that a provider and a consumer still agree on the shape of their API.
@@ -113,25 +141,38 @@ flowchart LR
 - **Correlation ID** – one id passed along every service a request touches, so their logs can be joined.
 - **CORS (Cross-Origin Resource Sharing)** – browser rules that block a page from calling another
   origin unless that origin allows it.
+- **Cost Anomaly Detection** – an AWS feature that alerts on unusual spending. Not used by us.
 - **CQRS** – using separate models for writing data and for reading it.
 - **CSRF (cross-site request forgery)** – another website tricking your browser into sending a
   request to ours, with your cookie.
+- **Customer-managed key (KMS)** – a KMS key that you create and control (policy, rotation,
+  disabling). Not used by us.
 - **Customer-managed policy** – a reusable IAM policy that we write and own.
+- **CVE** – a public id for one known security vulnerability, like `CVE-2024-12345`.
 
 ## D
 
 - **Data layer** – our RDS database, Valkey cache and redis-url secret, switched on and off together
   with `dataEnabled`.
+- **Data residency** – rules about which country data must be stored in.
 - **Dead-letter queue (DLQ)** – where messages go after failing too many times, so they can be
   inspected instead of lost.
 - **Default deny (implicit deny)** – IAM's starting answer: anything not allowed is denied.
 - **Defense in depth** – several independent protections, so one mistake does not expose everything.
+- **Dependabot** – GitHub's bot that opens pull requests to update vulnerable or old dependencies.
+  Not used by us.
+- **Deployment circuit breaker (ECS)** – stops an ECS deployment whose new tasks keep failing and
+  rolls back to the last working revision. On for both our services.
 - **Deregistration delay (draining)** – the time the ALB keeps a stopping task in its list so
   requests already in flight can finish. Ours: 30 seconds.
+- **Digest (image)** – the sha256 hash of an image's content. Unlike a tag, it can never point at
+  different content.
 - **Disaster recovery (DR)** – how we get the system and its data back after a big failure.
 - **Distributed tracing** – following one request across several services, with timings for each step.
 - **DNS** – the internet's phone book: turns a name like `example.com` into an IP address.
 - **Docker** – the tool that builds images and runs containers.
+- **Drift** – the real cloud no longer matches what the IaC code and state expect, usually because
+  someone changed it by hand.
 - **Drizzle** – the TypeScript ORM (database library) we use to define tables and write queries.
 - **DynamoDB** – AWS's managed NoSQL key-value and document database. Not used by us.
 
@@ -145,6 +186,8 @@ flowchart LR
 - **Edge location** – one of CloudFront's buildings close to visitors.
 - **EKS** – AWS's managed Kubernetes. Not used by us.
 - **ElastiCache** – AWS's managed Redis / Valkey / Memcached service.
+- **EMF (Embedded Metric Format)** – a JSON log format that CloudWatch turns into metrics. Not used
+  by us.
 - **Encryption at rest** – data is encrypted on disk and in backups.
 - **Encryption in transit** – data is encrypted while it travels over the network (TLS).
 - **End-to-end (e2e) test** – a test that drives the real app in a real browser. Ours use Playwright.
@@ -152,12 +195,17 @@ flowchart LR
 - **Endpoint (AWS)** – the address of an AWS service's API, e.g. Secrets Manager in us-east-1.
 - **Env var (environment variable)** – a named setting given to a process when it starts, like
   `PORT=4000`.
+- **Envelope encryption** – data is encrypted with a data key, and the data key is encrypted with a
+  KMS key.
 - **errorMapper** – our tRPC middleware that turns business errors into HTTP-style errors
   (`apps/api/src/trpc/init.ts`).
 - **Event sourcing** – storing every change as an event and rebuilding the current state from them.
+- **EventBridge** – AWS's event bus: rules react to events from AWS services or apps. Not used by
+  us.
 - **Event-driven architecture** – parts of a system react to events ("user signed up") instead of calling each other directly.
 - **Eventual consistency** – copies of data may disagree for a short time but will agree in the end.
 - **Eviction** – a cache deleting entries when it is full. **LRU** (least recently used) deletes the oldest-used first.
+- **exec format error** – the error you get when a program was built for another CPU architecture.
 - **Execution role** – the IAM role ECS wears to **start** a task: pull the image, read secrets,
   write logs.
 - **Expand and contract** – changing a database schema in safe steps: add the new shape, move the code, then remove the old shape.
@@ -166,6 +214,8 @@ flowchart LR
 
 ## F
 
+- **Fail open (ALB)** – when every target in a group is unhealthy, the ALB sends traffic to all of
+  them anyway.
 - **Fargate** – ECS without servers to manage: AWS finds a machine for each task.
 - **Fargate Spot** – Fargate on spare AWS capacity, much cheaper, but AWS can take it back with a
   2-minute warning.
@@ -173,11 +223,17 @@ flowchart LR
 - **Feature flag** – a switch that turns a feature on or off without a new deploy.
 - **Feature folder** – `apps/web/src/features/<feature>/`: the components and hooks of one feature
   together.
+- **FireLens / Fluent Bit** – a log-router sidecar for ECS that can send logs to other tools. Not
+  used by us.
 
 ## G
 
 - **Global service** – an AWS service that exists once per account, not per region (IAM,
   CloudFront, Budgets).
+- **Golden signals** – the four basic service measurements: latency, traffic, errors, saturation.
+- **gp3** – AWS's current general-purpose SSD disk type. Our RDS disk is 20 GB gp3.
+- **Grace period (health check)** – the time after a task starts during which ECS ignores failed ALB
+  health checks. Ours: 60 seconds.
 - **Graceful shutdown** – on a stop signal, stop taking new requests, finish the running ones,
   close connections, then exit.
 - **GraphQL** – an API style where the client asks for exactly the fields it needs in one query.
@@ -187,6 +243,7 @@ flowchart LR
 ## H
 
 - **Hash** – a one-way fingerprint of data. It cannot be turned back into the data.
+- **Head-of-line blocking** – one lost or slow item holds up everything queued behind it.
 - **Health check** – a regular "are you OK?" call. **Liveness** = is the process up (`/health`).
   **Readiness** = can it do real work right now (`/ready`).
 - **High availability (HA)** – the system keeps working when one part (a task, an AZ) fails.
@@ -209,9 +266,13 @@ flowchart LR
   `Principal` field.
 - **Image (Docker)** – the packaged, read-only file system and start command a container is started from.
 - **Image scanning** – checking an image's packages for known vulnerabilities. ECR scans ours on push.
+- **Init process** – a tiny PID 1 that forwards signals and cleans up finished child processes
+  (`initProcessEnabled` on our api task).
 - **In-process test** – a test that calls the API's code directly (no real network), e.g. with `createCallerFactory` or Fastify's `inject`.
 - **Inline policy** – an IAM policy that belongs to exactly one role and is deleted with it.
   Ours: `read-secrets`, `ecs-exec`.
+- **Inspector (Amazon)** – AWS's vulnerability scanner, used by ECR's enhanced scanning. Not used by
+  us.
 - **Internet gateway (IGW)** – the VPC's door to the public internet.
 - **Isolation level** – how much concurrent database transactions may see of each other's changes.
 
@@ -231,9 +292,16 @@ flowchart LR
 ## L
 
 - **Lambda** – AWS's functions-as-a-service: code runs per event, no server or container to keep running. Not used by us.
+- **Latency** – the time a request takes to travel to the server and back.
 - **Layer (Docker)** – one cached step of an image build. Unchanged layers are reused.
 - **Layered architecture** – our api's split: procedures (HTTP edge) → services (business logic) → queries (data stores).
+- **LCU (Load Balancer Capacity Unit)** – how ALB usage beyond its fixed hourly price is measured
+  and billed.
+- **Least outstanding requests** – an ALB algorithm that picks the target with the fewest requests
+  in progress.
 - **Least privilege** – give every role, user or rule only the permissions it needs.
+- **Lifecycle policy (ECR)** – rules that delete old images automatically. Ours: untagged after 1
+  day, keep the newest 10 tagged.
 - **Lint** – automatic checks for suspicious code patterns. Ours: ESLint (`pnpm lint`).
 - **Listener (ALB)** – the ALB's "ear" on one port (ours: HTTP 80). Its **rules** decide where each
   request goes; the **default action** applies when no rule matches (ours: 403).
@@ -242,21 +310,31 @@ flowchart LR
 - **Local route** – the built-in route in every VPC route table that connects all subnets of the VPC.
 - **Locking** – stopping two writers from changing the same data at once. **Pessimistic** locks first; **optimistic** checks a version when saving.
 - **Long polling** – the client asks, and the server holds the answer back until something new happens.
+- **Longest prefix match** – a route table uses the most specific route that matches (`/16` beats
+  `/0`).
 
 ## M
 
+- **Main route table** – the VPC's default route table, used by any subnet that has no explicit
+  association.
 - **Managed prefix list** – a named list of IP ranges that a security group rule can point at. We
   use AWS's list of CloudFront's origin-facing addresses.
+- **Man-in-the-middle** – an attacker between two parties who reads or changes their traffic.
+  Checking TLS certificates stops it.
 - **Mermaid** – a text format for diagrams that GitHub renders. All handbook diagrams use it.
 - **Message queue** – a buffer where one part leaves work and another picks it up later (e.g. AWS SQS).
 - **Metrics** – numbers measured over time, like CPU use or requests per second.
 - **MFA (multi-factor authentication)** – a second proof besides the password, like a code from an app.
 - **Middleware** – code that wraps a request handler and runs before and/or after it.
 - **Migration** – a versioned SQL file that changes the database schema.
+- **Minimum healthy / maximum percent (ECS)** – how far below and above the desired task count a
+  deployment may go. Defaults: 100% and 200%.
 - **Mock** – a fake stand-in for a real dependency in a test.
 - **Monolith vs microservices** – one deployable app vs many small services that call each other over the network.
 - **Monorepo** – one git repository with several packages. Ours: `apps/web`, `apps/api`,
   `packages/shared`, `infra`.
+- **mTLS / service mesh** – both sides of a connection prove who they are with certificates; a mesh
+  does this for every service. Not used by us.
 - **Multi-AZ (RDS)** – a standby copy of the database in a second AZ that takes over if the first
   fails. Off in our dev setup.
 - **Multi-stage build** – a Dockerfile with several `FROM` stages; only the last one becomes the image.
@@ -279,6 +357,7 @@ flowchart LR
 - **OAuth 2.0** – a standard for letting an app act for a user at another service. **PKCE** protects the authorization-code flow against stolen codes.
 - **OIDC federation** – letting an outside system (like GitHub Actions) get AWS role credentials
   without stored keys.
+- **On-demand** – normal capacity that AWS never takes back (the opposite of Spot).
 - **Open redirect** – a bug where a link like `/login?next=https://evil.com` sends a user to
   another site after login. Blocked by `getSafeNext`.
 - **OpenTelemetry (OTel)** – an open standard and toolkit for traces, metrics and logs.
@@ -305,12 +384,16 @@ flowchart LR
 - **Permission policy** – the policy that says what a role may do.
 - **PID 1** – the first process in a container. Docker sends stop signals to it.
 - **pino** – the JSON logger built into Fastify.
+- **PITR (point-in-time recovery)** – restoring a database to any second inside its backup retention
+  window.
 - **Planned (📋)** – a handbook status: not built yet, but a step doc says we will build it.
 - **Playwright** – the tool our end-to-end tests use to drive a real browser.
 - **Policy (IAM)** – a JSON document of Allow/Deny statements.
 - **Postgres (PostgreSQL)** – the SQL database we use. On AWS: RDS Postgres 17.
 - **Preflight** – an `OPTIONS` request a browser sends before some cross-origin requests, to ask
   CORS permission.
+- **Price class (CloudFront)** – which group of edge locations a distribution uses. Ours:
+  `PriceClass_100`.
 - **Principal** – who makes an AWS request: a user, a role, or an AWS service.
 - **Private subnet** – a subnet with no route to the internet gateway.
 - **Procedure (tRPC)** – one API function, like `auth.login`. Lives in `apps/api/src/procedures/`.
@@ -323,11 +406,15 @@ flowchart LR
 - **Pulumi** – our Infrastructure as Code tool. A **stack** is one copy of the infrastructure
   (ours: `dev`); **config** holds its settings (`Pulumi.dev.yaml`); **outputs** are values it
   prints for others to use (`pulumi stack output`).
+- **Pulumi secret** – a value Pulumi keeps encrypted in its state and prints as `[secret]`.
+- **Pulumi state** – Pulumi's record of what it created; it compares it with the code to work out
+  what to change.
 
 ## Q
 
 - **Query (our api layer)** – `apps/api/src/queries/`: the only code that touches Postgres or Redis.
 - **Query (tRPC)** – a procedure that only reads, like `auth.me`. Sent as `GET`.
+- **QUIC** – a transport protocol over UDP that HTTP/3 runs on.
 
 ## R
 
@@ -348,6 +435,8 @@ flowchart LR
 - **Replication** – keeping copies of data on several machines.
 - **Replication group (ElastiCache)** – a primary cache node plus optional replicas. Ours has 1 node.
 - **Request ID** – an id for one request inside one service. Fastify gives every request one (`request.id`).
+- **Request smuggling** – an attack using malformed or ambiguous headers so that a proxy and the
+  server behind it disagree on where one request ends.
 - **Resource (IAM)** – the thing an action acts on, named by its ARN.
 - **Resource-based policy** – a policy attached to a resource; it names who may use it. A role's
   trust policy is one.
@@ -355,11 +444,16 @@ flowchart LR
 - **Revision (task definition)** – each change to a task definition creates a new numbered version
   (`minitickets-dev-api:7`).
 - **Role (IAM)** – a set of permissions with no password, assumed for a while by a trusted principal.
+- **Rollback** – going back to the last version that worked.
 - **Rolling update** – replacing old tasks with new ones a few at a time, so some are always serving.
 - **Rotation** – replacing a password with a new one on a schedule. RDS rotates its managed
   password every 7 days by default.
 - **Route 53** – AWS's DNS service. Not used by us yet.
 - **Route table** – the list that says where traffic leaving a subnet goes.
+- **RPO / RTO** – how much data you may lose (recovery point objective) / how long recovery may take
+  (recovery time objective).
+- **RunError (Pulumi)** – stops the Pulumi program with a plain message and no stack trace. Our
+  switches use it.
 
 ## S
 
@@ -367,6 +461,8 @@ flowchart LR
 - **Saga** – a long business process split into steps, each with an "undo" step if a later one fails.
 - **SameSite** – a cookie flag. `Lax` (ours) means the browser does not send the cookie on
   cross-site `POST` requests.
+- **Savings Plans** – a lower price in return for committing to a steady amount of compute spend.
+  Not used by us.
 - **SCP (Service Control Policy)** – an AWS Organizations guardrail that can only take permissions
   away from accounts. Not used by us.
 - **Secrets Manager** – AWS's locked safe for passwords and tokens. Every read is checked by IAM.
@@ -380,6 +476,7 @@ flowchart LR
 - **Service-linked role** – a role AWS creates and owns so a service can act in our account.
 - **Session** – the server's memory that a browser is logged in. Ours: a Valkey/Redis key
   `session:<sha256 of the id>` with a 7-day TTL.
+- **Session Manager plugin** – the laptop add-on the AWS CLI needs to open ECS Exec sessions.
 - **Session token** – the third part of temporary AWS credentials, next to the access key id and
   secret.
 - **SHA-256** – a hash function. We store the SHA-256 of the session id, never the id itself.
@@ -388,8 +485,13 @@ flowchart LR
 - **SigV4 (Signature Version 4)** – how every AWS API request is signed with the caller's
   credentials.
 - **SLI / SLO / error budget** – a measured indicator (e.g. % successful requests), the target for it (e.g. 99.9%), and how much failure the target still allows.
+- **Slow start (ALB)** – ramps traffic up gradually to a newly registered target. Not used by us.
 - **Slug** – a short, lowercase, dash-separated name, e.g. `graceful-shutdown`. Card files and
   anchors use it.
+- **SNS** – AWS's notification service (email, SMS, webhooks); alarms usually send to it. Not used
+  by us.
+- **Spot interruption** – AWS taking Spot capacity back: the task gets SIGTERM and about 2 minutes
+  to stop.
 - **SQL injection** – an attacker's text being run as SQL. Prevented by parameterized queries.
 - **SQS** – AWS's managed message queue. Not used by us.
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
@@ -399,14 +501,21 @@ flowchart LR
 - **Stateless server** – keeps no user data in its own memory between requests, so any copy can
   answer any request.
 - **Static checks** – checks that read code without running it: TypeScript's typecheck and lint.
+- **Sticky sessions** – the load balancer keeps sending one client to the same target. Off for us.
 - **STS (Security Token Service)** – the AWS service that hands out temporary credentials for roles.
 - **Subnet** – a slice of the VPC's address range that lives in one AZ.
 - **Switch (Pulumi config switch)** – our on/off settings `dataEnabled`, `computeEnabled`,
   `entryEnabled` in `infra/index.ts`, used to save money.
 - **Symmetric / asymmetric encryption** – one shared key for both directions / a public key to encrypt and a private key to decrypt. TLS uses both.
+- **Synthetic check** – a robot that regularly uses the app (for example, logs in) to detect
+  outages. Not built.
+- **Systems Manager (SSM)** – an AWS service for managing machines; ECS Exec uses its message
+  channels.
 
 ## T
 
+- **t4g** – AWS's burstable Graviton machine family. Ours: `db.t4g.micro` (RDS) and
+  `cache.t4g.micro` (Valkey).
 - **Tailwind CSS** – a CSS framework of small utility classes like `p-4` and `text-sm`.
 - **TanStack Query** – the React library that fetches, caches and refetches server data in the browser.
 - **Target group** – the ALB's list of task IPs for one kind of request, plus a health check.
@@ -419,6 +528,8 @@ flowchart LR
 - **TLS (Transport Layer Security)** – the encryption under HTTPS, `rediss://` and Postgres SSL.
 - **TLS termination** – the place where the encrypted connection ends and is decrypted. For
   browsers that is CloudFront.
+- **Transit gateway** – a hub that joins many VPCs and on-premises networks. Not used by us.
+- **Trivy / Grype** – open-source image vulnerability scanners, often run in CI. Not used by us.
 - **tRPC** – a library for calling server functions from the browser with shared TypeScript types.
 - **Trust policy** – the resource-based policy on a role that says who may assume it.
 - **trustProxy** – the Fastify setting that reads the real visitor IP from `X-Forwarded-For`.
@@ -439,15 +550,20 @@ flowchart LR
 
 - **Valkey** – an open-source fork of Redis that speaks the same protocol. Our AWS session store.
 - **Vitest** – our unit test runner.
+- **VPC origin (CloudFront)** – CloudFront reaching a private load balancer that has no public
+  address. Not used by us.
 - **VPC (Virtual Private Cloud)** – our own private network inside AWS. Ours: `10.0.0.0/16`.
 - **VPC endpoint** – a private door from the VPC to an AWS service, without the internet. Not built.
 
 ## W
 
 - **WebSockets** – a two-way connection between browser and server that stays open.
+- **Weighted random** – an ALB algorithm that picks targets randomly, weighted by their health.
 
 ## X
 
+- **x-amz-cf-pop** – a CloudFront response header naming the edge location that answered.
+- **x-cache** – a CloudFront response header: `Hit from cloudfront` or `Miss from cloudfront`.
 - **X-Forwarded-For (XFF)** – a header each proxy adds, listing who it got the request from.
 - **X-Forwarded-Proto** – a header saying which protocol (http or https) the visitor used.
 - **X-Origin-Verify** – our secret header from CloudFront to the ALB. See **Origin secret**.

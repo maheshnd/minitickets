@@ -28,6 +28,7 @@ export interface PostgresOutputs {
   masterSecretArn: pulumi.Output<string>;
 }
 
+// @concept: rds-postgres
 export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
   // 1. DB subnet group
   // WHAT: the list of subnets RDS is allowed to put the database in.
@@ -55,12 +56,15 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     engine: "postgres",
     engineVersion: "17",
 
+    // @concept: arm64-graviton
     // 2b. Size: the smallest ARM machine (2 vCPU burstable, 1 GB RAM) and 20 GB of disk.
     //     gp3 is the current general-purpose SSD type: cheaper and faster than old gp2.
     instanceClass: "db.t4g.micro",
     allocatedStorage: 20,
     storageType: "gp3",
 
+    // @concept: encryption-at-rest
+    // @concept: kms
     // 2c. Encryption at rest: the disk, backups and snapshots are encrypted with an
     //     AWS-managed key. It costs nothing and cannot be turned on later without a rebuild.
     storageEncrypted: true,
@@ -69,6 +73,7 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     dbName: "minitickets",
     username: "minitickets",
 
+    // @concept: rds-managed-password
     // 2e. Password: RDS creates a strong password and stores it in Secrets Manager.
     //     WHY: the password never appears in our code, in Pulumi config or in Pulumi state.
     //     We only ever see the secret's ARN (its address). Anyone who needs the password
@@ -86,6 +91,7 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     publiclyAccessible: false,
     port: 5432,
 
+    // @concept: high-availability
     // 2g. Single-AZ: one database machine in one availability zone.
     //     WHY: Multi-AZ keeps a second, standby copy in another AZ and switches to it in
     //     about a minute if the first one fails. That doubles the cost. A dev database can
@@ -94,6 +100,7 @@ export function createPostgres(inputs: PostgresInputs): PostgresOutputs {
     //     is much cheaper than that.
     multiAz: false,
 
+    // @concept: backups-dr
     // 2h. Dev-only settings. Each one trades safety for easy, cheap teardown.
     //     deletionProtection false: Pulumi may delete the database when we switch the layer
     //       off. Production: true, so nobody can delete it by mistake (not even Pulumi).

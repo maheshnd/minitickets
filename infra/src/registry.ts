@@ -34,10 +34,13 @@ const lifecyclePolicy = JSON.stringify({
   ],
 });
 
+// @concept: ecr
 // 2. Helper that builds one repository plus its lifecycle policy, so api and web are not copy-pasted.
 function createRepo(service: "api" | "web") {
   const name = `${prefix}-${service}`;
 
+  // @concept: immutable-image-tags
+  // @concept: image-scanning
   // WHAT: a private repository that holds the images of one service.
   // WHY: ECS (a later step) pulls images from here; it cannot pull from our laptop.
   // DEPENDS ON: nothing.

@@ -36,6 +36,7 @@ SUBNETS="$(pulumi stack output publicSubnetIds --json | tr -d '[]" \n')"
 API_SG="$(pulumi stack output apiSgId)"
 cd "$ROOT"
 
+# @concept: fargate-spot
 # 6. WHAT: start ONE task from the api task definition, but replace its command with the
 #    migration runner. Same image, same secrets, same subnets and security group as the api.
 #    WHY the same task definition: the migration must use exactly the code (and SQL files) of

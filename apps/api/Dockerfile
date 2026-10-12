@@ -95,6 +95,7 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4000
 
+# @concept: tls-in-transit
 # 11b. WHAT: download AWS's RDS certificate bundle (the certificate authorities, CAs, that sign
 #      every RDS database certificate, in all regions) and tell Node to trust it as well.
 #      WHY: on AWS the API connects to RDS with SSL and VERIFIES the certificate (see

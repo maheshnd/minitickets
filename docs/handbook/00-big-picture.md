@@ -173,5 +173,5 @@ sequenceDiagram
 - **Uses:** the step docs, especially [07 login](../07-login-session.md),
   [18 ALB](../18-infra-alb-web.md) and [19 CloudFront](../19-infra-cloudfront.md).
 - **Gives:** the frame for everything else. [aws-foundations.md](aws-foundations.md) explains the
-  AWS rules these arrows obey. The infra story (Phase 2) and the app story (Phase 3) walk the same
+  AWS rules these arrows obey. The [infra story](infra-story.md) and the app story (Phase 3) walk the same
   path chapter by chapter. The [concept map](concept-map.md) lists every concept named here.

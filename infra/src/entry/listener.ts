@@ -44,6 +44,8 @@ export interface ListenerOutputs {
 }
 
 export function createListener(inputs: ListenerInputs): ListenerOutputs {
+  // @concept: alb
+  // @concept: tls-termination
   // 1. HTTP listener on port 80
   // WHAT: accept plain HTTP on port 80. Default action: answer 403 Forbidden ourselves, without
   //       asking any task.
@@ -66,12 +68,14 @@ export function createListener(inputs: ListenerInputs): ListenerOutputs {
     tags: tagsFor(`${prefix}-http`),
   });
 
+  // @concept: origin-protection
   // 2. The condition both rules share: "the request carries our secret header".
   //    CloudFront adds it to every request it sends to the ALB (entry/cdn.ts).
   const hasSecretHeader = {
     httpHeader: { httpHeaderName: inputs.originHeaderName, values: [inputs.originHeaderValue] },
   };
 
+  // @concept: same-origin-routing
   // 3. Rule: secret header AND /trpc/* -> api
   // WHAT: if the request has the secret header and the path matches /trpc/*
   //       (e.g. /trpc/auth.login?batch=1), forward to the api target group.

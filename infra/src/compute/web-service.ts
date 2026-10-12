@@ -28,6 +28,7 @@ export interface WebServiceOutputs {
   serviceName: pulumi.Output<string>;
 }
 
+// @concept: ecs-service
 export function createWebService(inputs: WebServiceInputs): WebServiceOutputs {
   // 1. The service
   // WHAT: keeps 1 web task running and puts its IP into the web target group.
@@ -39,6 +40,7 @@ export function createWebService(inputs: WebServiceInputs): WebServiceOutputs {
     cluster: inputs.clusterName,
     taskDefinition: inputs.taskDefinitionArn,
 
+    // @concept: fargate-spot
     // 1a. One task for dev, on FARGATE_SPOT (about 70% cheaper; see service.ts 1b for the trade-off).
     desiredCount: 1,
     capacityProviderStrategies: [{ capacityProvider: "FARGATE_SPOT", weight: 1 }],
@@ -52,6 +54,7 @@ export function createWebService(inputs: WebServiceInputs): WebServiceOutputs {
       assignPublicIp: true,
     },
 
+    // @concept: circuit-breaker
     // 1c. Circuit breaker with rollback: a web image that never becomes healthy is not retried
     //     forever; ECS goes back to the last revision that worked.
     deploymentCircuitBreaker: { enable: true, rollback: true },
@@ -62,6 +65,7 @@ export function createWebService(inputs: WebServiceInputs): WebServiceOutputs {
       { targetGroupArn: inputs.webTargetGroupArn, containerName: "web", containerPort: 3000 },
     ],
 
+    // @concept: zero-downtime-deploys
     // 1e. Health check grace period: for the first 60 s after a task starts, ECS ignores failed
     //     ALB health checks. WHY: Node and Next.js need a few seconds to start. Without a grace
     //     period, the first failed checks could make ECS kill the task before it ever got ready,

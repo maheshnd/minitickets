@@ -26,9 +26,9 @@ flowchart LR
 | [glossary.md](glossary.md) | Every technical word used in the handbook | written, grows with every phase |
 | [reference-topics.md](reference-topics.md) | The owner's checklist of interview topics | the owner's notes |
 | [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) | The spec this handbook is built from | fixed |
-| `infra-story.md` | The AWS resources, in the order a request meets them | Phase 2 |
+| [infra-story.md](infra-story.md) | The AWS resources, in the order a request meets them; deploy, security and cost stories | written |
 | `app-story.md` | Our code, in the order a request travels through it | Phase 3 |
-| `concepts/<slug>.md` | One card per concept | Phases 2, 3, 5 |
+| `concepts/<slug>.md` | One card per concept | AWS / infra cards written (Phase 2); app cards Phase 3; planned and explain-only Phase 5 |
 | `decisions/NNNN-<title>.md` | Architecture Decision Records (why we chose X over Y) | Phase 4 |
 | `system-design.md` | Classic system design questions, answered from our app | Phase 4 |
 | `interview-drills.md` | Question bank by interview round | Phase 5 |
@@ -49,7 +49,7 @@ Files that are not written yet are shown without a link and with their phase.
 
 1. [00-big-picture.md](00-big-picture.md)
 2. [aws-foundations.md](aws-foundations.md)
-3. `infra-story.md` (Phase 2), then `app-story.md` (Phase 3)
+3. [infra-story.md](infra-story.md), then `app-story.md` (Phase 3)
 4. `decisions/` (Phase 4)
 5. `system-design.md` (Phase 4)
 6. Skim the [concept map](concept-map.md) for anything you skipped.
@@ -71,14 +71,14 @@ Know which parts are ✅ and which are 📖: say "here is what we built, here is
 **Security round**
 
 [aws-foundations.md](aws-foundations.md) chapters 3 to 5 → the "security story" in
-`infra-story.md` (Phase 2) → the Auth & Security cards: `password-hashing`, `sessions-vs-jwt`,
-`session-cookie`, `user-enumeration`, `csrf`, `xss`, `open-redirect`, `origin-protection`,
-`least-privilege`, `secrets-management`.
+[infra-story.md](infra-story.md#the-security-story) → the Auth & Security cards: `password-hashing`, `sessions-vs-jwt`,
+`session-cookie`, `user-enumeration`, `csrf`, `xss`, `open-redirect`, [`origin-protection`](concepts/origin-protection.md),
+[`least-privilege`](concepts/least-privilege.md), [`secrets-management`](concepts/secrets-management.md).
 
 **AWS round**
 
-[aws-foundations.md](aws-foundations.md) (all of it) → `infra-story.md` (Phase 2) → the AWS
-Network, AWS Compute and AWS Data cards → the "cost story" in `infra-story.md`.
+[aws-foundations.md](aws-foundations.md) (all of it) → [infra-story.md](infra-story.md) → the AWS
+Network, AWS Compute and AWS Data cards → the [cost story](infra-story.md#the-cost-story).
 
 **Frontend round**
 

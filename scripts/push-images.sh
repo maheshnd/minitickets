@@ -21,6 +21,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+# @concept: immutable-image-tags
 # 4. WHAT: the tag is the short git SHA, e.g. 9fa3c21. Never "latest".
 #    WHY: "latest" is a moving name: you cannot tell which code it holds, and it cannot be
 #    used here at all because the repositories are IMMUTABLE (a tag can be pushed only once).
@@ -55,6 +56,8 @@ REGISTRY="${API_REPO%%/*}"
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
 
+# @concept: arm64-graviton
+# @concept: same-origin-routing
 # 9. WHAT: build for linux/arm64 and push in one step (--push), api first and then web.
 #    WHY: the ECS tasks (Step 11e) will run on ARM64, and an image only runs on the CPU it
 #    was built for. buildx is Docker's multi-platform builder.

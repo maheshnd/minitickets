@@ -25,6 +25,7 @@ export interface WebTaskOutputs {
   taskDefinitionArn: pulumi.Output<string>;
 }
 
+// @concept: task-definition
 export function createWebTask(inputs: WebTaskInputs): WebTaskOutputs {
   // 1. The region, for the log driver (it must know which region's CloudWatch to write to).
   const region = aws.getRegionOutput().region;
@@ -36,6 +37,7 @@ export function createWebTask(inputs: WebTaskInputs): WebTaskOutputs {
   const taskDefinition = new aws.ecs.TaskDefinition(`${prefix}-web-task`, {
     family: `${prefix}-web`,
 
+    // @concept: fargate
     // 2a. Fargate with awsvpc: every task gets its own network card and IP, so the target group
     //     can list it by IP (target type "ip") and it can wear the web security group.
     requiresCompatibilities: ["FARGATE"],
@@ -45,6 +47,7 @@ export function createWebTask(inputs: WebTaskInputs): WebTaskOutputs {
     cpu: "256",
     memory: "512",
 
+    // @concept: arm64-graviton
     // 2c. ARM64: MUST match the image, which scripts/push-images.sh builds for linux/arm64.
     runtimePlatform: { operatingSystemFamily: "LINUX", cpuArchitecture: "ARM64" },
 
@@ -71,6 +74,7 @@ export function createWebTask(inputs: WebTaskInputs): WebTaskOutputs {
           { name: "HOSTNAME", value: "0.0.0.0" },
         ],
 
+        // @concept: cloudwatch-logs
         // 2f. Logs: every line Next.js prints goes to /minitickets/dev/web, stream web/web/<task id>.
         logConfiguration: {
           logDriver: "awslogs",

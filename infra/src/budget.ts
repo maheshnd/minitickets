@@ -26,6 +26,8 @@ export interface BudgetInputs {
   alertEmail: pulumi.Input<string>;
 }
 
+// @concept: budget-alerts
+// @concept: alerting
 export function createBudget(inputs: BudgetInputs): void {
   // 2. Monthly cost budget
   // WHAT: a $20 per month limit that emails us as spending approaches or passes it.

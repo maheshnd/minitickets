@@ -41,6 +41,7 @@ export interface TaskOutputs {
   taskDefinitionArn: pulumi.Output<string>;
 }
 
+// @concept: task-definition
 export function createApiTask(inputs: TaskInputs): TaskOutputs {
   // 1. The region, for the log driver (it must know which region's CloudWatch to write to).
   const region = aws.getRegionOutput().region;
@@ -52,6 +53,7 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
   const taskDefinition = new aws.ecs.TaskDefinition(`${prefix}-api-task`, {
     family: `${prefix}-api`,
 
+    // @concept: fargate
     // 2a. Fargate: AWS provides the machine; we only say how big. awsvpc gives every task its
     //     own network card (and IP) in our VPC, so it can wear a security group. Fargate requires it.
     requiresCompatibilities: ["FARGATE"],
@@ -62,10 +64,12 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
     cpu: "256",
     memory: "512",
 
+    // @concept: arm64-graviton
     // 2c. ARM64 (Graviton): MUST match the image. scripts/push-images.sh builds linux/arm64.
     //     An arm64 image on an X86_64 task fails with "exec format error" (docs/16-infra-ecr.md).
     runtimePlatform: { operatingSystemFamily: "LINUX", cpuArchitecture: "ARM64" },
 
+    // @concept: execution-vs-task-role
     // 2d. The two roles (see iam.ts): ECS wears the execution role to START the task,
     //     our code wears the task role while it RUNS.
     executionRoleArn: inputs.executionRoleArn,
@@ -100,6 +104,8 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "TRUST_PROXY_HOPS", value: String(inputs.trustProxyHops) },
         ],
 
+        // @concept: secrets-management
+        // @concept: rds-managed-password
         // 2g. Secrets: ECS reads them (with the execution role) when the task starts and puts
         //     the VALUES into these env vars. The task definition holds only WHERE they are.
         //     "<arn>:username::" picks the "username" key from a JSON secret. The RDS master
@@ -112,6 +118,7 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "REDIS_URL", valueFrom: inputs.redisUrlSecretArn },
         ],
 
+        // @concept: cloudwatch-logs
         // 2h. Logs: the awslogs driver sends every line the app prints to CloudWatch.
         //     Each task writes its own stream named api/api/<task id>.
         logConfiguration: {
@@ -141,6 +148,7 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           startPeriod: 15,
         },
 
+        // @concept: ecs-exec
         // 2j. initProcessEnabled: runs a tiny "init" process as PID 1 that passes signals on to
         //     node and cleans up finished child processes. AWS recommends it for ECS Exec, whose
         //     agent starts child processes (each shell you open) inside the container.

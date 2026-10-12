@@ -35,6 +35,7 @@ export interface ServiceOutputs {
   serviceName: pulumi.Output<string>;
 }
 
+// @concept: ecs-service
 export function createApiService(inputs: ServiceInputs): ServiceOutputs {
   // 1. The service
   // WHAT: keeps 1 copy of the api task running in the cluster.
@@ -48,9 +49,12 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
     cluster: inputs.clusterName,
     taskDefinition: inputs.taskDefinitionArn,
 
+    // @concept: scaling
+    // @concept: high-availability
     // 1a. One task is enough for dev. Production: 2+ in 2 AZs, so one can fail.
     desiredCount: 1,
 
+    // @concept: fargate-spot
     // 1b. FARGATE_SPOT: about 70% cheaper than normal Fargate. AWS can take the machine back
     //     at any time with a 2-minute warning; the service then starts a new task, so the api is
     //     down for a minute or two. Fine for dev. NOT for production, where an interruption
@@ -72,15 +76,18 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
       assignPublicIp: true,
     },
 
+    // @concept: circuit-breaker
     // 1d. Deployment circuit breaker: if new tasks keep failing to start or to become healthy,
     //     ECS stops the deployment instead of retrying forever, and (rollback) goes back to the
     //     last task definition revision that worked.
     deploymentCircuitBreaker: { enable: true, rollback: true },
 
+    // @concept: ecs-exec
     // 1e. ECS Exec: lets us open a shell inside the running container (aws ecs execute-command).
     //     It also needs the ssmmessages permissions on the task role (iam.ts).
     enableExecuteCommand: true,
 
+    // @concept: zero-downtime-deploys
     // 1f. Load balancer (only when entry is on, docs/18-infra-alb-web.md).
     //     loadBalancers: register every api task in the api target group, so the ALB can send
     //       /trpc/* to container "api" on port 4000.

@@ -49,6 +49,7 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
   // 2. The id of our one origin. Every cache behavior points at it by this name.
   const albOriginId = "alb";
 
+  // @concept: cloudfront
   // 3. The distribution
   // WHAT: one CloudFront distribution in front of the ALB.
   // WHY: HTTPS for the browser (the Secure cookie needs it) and caching for static files.
@@ -59,6 +60,7 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
     enabled: true,
     comment: "minitickets dev: HTTPS in front of the ALB",
 
+    // @concept: http-versions
     // 3a. HTTP/2 and HTTP/3 between the browser and the edge (faster page loads; the browser
     //     picks the best one it supports).
     httpVersion: "http2and3",
@@ -75,6 +77,7 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
         customOriginConfig: {
           httpPort: 80,
           httpsPort: 443,
+          // @concept: tls-termination
           // http-only: CloudFront talks to the ALB over plain HTTP.
           // Dev compromise: HTTPS needs a certificate for a domain we own, and the ALB's
           //   *.elb.amazonaws.com name belongs to AWS. The hop runs inside the AWS network, but
@@ -84,12 +87,14 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
           // Required by the API even with http-only (it applies only to HTTPS origins).
           originSslProtocols: ["TLSv1.2"],
         },
+        // @concept: origin-protection
         // The secret header: CloudFront adds it to every request it sends to the ALB.
         // The listener rules let a request through only when it is there (entry/listener.ts).
         customHeaders: [{ name: inputs.originHeaderName, value: inputs.originHeaderValue }],
       },
     ],
 
+    // @concept: cdn-caching
     // 3d. Cache behaviors: CloudFront checks the ordered ones top to bottom by path; the first
     //     match wins. If none match, the default behavior (3e) applies.
     orderedCacheBehaviors: [
@@ -132,7 +137,11 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
       viewerProtocolPolicy: "redirect-to-https",
       allowedMethods: ["GET", "HEAD"],
       cachedMethods: ["GET", "HEAD"],
-      // Gzip/Brotli the response at the edge when the browser supports it (smaller downloads).
+      // @concept: compression
+      // compress: let CloudFront gzip/Brotli responses at the edge. It only takes effect when the
+      //   cache policy also enables Gzip and Brotli. CachingOptimized (/_next/static/*) does;
+      //   CachingDisabled (this behavior and /trpc/*) does not, so here the setting does nothing and
+      //   any compression must come from the origin itself (docs/handbook/concepts/compression.md).
       compress: true,
       cachePolicyId: cachingDisabled.id,
       originRequestPolicyId: allViewer.id,

@@ -21,11 +21,13 @@ export interface ClusterOutputs {
   clusterName: pulumi.Output<string>;
 }
 
+// @concept: ecs-cluster
 export function createCluster(): ClusterOutputs {
   // 1. The cluster
   // WHAT: the group named minitickets-dev.
   // WHY: every ECS service and task must belong to a cluster.
   // DEPENDS ON: nothing.
+  // @concept: metrics
   // containerInsights disabled: Container Insights collects extra CPU/memory metrics per task.
   //   They are billed as custom CloudWatch metrics (a few dollars a month even for one small
   //   task). The free basic metrics (service CPU and memory) are enough for dev.
@@ -35,6 +37,7 @@ export function createCluster(): ClusterOutputs {
     tags: tagsFor(`${prefix}-cluster`),
   });
 
+  // @concept: fargate-spot
   // 2. Capacity providers
   // WHAT: the kinds of machines tasks in this cluster may run on.
   //   FARGATE      = normal, on-demand. AWS keeps the task running until we stop it.

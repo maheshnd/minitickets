@@ -5,6 +5,7 @@ on:
   push:
   pull_request:
 
+# @concept: least-privilege
 # 1. Least privilege: the token these jobs get can only READ the repo. No job here needs more.
 permissions:
   contents: read

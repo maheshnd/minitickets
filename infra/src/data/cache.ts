@@ -33,7 +33,9 @@ export interface CacheOutputs {
   authToken: pulumi.Output<string>;
 }
 
+// @concept: elasticache-valkey
 export function createCache(inputs: CacheInputs): CacheOutputs {
+  // @concept: secrets-management
   // 1. Auth token (the cache's password)
   // WHAT: a random 32-character string, created by Pulumi on our machine.
   // WHY: TLS hides traffic from eavesdroppers; the token makes sure only callers who know it
@@ -74,6 +76,8 @@ export function createCache(inputs: CacheInputs): CacheOutputs {
     engine: "valkey",
     engineVersion: "8.2",
 
+    // @concept: arm64-graviton
+    // @concept: high-availability
     // 3b. Size: one small ARM node (2 vCPU burstable, 0.5 GB RAM). Plenty for sessions.
     //     1 node means no replica and no automatic failover: if the node dies, users are
     //     logged out until it comes back. Fine for dev. Production: 2+ nodes in 2 AZs with
@@ -88,6 +92,8 @@ export function createCache(inputs: CacheInputs): CacheOutputs {
     subnetGroupName: subnetGroup.name,
     securityGroupIds: [inputs.redisSgId],
 
+    // @concept: tls-in-transit
+    // @concept: encryption-at-rest
     // 3d. Encryption.
     //     transitEncryptionEnabled: every connection must use TLS (the "s" in rediss://),
     //       so session ids are never sent as plain text across the network.
@@ -97,6 +103,7 @@ export function createCache(inputs: CacheInputs): CacheOutputs {
     atRestEncryptionEnabled: true,
     authToken: authToken.result,
 
+    // @concept: backups-dr
     // 3e. Dev-only settings.
     //     snapshotRetentionLimit 0: no daily backups. Sessions are short-lived and users can
     //       simply log in again. Production: usually still low, since a cache is not the

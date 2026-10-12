@@ -42,6 +42,8 @@ export interface SecurityOutputs {
   redisSgId: pulumi.Output<string>;
 }
 
+// @concept: security-groups
+// @concept: least-privilege
 export function createSecurityGroups(inputs: SecurityInputs): SecurityOutputs {
   // 1. alb group
   // WHAT: the firewall for the load balancer. Since Step 11g only CloudFront may talk to it.
@@ -106,6 +108,7 @@ export function createSecurityGroups(inputs: SecurityInputs): SecurityOutputs {
   // A rule needs BOTH groups to exist first: the group it protects and (if any) the group
   // it allows. That is why rules are separate resources created after the groups.
 
+  // @concept: origin-protection
   // 6. alb: HTTP from CloudFront only (changed in Step 11g, see docs/19-infra-cloudfront.md)
   // WHAT: the AWS managed prefix list "com.amazonaws.global.cloudfront.origin-facing": the list
   //       of IP ranges CloudFront uses to call origins. AWS keeps it up to date for us.

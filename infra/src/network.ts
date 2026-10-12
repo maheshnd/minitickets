@@ -32,11 +32,14 @@ export interface NetworkOutputs {
 }
 
 export function createNetwork(): NetworkOutputs {
+  // @concept: regions-and-azs
+  // @concept: high-availability
   // 1. Ask AWS which availability zones (AZs) exist in our region and take the first 2.
   //    An AZ is one separate data centre. Using 2 means one can fail and the app lives on.
   const azs = aws.getAvailabilityZonesOutput({ state: "available" });
   const azNames = azs.names.apply((names) => names.slice(0, 2));
 
+  // @concept: vpc
   // 2. VPC
   // WHAT: our own private, isolated network inside AWS (a private office building).
   // WHY: every other resource (database, containers) will live inside it.
@@ -59,6 +62,7 @@ export function createNetwork(): NetworkOutputs {
     tags: tagsFor(`${prefix}-igw`),
   });
 
+  // @concept: subnets
   // 4. Public subnets, one per AZ
   // WHAT: a slice of the VPC's address range, living in ONE availability zone (a floor).
   // WHY: public things (the load balancer, later) go here. Two AZs means two floors in
@@ -96,6 +100,7 @@ export function createNetwork(): NetworkOutputs {
       }),
   );
 
+  // @concept: route-tables
   // 6. Public route table
   // WHAT: a signboard listing where traffic leaving a subnet should go.
   // WHY: the rule 0.0.0.0/0 (meaning "every address") -> internet gateway is what makes

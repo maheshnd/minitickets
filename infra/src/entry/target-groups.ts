@@ -27,7 +27,10 @@ export interface TargetGroupsOutputs {
   webTargetGroupArn: pulumi.Output<string>;
 }
 
+// @concept: target-groups
 export function createTargetGroups(inputs: TargetGroupsInputs): TargetGroupsOutputs {
+  // @concept: load-balancing-algorithms
+  // @concept: zero-downtime-deploys
   // 1. Settings both target groups share.
   //    targetType "ip": Fargate tasks have their own IPs (awsvpc network mode gives every task its
   //      own network card). There is no EC2 instance to point at, so the list holds task IPs.
@@ -76,7 +79,8 @@ export function createTargetGroups(inputs: TargetGroupsInputs): TargetGroupsOutp
 
   // 4. web target group
   // WHAT: the list of web (Next.js) task IPs, on port 3000.
-  // WHY: the listener's default action sends everything that is not /trpc/* here.
+  // WHY: the listener's web rule (priority 200, entry/listener.ts) sends everything that is not
+  //      /trpc/* here. (Before Step 11g that was the listener's default action.)
   // DEPENDS ON: vpcId.
   // / is the landing page: a plain server-rendered page that needs no database or api,
   //   so it answers 200 whenever Next.js itself is up.

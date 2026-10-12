@@ -26,6 +26,8 @@ export interface WebIamOutputs {
   executionRoleArn: pulumi.Output<string>;
 }
 
+// @concept: execution-vs-task-role
+// @concept: least-privilege
 export function createWebIamRole(): WebIamOutputs {
   // 1. Our AWS account id (a 12-digit number). The trust policy below needs it.
   const accountId = aws.getCallerIdentityOutput().accountId;
