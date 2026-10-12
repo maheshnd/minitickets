@@ -1,5 +1,7 @@
 # CloudWatch Logs: log groups, streams, retention
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Observability · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.14)
 
 ## 1. In one line

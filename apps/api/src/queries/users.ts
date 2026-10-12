@@ -3,11 +3,13 @@ import { db } from "../db/client";
 import { users } from "../db/schema/users";
 import { ConflictError } from "../errors";
 
+// @concept: layered-api
 // Queries: the only code that talks to the database. No business logic here.
 
 // Postgres error code for "unique_violation".
 const UNIQUE_VIOLATION = "23505";
 
+// @concept: unique-constraint-race
 // Drizzle wraps driver errors (DrizzleQueryError) and keeps the original in `.cause`.
 // So the Postgres code may be on the error itself or on its cause; check both.
 function isUniqueViolation(err: unknown): boolean {
@@ -15,6 +17,7 @@ function isUniqueViolation(err: unknown): boolean {
   return code(err) === UNIQUE_VIOLATION || code((err as { cause?: unknown } | null)?.cause) === UNIQUE_VIOLATION;
 }
 
+// @concept: sql-injection
 // 1. Look up one user by email. Returns the user, or undefined if there is none.
 export async function findByEmail(email: string) {
   const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);

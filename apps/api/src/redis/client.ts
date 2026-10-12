@@ -4,6 +4,7 @@ import { env } from "../config/env";
 // 1. One shared Redis client for the whole API (like the Postgres pool).
 //    ioredis connects in the background and reconnects by itself if Redis goes away.
 export const redis = new Redis(env.REDIS_URL, {
+  // @concept: fail-fast
   // 2. Fail fast: when Redis is down, a command fails after at most 1 retry instead of
   //    waiting forever. Then a login gets a quick generic 500 and the API stays up.
   maxRetriesPerRequest: 1,

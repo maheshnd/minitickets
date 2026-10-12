@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+// @concept: e2e-tests
 // 1. A new email on every run. The account is created through the signup page's API call,
 //    so the test needs no database access.
 const runId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -29,6 +30,7 @@ test("login shows the email in the header and survives a reload", async ({ page 
   await expect(header.getByText(`Signed in as ${email}`)).toBeVisible();
   await expect(header.getByRole("link", { name: "Login" })).toHaveCount(0);
 
+  // @concept: session-cookie
   // 3. The session cookie is HttpOnly: page JavaScript can't see it.
   expect(await page.evaluate(() => document.cookie)).not.toContain("sid");
 

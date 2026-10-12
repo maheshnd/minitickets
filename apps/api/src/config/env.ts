@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DatabaseEnvSchema } from "./database";
 
+// @concept: config-validation
+// @concept: twelve-factor-config
 // 1. Describe every environment variable the API needs (the database ones live in ./database.ts).
 const EnvSchema = z.object({
   // process.env values are always strings; z.coerce turns "4000" into the number 4000.

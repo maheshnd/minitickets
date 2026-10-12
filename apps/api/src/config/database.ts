@@ -11,6 +11,7 @@ import { z } from "zod";
 
 const PARTS = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"] as const;
 
+// @concept: config-validation
 export const DatabaseEnvSchema = z
   // 1. Every variable is optional on its own. Step 2 checks that exactly one full set is there.
   .object({

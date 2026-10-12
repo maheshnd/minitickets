@@ -1,3 +1,4 @@
+// @concept: static-checks
 // ESLint settings for the whole repo ("flat config"). Run with `pnpm lint`.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";

@@ -38,6 +38,7 @@ export function LoginForm() {
   const [formError, setFormError] = useState("");
   const login = useLogin();
   const router = useRouter();
+  // @concept: open-redirect
   // Where to go after login. getSafeNext only lets through paths on our own site (no open redirect).
   const next = getSafeNext(useSearchParams().get("next"));
 
@@ -83,6 +84,7 @@ export function LoginForm() {
     login.mutate(values, {
       // 6a. Success: the API has set the cookie. Go to the page the user wanted (or home).
       onSuccess: () => router.push(next),
+      // @concept: ui-error-handling
       onError: (error) => {
         const data = error.data;
         // 6b. Server-side validation (400): show each message under its field.

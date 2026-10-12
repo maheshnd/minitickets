@@ -45,6 +45,7 @@ services:
 
   # ---- The app, in containers. Only started with `--profile app` (`pnpm app:up`). ----
 
+  # @concept: migrations
   # One-off job: applies the SQL migrations, then exits. It is separate from the api on purpose:
   # if several api containers ran migrations at startup, they would race each other.
   migrate:
@@ -101,6 +102,7 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    # @concept: health-checks
     # 5. healthcheck: the slim image has no curl, so use node to call /health. This lets
     #    `up --wait` and `depends_on` know when the API really answers.
     healthcheck:

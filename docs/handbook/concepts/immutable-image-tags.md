@@ -1,5 +1,7 @@
 # Immutable image tags (git SHA)
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: DevOps & CI/CD · Status: ✅ built · Step doc: [16 ECR](../../16-infra-ecr.md) (section 3b)
 
 ## 1. In one line

@@ -1,5 +1,7 @@
 # Load balancing algorithms: round robin, least connections, IP hash
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Reliability · Status: 🟡 partial (ALB default) · Step doc: [18 ALB + web](../../18-infra-alb-web.md)
 
 ## 1. In one line

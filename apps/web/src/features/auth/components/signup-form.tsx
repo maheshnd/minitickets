@@ -13,6 +13,7 @@ type Errors = Partial<Record<FieldName, string>>;
 // Order matters: focus goes to the first invalid field in this order (top to bottom on screen).
 const fieldOrder: FieldName[] = ["email", "password", "confirmPassword"];
 
+// @concept: accessible-forms
 // Runs the shared schema and returns the first message for each invalid field.
 function validate(values: Values): Errors {
   const result = SignupInput.safeParse(values);
@@ -27,6 +28,7 @@ function validate(values: Values): Errors {
   return errors;
 }
 
+// @concept: state-management
 export function SignupForm() {
   const [values, setValues] = useState<Values>({ email: "", password: "", confirmPassword: "" });
   const [errors, setErrors] = useState<Errors>({});
@@ -85,6 +87,7 @@ export function SignupForm() {
         setSuccess(true);
         setValues({ email: "", password: "", confirmPassword: "" });
       },
+      // @concept: ui-error-handling
       onError: (error) => {
         const data = error.data;
         // 6a. Server-side validation (400): show each message under its field.

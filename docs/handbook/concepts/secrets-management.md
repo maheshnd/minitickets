@@ -1,5 +1,7 @@
 # Secrets management: never in code, images or state
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Auth & Security · Status: ✅ built · Step docs: [11 Docker](../../11-docker.md), [14 data](../../14-infra-data.md), [17 ECS api](../../17-infra-ecs-api.md)
 
 ## 1. In one line

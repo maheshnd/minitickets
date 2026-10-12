@@ -31,6 +31,7 @@ export interface TargetGroupsOutputs {
 export function createTargetGroups(inputs: TargetGroupsInputs): TargetGroupsOutputs {
   // @concept: load-balancing-algorithms
   // @concept: zero-downtime-deploys
+  // @concept: graceful-shutdown
   // 1. Settings both target groups share.
   //    targetType "ip": Fargate tasks have their own IPs (awsvpc network mode gives every task its
   //      own network card). There is no EC2 instance to point at, so the list holds task IPs.
@@ -51,6 +52,7 @@ export function createTargetGroups(inputs: TargetGroupsInputs): TargetGroupsOutp
     deregistrationDelay: 30,
   };
 
+  // @concept: health-checks
   // 2. Health check timing, the same for both.
   //    Every 15 s the ALB calls the path on every task. Answer within 5 s with HTTP 200 = pass.
   //    2 passes in a row = healthy (gets traffic). 3 failures in a row = unhealthy (no traffic,

@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+// @concept: e2e-tests
+// @concept: testing-pyramid
 // 1. CI is "true" on GitHub Actions. There nothing is running yet, so Playwright must start the servers.
 const isCI = process.env.CI === "true";
 

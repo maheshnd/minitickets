@@ -1,5 +1,7 @@
 # CloudFront: CDN and HTTPS
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built · Step doc: [19 CloudFront](../../19-infra-cloudfront.md)
 
 ## 1. In one line

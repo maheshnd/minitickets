@@ -3,12 +3,15 @@ import { UnauthorizedError } from "../errors";
 import * as sessions from "../queries/sessions";
 import * as users from "../queries/users";
 
+// @concept: layered-api
 // Services: business logic. No HTTP and no SQL in here.
 
+// @concept: ttl
 // How long the browser should keep the session cookie. Same as the Redis TTL, so the cookie
 // and the stored session expire together. (Exported so procedures don't import from queries/.)
 export const SESSION_MAX_AGE_SECONDS = sessions.SESSION_TTL_SECONDS;
 
+// @concept: user-enumeration
 // A real argon2id hash of a throwaway password, made once with the same settings as signup.
 // It is only used by login() below; no account has this password.
 const DUMMY_HASH =
@@ -16,11 +19,13 @@ const DUMMY_HASH =
 
 // Signup: hash the password, save the user, return only the safe fields.
 export async function signup(input: { email: string; password: string }) {
+  // @concept: password-hashing
   // 1. Hash with argon2id (the library's default algorithm). It is slow and memory-hungry
   //    on purpose, so stealing the database does not make password guessing cheap.
   //    The result is one string that also contains the random salt and the settings.
   const passwordHash = await hash(input.password);
 
+  // @concept: unique-constraint-race
   // 2. Insert straight away. We do NOT first ask "does this email exist?".
   //    Check-then-insert has a race condition: two requests with the same email can both
   //    run the check, both see "not found", and both insert. The unique constraint on
@@ -59,6 +64,8 @@ export async function getCurrentUser(userId: string | undefined) {
   return user ? { id: user.id, email: user.email } : null;
 }
 
+// @concept: sessions-vs-jwt
+// @concept: idempotency
 // Logout: revoke the session on the server. Idempotent: no cookie, or a session that is
 // already gone, is fine, so calling logout twice is safe.
 export async function logout(sessionId: string | undefined) {

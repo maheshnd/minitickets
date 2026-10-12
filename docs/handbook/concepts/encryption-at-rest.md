@@ -1,5 +1,7 @@
 # Encryption at rest
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Auth & Security · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md) (section 3.8)
 
 ## 1. In one line

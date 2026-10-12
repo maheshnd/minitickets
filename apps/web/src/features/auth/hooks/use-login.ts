@@ -7,6 +7,7 @@ export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation(
     trpc.auth.login.mutationOptions({
+      // @concept: query-invalidation
       // After a successful login the cached "me" answer (null) is out of date.
       // Invalidating it makes the header ask the API again and show the email.
       onSuccess: () => queryClient.invalidateQueries({ queryKey: trpc.auth.me.queryKey() }),

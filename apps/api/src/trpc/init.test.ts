@@ -3,6 +3,7 @@ import { ConflictError, NotFoundError } from "../errors";
 import type { Context } from "./context";
 import { createCallerFactory, publicProcedure, router } from "./init";
 
+// @concept: in-process-api-tests
 // 1. A tiny router with one procedure per error we want to check. Each procedure throws
 //    the way a service would. They all go through publicProcedure, so errorMapper runs.
 const testRouter = router({

@@ -1,5 +1,7 @@
 # TLS termination: where HTTPS ends
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built (dev compromise) · Step doc: [19 CloudFront](../../19-infra-cloudfront.md) (section 3.5)
 
 ## 1. In one line

@@ -1,5 +1,7 @@
 # ARM64 (Graviton) images and tasks
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [16 ECR](../../16-infra-ecr.md) (section 3g)
 
 ## 1. In one line

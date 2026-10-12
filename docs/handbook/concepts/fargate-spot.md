@@ -1,5 +1,7 @@
 # Fargate Spot
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.3)
 
 ## 1. In one line
@@ -39,9 +41,12 @@ Step by step:
 2. Each service: `[{ capacityProvider: "FARGATE_SPOT", weight: 1 }]`, no `base` on FARGATE.
 3. On interruption, the task gets SIGTERM; our api's `shutdown` in `apps/api/src/server.ts` closes
    the server, then the pool and Redis. With the ALB, ECS also deregisters the task from its target
-   group ([zero-downtime-deploys](zero-downtime-deploys.md)). Whether draining finishes before or
-   overlaps the SIGTERM on a Spot interruption I have not verified; on a normal deploy draining
-   comes first.
+   group ([zero-downtime-deploys](zero-downtime-deploys.md)). On a normal deploy draining comes
+   first (verified from AWS's task lifecycle docs). On a Spot interruption AWS's docs say the
+   two-minute warning is sent "as a SIGTERM signal to the running task" and do not say the task is
+   deregistered first, so the two may overlap (the exact order is still unsure; not measured). That
+   is why a short **wait after SIGTERM** before closing is planned (see
+   [zero-downtime-deploys](zero-downtime-deploys.md), "Planned improvement").
 4. The service sees the missing task and starts a new one.
 5. The migration uses on-demand: a migration stopped halfway is worse than paying a fraction of a
    cent more.

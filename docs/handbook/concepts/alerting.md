@@ -1,5 +1,7 @@
 # Alerting
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Observability · Status: 🟡 partial (cost only) · Step doc: [13 security groups + budget](../../13-infra-security-groups.md)
 
 ## 1. In one line

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { TRPCProvider, makeTrpcClient } from "@/lib/trpc/client";
 
+// @concept: retry-policy
 // Retry rule: a 4xx means the request itself was wrong (bad input, duplicate email),
 // so sending it again can never succeed. Anything else (network drop, 5xx) may be
 // temporary, so we try up to 2 more times.
@@ -13,7 +14,9 @@ function shouldRetry(failureCount: number, error: unknown) {
   return failureCount < 2;
 }
 
+// @concept: server-client-components
 export function QueryProvider({ children }: { children: ReactNode }) {
+  // @concept: tanstack-query
   // 1. The QueryClient stores (caches) query results.
   //    useState(() => ...) creates it once, instead of on every re-render.
   const [queryClient] = useState(

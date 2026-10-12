@@ -1,5 +1,7 @@
 # CDN caching: hashed static files cached, per-user answers never
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Performance & Caching · Status: ✅ built · Step doc: [19 CloudFront](../../19-infra-cloudfront.md) (sections 3.2-3.4)
 
 ## 1. In one line

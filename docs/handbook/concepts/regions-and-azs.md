@@ -1,5 +1,7 @@
 # Regions and availability zones
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built · Deep dive: [aws-foundations, chapter 1](../aws-foundations.md#1-regions-availability-zones-and-accounts)
 
 ## 1. In one line

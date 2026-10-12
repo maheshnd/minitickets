@@ -1,5 +1,7 @@
 # Least privilege
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Auth & Security · Status: ✅ built · Step docs: [10 CI](../../10-ci.md), [13 security groups](../../13-infra-security-groups.md), [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
 
 ## 1. In one line

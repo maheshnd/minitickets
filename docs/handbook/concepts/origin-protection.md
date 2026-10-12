@@ -1,5 +1,7 @@
 # Origin protection: prefix list + secret header
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built · Step doc: [19 CloudFront](../../19-infra-cloudfront.md) (section 3.7)
 
 ## 1. In one line

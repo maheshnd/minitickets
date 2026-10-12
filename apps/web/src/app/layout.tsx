@@ -21,6 +21,7 @@ const linkClass =
   "rounded px-2 py-1 text-sm font-medium hover:text-indigo-700 " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600";
 
+// @concept: server-client-components
 // Root layout: wraps every page with the same header and footer.
 // It is a Server Component (no "use client") because it has no state or event handlers.
 // Server Components are rendered to HTML on the server and send no component JavaScript to the browser.

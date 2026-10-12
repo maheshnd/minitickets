@@ -1,5 +1,7 @@
 # RDS Postgres: private, single-AZ, subnet group
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md)
 
 ## 1. In one line

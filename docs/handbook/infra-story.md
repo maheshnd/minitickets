@@ -1,5 +1,7 @@
 # The infra story
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 **In one line:** every AWS resource in MiniTickets, in the order a request meets it, then the ground
 everything stands on, then four short stories: deploy, security, cost and "what we'd change for
 production".
@@ -1167,7 +1169,8 @@ sequenceDiagram
    CloudFront's `appUrl` (its `WEB_ORIGIN`).
 4. **Rolling deploy:** new task first, healthy, old one drained 30 s, SIGTERM, graceful shutdown
    ([zero-downtime-deploys](concepts/zero-downtime-deploys.md)); the
-   [circuit breaker](concepts/circuit-breaker.md) rolls back a revision that never gets healthy.
+   [circuit breaker](concepts/circuit-breaker.md) rolls back a revision that never gets healthy
+   (after 3 failed tasks: AWS's default of 50% of the desired count, minimum 3).
 5. **Migrate:** `pnpm infra:migrate` runs the same task definition once with
    `node dist/migrate.js`, on on-demand Fargate.
 6. **Verify:** browser, cookie flags, e2e tests against `appUrl`, the blocked ALB, cache Hit/Miss,
@@ -1209,8 +1212,8 @@ flowchart LR
 | Immutable SHA tags | `registry.ts`, `scripts/push-images.sh` | Silently swapped images; untraceable deploys |
 | Read-only CI token | `.github/workflows/ci.yml` | A malicious dependency in CI writing to the repo |
 
-App-level defenses (argon2id, session cookie flags, CSRF, XSS, rate limiting) are in the app story
-(Phase 3). **Gaps we know about:** no WAF, no rate limiting yet, the edge → ALB hop is plain HTTP, the
+App-level defenses (argon2id, session cookie flags, CSRF, XSS, rate limiting) are in the
+[app security story](app-story.md#the-app-security-story). **Gaps we know about:** no WAF, no rate limiting yet, the edge → ALB hop is plain HTTP, the
 origin secret never rotates, tasks have public IPs, open egress on alb/web/api, no alarms.
 
 ## The cost story
@@ -1260,9 +1263,9 @@ flowchart TB
 | Valkey | 1 node | replica with automatic failover across AZs |
 | Edge | `*.cloudfront.net`, HTTP to the ALB, static secret header | custom domain, ACM, HTTPS to the ALB, rotated secret or private origin, WAF + rate limiting |
 | ALB | deletion protection off | on, with access logs |
-| Deploys | laptop push, owner's `pulumi up` | CI/CD with OIDC role, migrations before service update, expand/contract |
+| Deploys | laptop push, owner's `pulumi up`; `app.close()` right at SIGTERM | CI/CD with OIDC role, migrations before service update, expand/contract; a short wait after SIGTERM before closing (planned, see [zero-downtime-deploys](concepts/zero-downtime-deploys.md)) |
 | Observability | logs only, cost alert | golden-signal alarms, dashboards, tracing, SLOs, CloudTrail alerts |
-| Images | basic scan, not enforced | CI vulnerability gate, enhanced scanning, digest pinning |
+| Images | basic scan (OS packages only, at push), not enforced; npm dependencies not scanned | dependency scanning (Inspector enhanced scanning or Trivy in CI), CI vulnerability gate, digest pinning |
 
 ## How this connects
 

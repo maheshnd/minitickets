@@ -10,7 +10,10 @@ import { appRouter, type AppRouter } from "./trpc/router";
 
 // Builds and configures the Fastify app, but does NOT start it.
 // Keeping "build" (here) apart from "listen" (server.ts) makes the app easy to test later.
+// @concept: fastify-app
 export async function buildApp() {
+  // @concept: structured-logging
+  // @concept: log-redaction
   // 1. Create the Fastify instance. The logger prints each request to the terminal.
   //    redact replaces these fields with "[Redacted]" if they ever appear in a log line,
   //    so passwords can never end up in log files. (We also never log request bodies or hashes.)
@@ -31,6 +34,7 @@ export async function buildApp() {
         censor: "[Redacted]",
       },
     },
+    // @concept: trust-proxy
     // 1b. Proxies: on AWS every request reaches us through CloudFront and the load balancer, so the
     //     connection always comes from the load balancer. trustProxy makes request.ip (and the
     //     remoteAddress in every request log line) the REAL visitor's IP, read from the
@@ -40,6 +44,7 @@ export async function buildApp() {
     trustProxy: trustProxyHops(env.TRUST_PROXY_HOPS),
   });
 
+  // @concept: cors
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the
   //    browser blocks the calls unless the API explicitly allows the web origin.
   //    credentials: true lets the browser send and receive cookies on these calls. It only
@@ -49,6 +54,7 @@ export async function buildApp() {
   // 2b. Cookies: adds `req.cookies` (read) and `reply.setCookie` (write).
   await app.register(cookie);
 
+  // @concept: error-handling
   // 3. Error handler for plain Fastify routes (like /health). tRPC routes never reach it,
   //    because tRPC catches its own errors and uses the onError hook below.
   app.setErrorHandler<FastifyError>((error, request, reply) => {
@@ -65,10 +71,12 @@ export async function buildApp() {
     return reply.status(statusCode).send({ error: error.message });
   });
 
+  // @concept: health-checks
   // 4. Liveness: "is the process up?" Always 200 while the server can answer at all.
   //    It must NOT check the database, or a DB outage would make orchestrators restart a healthy API.
   app.get("/health", async () => ({ status: "ok" }));
 
+  // @concept: http-status-codes
   // 5. Readiness: "can the API do real work right now?" Pings Postgres AND Redis.
   //    200 if both answer, 503 (Service Unavailable) if either does not.
   //    allSettled waits for both, so one failure never hides the other in the log.
@@ -90,6 +98,7 @@ export async function buildApp() {
     trpcOptions: {
       router: appRouter,
       createContext,
+      // @concept: correlation-ids
       // onError runs for every failed procedure, after the error is mapped. It only LOGS;
       // the response the client gets is decided by the errorFormatter.
       onError({ path, error, req }) {

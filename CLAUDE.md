@@ -37,6 +37,7 @@ pnpm install      install everything
 pnpm dev          run web (:3000) and api (:4000) together
 pnpm typecheck    tsc --noEmit in every package
 pnpm docs:check   handbook and code agree (@concept anchors <-> cards <-> concept map)
+pnpm docs:history handbook files with last change (from git); --since <commit> for changed sections
 pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
 cd infra && pulumi preview   show what infra would change (read-only). The owner runs `pulumi up`.
@@ -97,6 +98,19 @@ For every future feature or infra step, in the SAME commit:
 - add an ADR in `docs/handbook/decisions/` if a design decision was made
 - add new words to `docs/handbook/glossary.md`
 - `pnpm docs:check` must pass
+
+## Handbook changelog rule
+
+Every commit that changes anything in `docs/handbook/` adds an entry at the TOP of
+`docs/handbook/CHANGELOG.md` (newest first):
+- date (YYYY-MM-DD) and the commit subject
+- each changed file, one line each: which sections were added or changed, and why
+  (`pnpm docs:history --since <previous handbook commit>` lists the files and changed headings)
+- `Commit:` is left as "filled in by the next handbook commit", because a commit can't contain its
+  own hash. In the same edit, fill in the hash of the PREVIOUS entry
+  (`git log -1 --format=%h -- docs/handbook`).
+- Handbook pages hold no hand-written dates; under each title is the line
+  "History: see [CHANGELOG.md](…) or run `pnpm docs:history`" (`pnpm docs:check` enforces it).
 
 ## Safety rules
 

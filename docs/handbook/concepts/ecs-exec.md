@@ -1,5 +1,7 @@
 # ECS Exec: a shell inside a running task
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.12)
 
 ## 1. In one line

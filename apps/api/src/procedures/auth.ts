@@ -5,7 +5,11 @@ import * as authService from "../services/auth";
 import { SESSION_COOKIE } from "../trpc/context";
 import { publicProcedure, router } from "../trpc/init";
 
+// @concept: layered-api
 // Procedures: validate input, call a service, return. No logic here.
+// @concept: session-cookie
+// @concept: csrf
+// @concept: xss
 // The session cookie's attributes. Login sets the cookie with these; logout clears it with
 // the same Path, HttpOnly, SameSite and Secure, because a browser only treats a cookie as
 // "the same one" (and so removes it) when those match.
@@ -21,6 +25,7 @@ const cookieOptions = {
 } as const;
 
 export const authRouter = router({
+  // @concept: validation-at-boundaries
   signup: publicProcedure
     // 1. The same schema the browser uses. The server never trusts the browser's check.
     .input(SignupInput)
@@ -44,6 +49,7 @@ export const authRouter = router({
       // 2. Setting the cookie is an HTTP job, so it happens here, not in the service.
       ctx.res.setCookie(SESSION_COOKIE, sessionId, {
         ...cookieOptions,
+        // @concept: ttl
         // Fastify's maxAge is in seconds. Same lifetime as the Redis entry.
         maxAge: authService.SESSION_MAX_AGE_SECONDS,
       });
@@ -52,6 +58,7 @@ export const authRouter = router({
       return user;
     }),
 
+  // @concept: idempotency
   logout: publicProcedure.output(z.object({ ok: z.literal(true) })).mutation(async ({ ctx }) => {
     // 1. Delete the session in Redis (server-side revocation: the cookie is now useless).
     await authService.logout(ctx.sessionId);

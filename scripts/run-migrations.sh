@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @concept: migrations
 # Runs the database migrations on AWS as a one-off ECS task, waits for it, and reports.
 # Run from anywhere:  pnpm infra:migrate
 # Needs the data AND compute layers on (the cluster and task definition are part of compute).

@@ -1,5 +1,7 @@
 # Same-origin path routing: `/trpc/*` → api
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built · Step docs: [16 ECR](../../16-infra-ecr.md) (section 3h), [18 ALB + web](../../18-infra-alb-web.md) (section 3.3)
 
 ## 1. In one line

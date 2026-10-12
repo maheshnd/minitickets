@@ -1,5 +1,7 @@
 # Infrastructure as Code with Pulumi
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: DevOps & CI/CD · Status: ✅ built · Step docs: [12 network](../../12-infra-network.md), [15 dependencies](../../15-infra-dependencies.md)
 
 ## 1. In one line

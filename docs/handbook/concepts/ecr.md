@@ -1,5 +1,7 @@
 # ECR: the image registry
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [16 ECR](../../16-infra-ecr.md)
 
 ## 1. In one line

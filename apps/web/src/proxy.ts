@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // The proxy runs on the server BEFORE a page is rendered (older Next.js called this file "middleware").
+// @concept: route-guard-proxy
 export function proxy(request: NextRequest) {
   // 1. Only checks that a "sid" cookie EXISTS. It does not (and cannot) check that the session is real.
   //    This guard is only for a nicer experience: a logged-out visitor goes to the login page

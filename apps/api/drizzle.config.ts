@@ -1,6 +1,7 @@
 import { defineConfig } from "drizzle-kit";
 import { env } from "./src/config/env";
 
+// @concept: migrations
 // Settings for drizzle-kit (the CLI behind `pnpm db:generate` and `pnpm db:migrate`).
 
 // drizzle-kit is a local tool (laptop and CI), so it always uses DATABASE_URL, never the AWS DB_* pieces.

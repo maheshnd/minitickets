@@ -5,6 +5,7 @@
 // 1. The kinds of failure we care about. Each one maps to one tRPC/HTTP code later.
 export type AppErrorKind = "NOT_FOUND" | "CONFLICT" | "FORBIDDEN" | "BAD_REQUEST" | "UNAUTHORIZED";
 
+// @concept: error-handling
 // 2. The base class. `kind` tells the errorMapper which code to use.
 export class AppError extends Error {
   readonly kind: AppErrorKind;

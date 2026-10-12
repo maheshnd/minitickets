@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { env } from "../config/env";
 import * as schema from "./schema/users";
 
+// @concept: connection-pooling
 // 1. A Pool keeps a small set of open database connections and reuses them.
 //    Opening a connection is slow (network + login), so we do it a few times
 //    and share them, instead of once per request.
@@ -15,6 +16,7 @@ export const pool = new Pool({
   max: 10,
 });
 
+// @concept: fail-fast
 // 2. If the database restarts or stops, idle connections in the pool break and the pool
 //    emits an "error" event. Node crashes the whole process when an "error" event has no
 //    listener, so we log it instead. The pool drops the dead connection and opens a new
@@ -23,5 +25,6 @@ pool.on("error", (err) => {
   console.error("Idle database connection failed:", err.message);
 });
 
+// @concept: drizzle-schema
 // 3. The Drizzle instance wraps the pool. Queries use `db`; shutdown closes `pool`.
 export const db = drizzle(pool, { schema });

@@ -9,6 +9,7 @@ export const SESSION_COOKIE = "sid";
 
 // Builds the "context" object. tRPC calls this once per request, and every
 // procedure receives the result as `ctx`.
+// @concept: trpc-context
 export async function createContext({ req, res }: CreateFastifyContextOptions) {
   // 1. The raw session id from the "sid" cookie, or undefined if the browser sent none.
   const sessionId = req.cookies[SESSION_COOKIE];

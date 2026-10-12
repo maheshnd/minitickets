@@ -1,5 +1,6 @@
 // Decides where to go after login, based on the `next` value from the URL (?next=...).
 // The URL is controlled by whoever made the link, so `next` must be treated as untrusted.
+// @concept: open-redirect
 export function getSafeNext(next: string | null): string {
   // 1. Nothing given: go home.
   if (!next) return "/";

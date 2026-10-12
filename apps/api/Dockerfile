@@ -1,5 +1,6 @@
 # API image. Build it from the repo root: docker build -f apps/api/Dockerfile .
 #
+# @concept: docker-multi-stage
 # Stages (each starts with FROM; later stages copy only what they need from earlier ones):
 #   base    -> Node + pnpm. A shared starting point, produces no files of its own.
 #   deps    -> ALL dependencies installed (dev tools too). Produces node_modules for the build.
@@ -28,6 +29,7 @@ WORKDIR /app
 # ---- Stage: deps ---------------------------------------------------------------------------
 FROM base AS deps
 
+# @concept: docker-layer-caching
 # 4. WHAT: copy ONLY the files that decide which packages to install: the lockfile,
 #    the workspace file and the package.json of every workspace package.
 #    WHY (layer caching): Docker caches each instruction as a layer and reuses it if its input
@@ -128,6 +130,7 @@ COPY --from=build /app/apps/api/dist ./dist
 #     database changes it needs always travel together.
 COPY apps/api/drizzle ./drizzle
 
+# @concept: container-hardening
 # 15. WHAT: switch from root to the "node" user (already in the official image, uid 1000).
 #     WHY: if someone breaks into the app, they get a user that cannot change the system or
 #     install tools, instead of root inside the container.
@@ -138,6 +141,7 @@ USER node
 #     (docker-compose.yml does that with `ports`).
 EXPOSE 4000
 
+# @concept: graceful-shutdown
 # 17. WHAT: start the server by running node directly, in "exec form" (a JSON list).
 #     WHY: with this form node is PID 1, the process Docker sends signals to. `docker stop`
 #     sends SIGTERM straight to node, so our graceful shutdown in server.ts runs. With

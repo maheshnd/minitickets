@@ -45,6 +45,7 @@ test("an external ?next= is ignored after login (no open redirect)", async ({ pa
 });
 
 test("a fake sid cookie passes the route guard but the API's 401 sends us to login", async ({ page, context, baseURL }) => {
+  // @concept: route-guard-proxy
   // 5. The proxy only checks that a cookie exists, so this gets past it. The API says 401
   //    (no such session) and the profile hook redirects. This shows the guard is UX only.
   //    The cookie is set for baseURL (localhost locally, the CloudFront address with E2E_BASE_URL),

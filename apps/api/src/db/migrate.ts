@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { z } from "zod";
 import { DatabaseEnvSchema } from "../config/database";
 
+// @concept: migrations
 // Applies the SQL files in ./drizzle to the database, then exits.
 // In Docker it runs as a separate one-off container (`node dist/migrate.js`), NOT inside
 // the API: with several API containers starting together, they would all migrate at once.
@@ -23,6 +24,7 @@ if (!result.success) {
 const pool = new Pool({ ...result.data, max: 1 });
 
 try {
+  // @concept: idempotency
   // 3. Run every migration that has not run yet. Drizzle remembers the finished ones in the
   //    database, so running this twice is safe. The folder path is relative to the working directory (/app).
   await migrate(drizzle(pool), { migrationsFolder: "./drizzle" });

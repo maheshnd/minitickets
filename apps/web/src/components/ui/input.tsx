@@ -9,6 +9,7 @@ type InputProps = Omit<ComponentProps<"input">, "id"> & {
   ref?: Ref<HTMLInputElement>;
 };
 
+// @concept: accessible-forms
 // A label, an input and an error message that screen readers connect together.
 export function Input({ id, label, error, ref, className = "", ...rest }: InputProps) {
   const errorId = `${id}-error`;

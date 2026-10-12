@@ -1,5 +1,7 @@
 # Vertical vs horizontal scaling
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Reliability · Status: 🟡 partial (ready to scale out, runs 1 task) · Step doc: [17 ECS api](../../17-infra-ecs-api.md)
 
 ## 1. In one line

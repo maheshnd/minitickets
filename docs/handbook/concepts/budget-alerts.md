@@ -1,5 +1,7 @@
 # Budget alerts
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: DevOps & CI/CD · Status: ✅ built · Step doc: [13 security groups + budget](../../13-infra-security-groups.md) (section 3.9)
 
 ## 1. In one line

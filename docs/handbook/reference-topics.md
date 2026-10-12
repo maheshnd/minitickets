@@ -1,5 +1,7 @@
 # Reference topics (checklist for the concept map; not complete)
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 ## APIs & protocols
 REST, statelessness, GraphQL (over/under-fetching), gRPC, WebSockets,
 long polling, HTTP/1.1 vs HTTP/2 vs HTTP/3, HTTP methods, idempotency,

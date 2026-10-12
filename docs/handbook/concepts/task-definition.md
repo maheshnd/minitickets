@@ -1,5 +1,7 @@
 # Task definition: recipe, revisions, `awsvpc`
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step docs: [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
 
 ## 1. In one line

@@ -84,6 +84,7 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
         essential: true,
         portMappings: [{ containerPort: 4000, protocol: "tcp" }],
 
+        // @concept: twelve-factor-config
         // 2f. Plain settings (not secret). The values are visible in the console.
         environment: [
           { name: "NODE_ENV", value: "production" },
@@ -130,6 +131,7 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           },
         },
 
+        // @concept: health-checks
         // 2i. Container health check: ECS runs this command INSIDE the container. Exit 0 = healthy.
         //     The slim image has no curl, so node itself calls /health (same as docker-compose.yml).
         //     /health, not /ready: a database hiccup must not make ECS kill a working api.

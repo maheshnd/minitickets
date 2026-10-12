@@ -1,5 +1,7 @@
 # Fargate: containers without managing servers
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.2)
 
 ## 1. In one line

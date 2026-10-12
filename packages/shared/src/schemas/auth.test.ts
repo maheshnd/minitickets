@@ -3,6 +3,7 @@ import { SignupInput } from "./auth";
 
 const valid = { email: "bob@example.com", password: "correct-horse", confirmPassword: "correct-horse" };
 
+// @concept: unit-tests
 describe("SignupInput", () => {
   it("trims and lowercases the email", () => {
     const result = SignupInput.parse({ ...valid, email: "  Bob@Example.COM " });

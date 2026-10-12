@@ -1,5 +1,7 @@
 # Execution role vs task role
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Deep dive: [aws-foundations, chapter 5](../aws-foundations.md#5-roles-sts-and-the-confused-deputy) · Step docs: [17](../../17-infra-ecs-api.md) (section 3.4), [18](../../18-infra-alb-web.md) (section 3.9)
 
 ## 1. In one line

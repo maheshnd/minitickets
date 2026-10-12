@@ -1,5 +1,7 @@
 # Encryption in transit (TLS)
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Auth & Security · Status: ✅ built (one unencrypted hop in dev) · Step docs: [17 ECS api](../../17-infra-ecs-api.md) (sections 3.8, 3.9), [19 CloudFront](../../19-infra-cloudfront.md) (section 3.5)
 
 ## 1. In one line

@@ -1,5 +1,7 @@
 # ECS cluster and capacity providers
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.1)
 
 ## 1. In one line

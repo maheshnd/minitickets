@@ -1,5 +1,7 @@
 # Zero-downtime deploys: rolling update + draining
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Reliability · Status: 🟡 partial · Step doc: [18 ALB + web](../../18-infra-alb-web.md) (sections 3.6, 3.7)
 
 ## 1. In one line
@@ -44,10 +46,58 @@ Step by step:
    stops ECS from killing it while Node starts.
 3. ECS deregisters the old task; the ALB stops new requests to it and waits up to 30 s for in-flight
    ones.
+   **Verified from AWS docs** ([task lifecycle](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-lifecycle-explanation.html)):
+   target group deregistration happens in the `DEACTIVATING` state, and the stop signal (SIGTERM)
+   is sent later, in `STOPPING`. So on a normal deploy draining comes **first**.
 4. ECS sends SIGTERM; `shutdown` in `apps/api/src/server.ts` closes the server, then the pool and
    Redis (Phase 3 `graceful-shutdown` card). The Dockerfile's exec-form `CMD` makes node PID 1 so it
    receives the signal.
 5. The [circuit breaker](circuit-breaker.md) rolls back if the new task never gets healthy.
+6. If the app has not exited 30 s after SIGTERM (`stopTimeout`, which we do not set, so the default
+   applies), ECS sends SIGKILL. **Verified from AWS docs:** "The default `stopTimeout` value is 30
+   seconds" ([Fargate capacity providers](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-capacity-providers.html)).
+
+### Planned improvement: wait a few seconds after SIGTERM before closing
+
+**Not in our app yet (planned).** Today `shutdown` in `apps/api/src/server.ts` calls `app.close()`
+the moment SIGTERM arrives. The improvement: on SIGTERM, first wait a few seconds (for example 5),
+still serving requests normally, and only then call `app.close()`.
+
+**Why:** SIGTERM does not always come after draining.
+
+```mermaid
+sequenceDiagram
+    participant AWS as ECS (Spot interruption)
+    participant ALB
+    participant T as api task
+    AWS->>T: SIGTERM (2-minute warning)
+    AWS->>ALB: deregister (same moment, or later?)
+    ALB->>T: a few more new requests
+    Note over T: today: app.close() already ran → 503
+    Note over T: planned: still serving for ~5 s → 200
+```
+
+1. On a **normal deploy**, ECS deregisters first and sends SIGTERM after draining (verified above),
+   so the delay changes nothing there; it only adds a few seconds to the stop.
+2. On a **Spot interruption**, AWS's docs say the two-minute warning is sent "as a SIGTERM signal to
+   the running task" ([Fargate Spot termination notices](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-capacity-providers.html)).
+   They do **not** say the task is deregistered from the target group first. So SIGTERM can arrive
+   while the ALB is still sending this task new requests. (The exact order on Spot is not
+   documented; I have not measured it.)
+3. What `app.close()` does then: **verified in Fastify's docs** (installed 5.12.5,
+   `return503OnClosing` and `forceCloseConnections`): every request that arrives after `close()` is
+   called gets **503 Service Unavailable**, and idle keep-alive connections (the ones the ALB reuses)
+   are closed. A user would see those 503s, or the ALB's own 502 for a closed connection.
+4. Waiting a few seconds gives the ALB time to stop routing to us **before** we start refusing. The
+   same pattern is common on Kubernetes (a "preStop sleep") for the same reason.
+
+**The budget:** wait + finishing in-flight requests + closing the pools must fit inside
+`stopTimeout` (30 s by default), or ECS sends SIGKILL. A 5-second wait leaves plenty of room.
+
+**Where it would go:** step 3 of `shutdown` in `apps/api/src/server.ts` (a `setTimeout` promise
+before `app.close()`), with the delay read from an env var validated in `apps/api/src/config/env.ts`
+so it can be 0 locally (Ctrl+C should stay instant). Optionally `/ready` would start answering 503
+during the wait.
 
 ## 5. See it yourself
 
@@ -121,6 +171,9 @@ During a deploy two tasks run for a minute or two; a fraction of a cent.
 
 - *Why is SIGTERM handling needed if the ALB drains?* Draining stops new requests; the app must still
   finish in-flight work and close connections cleanly.
+- *Why would you wait after SIGTERM before closing?* Because SIGTERM can arrive while the load
+  balancer still routes to you (on Fargate Spot, the warning IS the SIGTERM). Closing at once turns
+  those requests into 503s. A short wait (planned for us) lets routing stop first.
 - *What are minimum healthy / maximum percent?* How far below and above the desired count ECS may go
   during a deployment.
 
@@ -133,4 +186,5 @@ zero-downtime for deploys, but not for failures."
 ## 16. Status
 
 🟡 partial. **To make it production-grade:** 2+ tasks, expand-and-contract migrations, migrations in
-the deploy pipeline.
+the deploy pipeline, and the planned **wait-after-SIGTERM** delay in `shutdown` (section 4) so a Spot
+interruption does not turn the last few requests into 503s.

@@ -11,6 +11,7 @@ export function ProfileCard() {
     return <p className="text-gray-600">Loading your profile...</p>;
   }
 
+  // @concept: ui-error-handling
   // 2. Any other failure: a general message, never raw internals.
   if (profile.isError) {
     return (
@@ -20,6 +21,7 @@ export function ProfileCard() {
     );
   }
 
+  // @concept: xss
   // 3. Success. Intl formats the date for the viewer's locale, e.g. "October 9, 2026".
   const memberSince = new Date(profile.data.createdAt).toLocaleDateString(undefined, { dateStyle: "long" });
 

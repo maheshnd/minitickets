@@ -2,6 +2,7 @@
 #   docker build -f apps/web/Dockerfile .                      (AWS: same-origin, no API URL inside)
 #   docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4100 .   (docker compose)
 #
+# @concept: docker-multi-stage
 # Stages (only the last one becomes the image we run):
 #   base    -> Node + pnpm. A shared starting point, produces no files of its own.
 #   deps    -> ALL dependencies installed. Produces node_modules for the build.
@@ -24,6 +25,7 @@ WORKDIR /app
 # ---- Stage: deps ---------------------------------------------------------------------------
 FROM base AS deps
 
+# @concept: docker-layer-caching
 # 4. WHAT: copy only the files that decide which packages to install.
 #    WHY (layer caching): the install below is slow. Docker reuses a layer when its input is
 #    unchanged. Package files change rarely; source code changes all the time. Copying only
@@ -45,6 +47,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 # ---- Stage: build --------------------------------------------------------------------------
 FROM deps AS build
 
+# @concept: twelve-factor-config
 # 6. WHAT: declare a build argument and turn it into an environment variable.
 #    WHY: Next.js copies NEXT_PUBLIC_* values INTO the JavaScript sent to browsers while it
 #    builds. The value must therefore exist at BUILD time, and changing it later means a new
@@ -103,6 +106,7 @@ COPY --from=build /app/apps/web/public* ./apps/web/public/
 #     WHY: so the start command can simply be `node server.js`.
 WORKDIR /app/apps/web
 
+# @concept: container-hardening
 # 15. WHAT: switch from root to the "node" user (already in the official image).
 #     WHY: if someone breaks into the app, they cannot change the system. The files stay
 #     owned by root and are only readable, so the app cannot rewrite its own code either.
@@ -112,6 +116,7 @@ USER node
 #     WHY: it only informs people and tools; docker-compose.yml's `ports` really publishes it.
 EXPOSE 3000
 
+# @concept: graceful-shutdown
 # 17. WHAT: start the standalone server with node directly, in "exec form".
 #     WHY: node becomes PID 1, so `docker stop` delivers SIGTERM straight to it and it exits
 #     at once. Through pnpm or a shell, the signal would not arrive.

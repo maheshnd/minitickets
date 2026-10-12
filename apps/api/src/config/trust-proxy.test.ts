@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { trustProxyHops } from "./trust-proxy";
 
+// @concept: trust-proxy
+// @concept: in-process-api-tests
 // A tiny Fastify app that answers with what it thinks the visitor's IP and protocol are.
 // inject() sends a fake request without opening a real port.
 async function whoAmI(hops: number, headers: Record<string, string>) {

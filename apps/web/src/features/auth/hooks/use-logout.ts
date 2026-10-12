@@ -10,6 +10,7 @@ export function useLogout() {
   return useMutation(
     trpc.auth.logout.mutationOptions({
       onSuccess: () => {
+        // @concept: query-invalidation
         // 1. Clear the WHOLE query cache, not just "me": never show the previous user's
         //    data to the next person who uses this browser. (The header then asks "me" again
         //    and gets null.)

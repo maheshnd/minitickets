@@ -5,6 +5,7 @@ import type { Context } from "./context";
 
 // 1. Set up tRPC once for the whole API and tell it what `ctx` looks like.
 const t = initTRPC.context<Context>().create({
+  // @concept: error-handling
   // 2. Customize the error sent to the client (this is the LAST step before the response).
   errorFormatter({ shape, error }) {
     // 2a. When input validation fails, the cause is a ZodError. We attach its per-field
@@ -36,6 +37,7 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
+// @concept: http-status-codes
 // 3. Which tRPC code each AppError kind becomes.
 const codeByKind: Record<AppErrorKind, TRPCError["code"]> = {
   NOT_FOUND: "NOT_FOUND",
@@ -45,6 +47,7 @@ const codeByKind: Record<AppErrorKind, TRPCError["code"]> = {
   UNAUTHORIZED: "UNAUTHORIZED",
 };
 
+// @concept: trpc-middleware
 // 4. errorMapper: a middleware that wraps every procedure.
 //    `next()` runs the procedure and returns its result instead of throwing, so we can look at it.
 const errorMapper = t.middleware(async ({ next }) => {
@@ -65,6 +68,8 @@ const errorMapper = t.middleware(async ({ next }) => {
   });
 });
 
+// @concept: protected-procedure
+// @concept: authn-vs-authz
 // 5. isAuthed: a middleware that only lets logged-in callers through.
 //    This is the REAL security check for private data. A frontend guard can be skipped
 //    by anyone who calls the API directly (curl, scripts), this cannot.

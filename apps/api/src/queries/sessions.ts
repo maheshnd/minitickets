@@ -3,9 +3,13 @@ import { redis } from "../redis/client";
 
 // Queries: the only code that talks to a data store (here: Redis). No business logic.
 
+// @concept: ttl
 // Sessions last 7 days. Redis deletes the key by itself when the time is up.
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+// @concept: sessions-vs-jwt
+// @concept: sql-vs-nosql
+// @concept: stateless-servers
 // 1. Redis key for a session: the SHA-256 HASH of the session id, never the raw id.
 //    Why: the raw id lives only in the user's cookie. If someone reads our Redis
 //    (a leak, a backup, a debug dump), they only see hashes. A hash can't be turned back

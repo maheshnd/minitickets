@@ -1,5 +1,7 @@
 # Handbook spec: interview-ready docs tied to our code
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 GOAL
 Build docs/handbook/: a living handbook that explains every concept in
 MiniTickets (app + AWS) so I can give real senior/lead interview answers

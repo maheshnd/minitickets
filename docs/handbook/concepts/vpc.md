@@ -1,5 +1,7 @@
 # VPC and CIDR blocks
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Network · Status: ✅ built · Step doc: [12 network](../../12-infra-network.md)
 
 ## 1. In one line

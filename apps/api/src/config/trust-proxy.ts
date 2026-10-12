@@ -23,6 +23,7 @@
 
 export type TrustProxy = false | ((address: string, hop: number) => boolean);
 
+// @concept: trust-proxy
 export function trustProxyHops(hops: number): TrustProxy {
   // 1. 0 hops (local dev, Docker, CI): trust nobody. request.ip is whoever connected to us.
   if (hops === 0) return false;

@@ -1,5 +1,7 @@
 # High availability across availability zones
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: Reliability · Status: 🟡 partial (multi-AZ shape, single copies) · Step docs: [12 network](../../12-infra-network.md) (section 3.9), [14 data](../../14-infra-data.md) (section 3.3)
 
 ## 1. In one line

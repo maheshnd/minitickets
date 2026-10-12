@@ -1,5 +1,7 @@
 # AWS foundations
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 The rules every AWS resource in MiniTickets obeys. Read this before the infra story: almost every
 AWS problem is one of the three questions in chapter 3.
 

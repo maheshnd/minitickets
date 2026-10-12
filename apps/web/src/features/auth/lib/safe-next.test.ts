@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getSafeNext } from "./safe-next";
 
+// @concept: open-redirect
+// @concept: unit-tests
 describe("getSafeNext", () => {
   it("keeps a relative path on our own site", () => {
     expect(getSafeNext("/dashboard")).toBe("/dashboard");

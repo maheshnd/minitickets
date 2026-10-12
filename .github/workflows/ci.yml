@@ -15,6 +15,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# @concept: ci-pipeline
 jobs:
   # Fast checks that need no database: types, lint rules and unit tests.
   quality:
@@ -31,6 +32,7 @@ jobs:
           cache: pnpm
       # --frozen-lockfile: fail if pnpm-lock.yaml does not match the package.json files.
       - run: pnpm install --frozen-lockfile
+      # @concept: static-checks
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
@@ -131,6 +133,7 @@ jobs:
       #    Actions cache, Buildx can.
       - uses: docker/setup-buildx-action@v3
 
+      # @concept: docker-layer-caching
       # 3. Build the API image. `push: false` = build only, so a broken Dockerfile fails CI
       #    but nothing is published. `context: .` is the repo root (the Dockerfile needs several folders).
       #    cache-from / cache-to: store the layers in the GitHub Actions cache, so the next run reuses

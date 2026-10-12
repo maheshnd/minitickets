@@ -1,5 +1,7 @@
 # The MiniTickets handbook
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 **In one line:** a living handbook that explains every concept in MiniTickets (app + AWS), tied to
 the exact code that implements it, so interview answers come from things we built.
 
@@ -27,8 +29,9 @@ flowchart LR
 | [reference-topics.md](reference-topics.md) | The owner's checklist of interview topics | the owner's notes |
 | [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) | The spec this handbook is built from | fixed |
 | [infra-story.md](infra-story.md) | The AWS resources, in the order a request meets them; deploy, security and cost stories | written |
-| `app-story.md` | Our code, in the order a request travels through it | Phase 3 |
-| `concepts/<slug>.md` | One card per concept | AWS / infra cards written (Phase 2); app cards Phase 3; planned and explain-only Phase 5 |
+| [app-story.md](app-story.md) | Our code, in the order a request travels through it; monorepo, validation, tests, Docker, CI; the app security story | written |
+| `concepts/<slug>.md` | One card per concept | AWS / infra cards (Phase 2) and app cards (Phase 3) written; planned and explain-only Phase 5 |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in the handbook, commit by commit, and why | written, one entry per handbook commit |
 | `decisions/NNNN-<title>.md` | Architecture Decision Records (why we chose X over Y) | Phase 4 |
 | `system-design.md` | Classic system design questions, answered from our app | Phase 4 |
 | `interview-drills.md` | Question bank by interview round | Phase 5 |
@@ -49,7 +52,7 @@ Files that are not written yet are shown without a link and with their phase.
 
 1. [00-big-picture.md](00-big-picture.md)
 2. [aws-foundations.md](aws-foundations.md)
-3. [infra-story.md](infra-story.md), then `app-story.md` (Phase 3)
+3. [infra-story.md](infra-story.md), then [app-story.md](app-story.md)
 4. `decisions/` (Phase 4)
 5. `system-design.md` (Phase 4)
 6. Skim the [concept map](concept-map.md) for anything you skipped.
@@ -71,9 +74,21 @@ Know which parts are ✅ and which are 📖: say "here is what we built, here is
 **Security round**
 
 [aws-foundations.md](aws-foundations.md) chapters 3 to 5 → the "security story" in
-[infra-story.md](infra-story.md#the-security-story) → the Auth & Security cards: `password-hashing`, `sessions-vs-jwt`,
-`session-cookie`, `user-enumeration`, `csrf`, `xss`, `open-redirect`, [`origin-protection`](concepts/origin-protection.md),
-[`least-privilege`](concepts/least-privilege.md), [`secrets-management`](concepts/secrets-management.md).
+[infra-story.md](infra-story.md#the-security-story) → the
+[app security story](app-story.md#the-app-security-story) → the Auth & Security cards:
+[`password-hashing`](concepts/password-hashing.md), [`sessions-vs-jwt`](concepts/sessions-vs-jwt.md),
+[`session-cookie`](concepts/session-cookie.md), [`user-enumeration`](concepts/user-enumeration.md),
+[`csrf`](concepts/csrf.md), [`xss`](concepts/xss.md), [`open-redirect`](concepts/open-redirect.md),
+[`origin-protection`](concepts/origin-protection.md), [`least-privilege`](concepts/least-privilege.md),
+[`secrets-management`](concepts/secrets-management.md).
+
+**Backend round**
+
+[app-story.md](app-story.md) chapters 4-11 → the API, Data and Reliability cards, starting with
+[`layered-api`](concepts/layered-api.md), [`error-handling`](concepts/error-handling.md),
+[`trpc-context`](concepts/trpc-context.md), [`unique-constraint-race`](concepts/unique-constraint-race.md),
+[`connection-pooling`](concepts/connection-pooling.md), [`graceful-shutdown`](concepts/graceful-shutdown.md)
+and [`fail-fast`](concepts/fail-fast.md).
 
 **AWS round**
 
@@ -82,9 +97,12 @@ Network, AWS Compute and AWS Data cards → the [cost story](infra-story.md#the-
 
 **Frontend round**
 
-The first chapters of `app-story.md` (Phase 3) → the Frontend cards: `server-client-components`,
-`route-guard-proxy`, `tanstack-query`, `query-invalidation`, `trpc-client`, `accessible-forms`,
-`ui-error-handling` → `end-to-end-types` and `retry-policy`.
+Chapters 1-3 and 11 of [app-story.md](app-story.md) → the Frontend cards:
+[`server-client-components`](concepts/server-client-components.md),
+[`route-guard-proxy`](concepts/route-guard-proxy.md), [`tanstack-query`](concepts/tanstack-query.md),
+[`query-invalidation`](concepts/query-invalidation.md), [`trpc-client`](concepts/trpc-client.md),
+[`accessible-forms`](concepts/accessible-forms.md), [`ui-error-handling`](concepts/ui-error-handling.md)
+→ [`end-to-end-types`](concepts/end-to-end-types.md) and [`retry-policy`](concepts/retry-policy.md).
 
 ## Conventions
 
@@ -152,7 +170,27 @@ with a clear message when:
 2. a card's `- Anchor:` line names a file that does not exist or has no anchor for that card;
 3. a file holds an anchor that its card does not list;
 4. `concept-map.md` does not link to a card;
-5. any handbook file links to a card that does not exist.
+5. any handbook file links to a card that does not exist;
+6. a handbook page is missing the history line under its title.
+
+## Change history: `CHANGELOG.md` and `pnpm docs:history`
+
+Pages hold **no hand-written dates**. Under each title, one line points to the history:
+
+```mermaid
+flowchart LR
+    page["any handbook page<br/>'History: see CHANGELOG.md…'"] --> cl["CHANGELOG.md<br/>what changed and WHY<br/>(written by hand)"]
+    page --> hist["pnpm docs:history<br/>when, which commit<br/>(read from git)"]
+```
+
+- [CHANGELOG.md](CHANGELOG.md): one entry per commit that touches the handbook, newest first: date,
+  subject, each changed file with its sections, and why. A commit can't contain its own hash, so
+  each new entry fills in the hash of the **previous** entry.
+- `pnpm docs:history`: a table of every handbook file with its last change date, commit and subject,
+  straight from `git log` (`scripts/handbook-history.ts`).
+- `pnpm docs:history --since <commit>`: only the files changed after that commit (including
+  uncommitted changes), each with its changed section headings. Run it with the previous handbook
+  commit's hash to write a new CHANGELOG entry.
 
 Mermaid diagrams are checked separately with mermaid-cli (it is not a project dependency):
 

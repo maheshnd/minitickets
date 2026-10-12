@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// @concept: validation-at-boundaries
 // Signup form input. The browser runs it for fast feedback; the API will run it again in Step 5.
 export const SignupInput = z
   .object({
@@ -30,6 +31,7 @@ export const PublicUserSchema = z.object({
 
 export type PublicUser = z.infer<typeof PublicUserSchema>;
 
+// @concept: user-enumeration
 // Login form input. Unlike signup, we do NOT enforce a minimum length or any password rules here:
 // the only question at login is "does it match?". Rules on the login form would also tell an
 // attacker something about our password policy. We only reject empty values and a huge password

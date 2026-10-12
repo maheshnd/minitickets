@@ -1,5 +1,7 @@
 # The big picture
 
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
 **In one line:** MiniTickets is a Next.js web app and a Fastify + tRPC API that share types,
 store users in Postgres and sessions in Redis, and run on AWS behind CloudFront and a load balancer.
 
@@ -173,5 +175,5 @@ sequenceDiagram
 - **Uses:** the step docs, especially [07 login](../07-login-session.md),
   [18 ALB](../18-infra-alb-web.md) and [19 CloudFront](../19-infra-cloudfront.md).
 - **Gives:** the frame for everything else. [aws-foundations.md](aws-foundations.md) explains the
-  AWS rules these arrows obey. The [infra story](infra-story.md) and the app story (Phase 3) walk the same
+  AWS rules these arrows obey. The [infra story](infra-story.md) and the [app story](app-story.md) walk the same
   path chapter by chapter. The [concept map](concept-map.md) lists every concept named here.

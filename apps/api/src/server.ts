@@ -8,6 +8,7 @@ import { redis } from "./redis/client";
 // 1. Build the configured Fastify app.
 const app = await buildApp();
 
+// @concept: fastify-app
 // 2. Start listening for HTTP requests. If the port is taken, log it and exit.
 try {
   await app.listen({ port: env.PORT, host: env.HOST });
@@ -16,6 +17,7 @@ try {
   process.exit(1);
 }
 
+// @concept: graceful-shutdown
 // 3. Graceful shutdown: on Ctrl+C (SIGINT) or `kill` (SIGTERM), finish cleanly instead of dying mid-request.
 let shuttingDown = false;
 

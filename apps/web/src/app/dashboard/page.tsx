@@ -4,6 +4,7 @@ import { ProfileCard } from "@/features/account/components/profile-card";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
+// @concept: app-router
 // A Server Component: it only sets the page frame. proxy.ts redirects logged-out visitors
 // before this renders, and the API checks the session again for the data.
 export default function DashboardPage() {

@@ -1,5 +1,7 @@
 # Cost on/off switches
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: DevOps & CI/CD · Status: ✅ built · Step docs: [14 data](../../14-infra-data.md) (section 3.10), [17](../../17-infra-ecs-api.md) (3.15), [19](../../19-infra-cloudfront.md) (3.13), [20 deploy day](../../20-deploy-day.md)
 
 ## 1. In one line

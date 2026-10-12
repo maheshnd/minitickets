@@ -1,5 +1,7 @@
 # RDS-managed master password (and the rotation limit)
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Data · Status: ✅ built (with a known limitation) · Step docs: [14 data](../../14-infra-data.md) (section 3.6), [17 ECS api](../../17-infra-ecs-api.md) (section 3.17)
 
 ## 1. In one line

@@ -1,5 +1,6 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
+// @concept: end-to-end-types
 // `import type`: only the TypeScript type comes over from the API.
 // It is erased at build time, so no server code ends up in the browser bundle.
 import type { AppRouter } from "@minitickets/api/router";
@@ -22,6 +23,7 @@ if (API_URL !== "" && !/^https?:\/\//.test(API_URL)) {
 //    - useTRPC: gives typed query options, e.g. trpc.hello.greet.queryOptions({ name }).
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
+// @concept: trpc-client
 // 3. Creates the client that actually sends HTTP requests to <API_URL>/trpc
 //    (just "/trpc" when API_URL is empty).
 //    httpBatchLink combines calls made at the same moment into one HTTP request.
@@ -30,6 +32,7 @@ export function makeTrpcClient() {
     links: [
       httpBatchLink({
         url: `${API_URL}/trpc`,
+        // @concept: cors
         // 4. The web (:3000) and API (:4000) are different origins, and browsers send
         //    cookies to another origin only when asked. "include" sends the session
         //    cookie with every call and lets the API's Set-Cookie be saved. The API's

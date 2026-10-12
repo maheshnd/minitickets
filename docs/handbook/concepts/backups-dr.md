@@ -1,5 +1,7 @@
 # Backups, snapshots, disaster recovery
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Area: AWS Data · Status: 🟡 partial (dev settings) · Step doc: [14 data](../../14-infra-data.md) (sections 3.12, 3.13)
 
 ## 1. In one line
