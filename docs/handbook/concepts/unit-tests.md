@@ -29,6 +29,7 @@ flowchart LR
 - Anchor: `vitest.config.mts` · `include`: which files are unit tests (e2e `*.spec.ts` are never picked up).
 - Anchor: `packages/shared/src/schemas/auth.test.ts` · `SignupInput`: trims/lowercases email; mismatch error on `confirmPassword`.
 - Anchor: `apps/web/src/features/auth/lib/safe-next.test.ts` · `getSafeNext`: 6 cases including 4 attacks.
+- Anchor: `apps/api/src/services/events.test.ts` · `listUpcomingEvents`: service test with an in-memory fake of the query layer (no database).
 
 Our test files (5 files, 19 tests when I ran `pnpm test` for this card):
 

@@ -5,8 +5,8 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 **In one line:** MiniTickets is a Next.js web app and a Fastify + tRPC API that share types,
 store users in Postgres and sessions in Redis, and run on AWS behind CloudFront and a load balancer.
 
-Today it can sign up, log in, show a private dashboard and log out. Tickets themselves are not
-built yet. This page shows the whole system once, then follows one request and one login through it.
+Today it can sign up, log in, show a private dashboard, log out and list upcoming events
+(`/events`, not cached yet). Booking tickets is not built yet. This page shows the whole system once, then follows one request and one login through it.
 Every name below is a real name from the code.
 
 ## 1. The whole system today
@@ -18,7 +18,7 @@ flowchart TB
     alb["ALB :80<br/>/trpc/* → api, rest → web"]
     web["web task<br/>Next.js :3000"]
     api["api task<br/>Fastify + tRPC :4000"]
-    rds[("RDS Postgres 17<br/>users")]
+    rds[("RDS Postgres 17<br/>users, events")]
     valkey[("ElastiCache Valkey<br/>sessions")]
     aws["ECR · Secrets Manager<br/>CloudWatch Logs"]
     ci["GitHub Actions CI<br/>(CD: planned)"]
@@ -88,6 +88,9 @@ A logged-in user opens `https://<id>.cloudfront.net/dashboard` on AWS:
    `findById` in `queries/users.ts`, and Drizzle asks Postgres over TLS.
 10. `.output(ProfileSchema)` keeps only `id`, `email`, `createdAt`. The JSON goes back through the
     ALB and CloudFront. TanStack Query caches it and `ProfileCard` shows the email.
+
+A public request takes the same road without the session check: `/events` calls `events.list`, which
+reaches Postgres through the same three layers ([app story: 10b](app-story.md#10b-reading-events)).
 
 ## 3. The life of a login request
 

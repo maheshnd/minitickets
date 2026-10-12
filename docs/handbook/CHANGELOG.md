@@ -25,9 +25,33 @@ flowchart LR
 
 ---
 
-## 2026-10-12 · docs(handbook): story placement rules + comment fixes
+## 2026-10-12 · feat(events): events list, read path baseline (no caching)
 
 Commit: filled in by the next handbook commit
+
+Why: Feature 1, step 1 adds the first public read path (`/events`). The handbook must explain it,
+and the new code needs anchors and cards. Handbook files only; code changes only add comments.
+
+- `app-story.md`: new chapter "10b. Reading events" on the main path (browser → hook → tRPC →
+  procedure → service → query → Postgres), with the measured no-cache baseline; intro paragraph
+  mentions it. Numbered 10b so chapters 11-16 and their links keep their numbers.
+- `00-big-picture.md`: intro and the RDS box now mention `events`; "The life of one request" notes the
+  public request.
+- `concept-map.md`: new rows `csr-vs-ssr` (🟡), `db-check-constraints` (✅), `seed-data` (✅); the Data,
+  Frontend and TanStack Query rows mention the events files; Indexes row says `events` has none yet.
+- `concepts/csr-vs-ssr.md`, `concepts/db-check-constraints.md`, `concepts/seed-data.md`: new cards.
+- `concepts/tanstack-query.md`: events hook added as a second example (section 4, anchor, story link).
+- `concepts/indexing.md`: `events` has no index yet, to be measured later (section 4, story link).
+- `concepts/app-router.md`, `drizzle-schema.md`, `feature-folders.md`, `idempotency.md`,
+  `layered-api.md`, `ui-error-handling.md`, `unit-tests.md`, `validation-at-boundaries.md`: one new
+  "Anchor:" line each in section 4 for the new code (`docs:check` requires it).
+- `glossary.md`: Baseline, CHECK constraint, CSR, Seed data, Skeleton, SSR.
+
+---
+
+## 2026-10-12 · docs(handbook): story placement rules + comment fixes
+
+Commit: 4a91352
 
 Why: every concept should be findable from the story, and `docs:check` should keep it that way.
 Also two code comments (comment-only changes) said more than we know.

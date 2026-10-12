@@ -22,6 +22,9 @@ export function HeaderNav() {
   if (me.data) {
     return (
       <nav aria-label="Main" className="flex items-center gap-3">
+        <Link href="/events" className={linkClass}>
+          Events
+        </Link>
         <Link href="/dashboard" className={linkClass}>
           Dashboard
         </Link>
@@ -38,6 +41,11 @@ export function HeaderNav() {
   return (
     <nav aria-label="Main">
       <ul className="flex items-center gap-2">
+        <li>
+          <Link href="/events" className={linkClass}>
+            Events
+          </Link>
+        </li>
         <li>
           <Link href="/login" className={linkClass}>
             Login

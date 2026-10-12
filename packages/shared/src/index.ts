@@ -4,3 +4,4 @@
 // Each feature adds its own export here.
 export { LoginInput, SignupInput, PublicUserSchema, type PublicUser } from "./schemas/auth";
 export { ProfileSchema, type Profile } from "./schemas/account";
+export { EventSchema, ListEventsOutput, type Event } from "./schemas/events";

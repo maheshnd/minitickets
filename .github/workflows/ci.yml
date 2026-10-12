@@ -93,6 +93,10 @@ jobs:
       - name: Run database migrations
         run: pnpm --filter @minitickets/api exec drizzle-kit migrate
 
+      # Sample events for e2e/events.spec.ts. Uses DATABASE_URL from the job env above.
+      - name: Seed the database
+        run: pnpm --filter @minitickets/api exec tsx src/db/seed.ts
+
       # Browsers are big, so cache them. The key changes when the lockfile (and so Playwright) changes.
       - name: Cache Playwright browsers
         id: playwright-cache

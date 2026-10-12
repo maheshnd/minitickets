@@ -31,6 +31,7 @@ flowchart LR
 - Anchor: `apps/api/src/procedures/auth.ts` · `signup`, `login`: `.input(SignupInput)`, `.input(LoginInput)`, `.output(PublicUserSchema)`.
 - Anchor: `apps/api/src/procedures/account.ts` · `profile`: `.output(ProfileSchema)`.
 - Anchor: `packages/shared/src/schemas/auth.ts` · `SignupInput`, `LoginInput`, `PublicUserSchema`: the shared schemas.
+- Anchor: `apps/api/src/procedures/events.ts` · `list`: `.output(ListEventsOutput)` from `packages/shared/src/schemas/events.ts`.
 
 Step by step:
 

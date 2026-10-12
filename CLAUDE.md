@@ -127,6 +127,7 @@ Every commit that changes anything in `docs/handbook/` adds an entry at the TOP 
 
 ## Safety rules
 
+- Never commit or stage. Leave changes for the user to review, and suggest a commit message.
 - AWS / Pulumi: use the owner's existing AWS CLI profile and Pulumi login. Never print credentials.
   You may run `pulumi preview`. NEVER run `pulumi up` or `pulumi destroy`: the owner runs those.
 

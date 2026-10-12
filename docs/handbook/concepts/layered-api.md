@@ -32,6 +32,7 @@ flowchart LR
 - Anchor: `apps/api/src/procedures/auth.ts` · `authRouter`: "validate input, call a service, return. No logic here."
 - Anchor: `apps/api/src/services/auth.ts` · `signup`, `login`, `logout`, `getCurrentUser`: "business logic. No HTTP and no SQL."
 - Anchor: `apps/api/src/queries/users.ts` · `findByEmail`, `findById`, `create`: "the only code that talks to the database."
+- Anchor: `apps/api/src/queries/events.ts` · `listUpcoming`: the only code that runs SQL for events; `services/events.ts` → `listUpcomingEvents` and `procedures/events.ts` → `eventsRouter` sit above it.
 
 Step by step for login:
 

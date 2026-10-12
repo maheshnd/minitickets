@@ -33,6 +33,7 @@ flowchart TB
 - Anchor: `apps/web/src/features/auth/components/login-form.tsx` · `handleSubmit` → `onError`: 400 field errors, 401 message under the form, else generic.
 - Anchor: `apps/web/src/features/account/hooks/use-profile.ts` · `useProfile`: a 401 sends the user to `/login?next=/dashboard`.
 - Anchor: `apps/web/src/features/account/components/profile-card.tsx` · `ProfileCard`: loading, generic error, or data.
+- Anchor: `apps/web/src/features/events/components/event-list.tsx` · `EventList`: loading skeleton, generic error with a Retry button, empty state.
 
 Step by step:
 

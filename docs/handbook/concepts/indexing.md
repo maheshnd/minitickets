@@ -26,6 +26,7 @@ flowchart LR
 ## 4. Where in our code
 
 - Anchor: `apps/api/src/db/schema/users.ts` · `email: text("email").notNull().unique()`: the unique constraint, backed by an index.
+- Anchor: `apps/api/src/db/schema/events.ts` · `events`: deliberately NO index yet. `listUpcoming` filters and sorts on `starts_at`, so it reads the whole table until a later step adds one.
 
 What exists:
 
@@ -35,7 +36,8 @@ What exists:
    constraint will automatically create a unique B-tree index on the column or group of columns
    listed in the constraint."
 3. Our queries use exactly these: `findByEmail` (login) and `findById` (session → user).
-4. No other indexes: nothing else is queried yet.
+4. The `events` table has none beyond its primary key. `listUpcoming` filters on `starts_at` and sorts by it, so Postgres reads the whole table. With 12 rows that is instant; a later step adds an index and compares the `EXPLAIN` output before and after.
+5. No other indexes.
 
 ## 5. See it yourself
 
@@ -105,3 +107,4 @@ indexes for ticket queries when they exist.
 ## Where it appears in the story
 
 - [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)
+- [App story: 10b. Reading events](../app-story.md#10b-reading-events)

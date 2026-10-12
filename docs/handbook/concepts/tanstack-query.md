@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Frontend · Status: ✅ built · Step doc: [04 signup form](../../04-signup-form.md), [07 login](../../07-login-session.md)
+Area: Frontend · Status: ✅ built · Step doc: [04 signup form](../../04-signup-form.md), [07 login](../../07-login-session.md), [21 events list](../../21-events-list.md)
 
 ## 1. In one line
 
@@ -31,8 +31,9 @@ Two components ask for the same key; there is one request and one cached answer.
 
 - Anchor: `apps/web/src/providers/query-provider.tsx` · `QueryProvider`: creates one `QueryClient` per browser tab with our retry rules.
 - Anchor: `apps/web/src/features/auth/hooks/use-me.ts` · `useMe`: `useQuery(trpc.auth.me.queryOptions())`.
+- Anchor: `apps/web/src/features/events/hooks/use-events.ts` · `useEvents`: `useQuery(trpc.events.list.queryOptions())`, a second example of the same pattern (key `events.list`).
 
-Step by step:
+Step by step (first example, `useMe`):
 
 1. `QueryProvider` makes a `QueryClient` once (`useState(() => new QueryClient(...))`), so a
    re-render never throws the cache away.
@@ -47,6 +48,13 @@ Step by step:
    mounts or the window gets focus again; unused entries are removed after `gcTime` 5 minutes
    (`3e5` ms in `removable.js`).
 6. **Defaults we change:** `retry` ([retry-policy](retry-policy.md)). Mutations never retry.
+
+**Second example: the events list.** `useEvents` is `useQuery(trpc.events.list.queryOptions())`.
+It has no input, so the key is just the procedure path. `EventList` shows `isPending` as a skeleton,
+`isError` as a message with a Retry button (`refetch()`), and `data` as cards. The default `retry`
+rule applies: a 500 is tried again twice before the error appears; we saw this in
+`e2e/events.spec.ts`. Because the header's `auth.me` and `events.list` start at the same moment,
+the tRPC client sends them in one batched request (`/trpc/auth.me,events.list`).
 
 ## 5. See it yourself
 
@@ -125,3 +133,4 @@ logout."
 ## Where it appears in the story
 
 - [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
+- [App story: 10b. Reading events](../app-story.md#10b-reading-events) (the events hook as a second example)

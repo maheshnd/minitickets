@@ -1,5 +1,6 @@
 import { accountRouter } from "../procedures/account";
 import { authRouter } from "../procedures/auth";
+import { eventsRouter } from "../procedures/events";
 import { router } from "./init";
 
 // @concept: rpc-vs-rest
@@ -8,6 +9,7 @@ import { router } from "./init";
 export const appRouter = router({
   auth: authRouter,
   account: accountRouter,
+  events: eventsRouter,
 });
 
 // @concept: end-to-end-types

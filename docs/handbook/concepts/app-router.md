@@ -27,6 +27,7 @@ flowchart LR
 
 - Anchor: `apps/web/src/app/page.tsx` · `HomePage`: the `/` route; it only picks the feature to show (`LandingPage`).
 - Anchor: `apps/web/src/app/dashboard/page.tsx` · `DashboardPage`: the `/dashboard` route; a frame plus `ProfileCard`.
+- Anchor: `apps/web/src/app/events/page.tsx` · `EventsPage`: the `/events` route; a frame plus `EventList`.
 
 Step by step:
 

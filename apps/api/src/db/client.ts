@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { env } from "../config/env";
-import * as schema from "./schema/users";
+import * as events from "./schema/events";
+import * as users from "./schema/users";
 
 // @concept: connection-pooling
 // 1. A Pool keeps a small set of open database connections and reuses them.
@@ -27,4 +28,4 @@ pool.on("error", (err) => {
 
 // @concept: drizzle-schema
 // 3. The Drizzle instance wraps the pool. Queries use `db`; shutdown closes `pool`.
-export const db = drizzle(pool, { schema });
+export const db = drizzle(pool, { schema: { ...users, ...events } });

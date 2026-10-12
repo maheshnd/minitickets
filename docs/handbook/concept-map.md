@@ -46,7 +46,7 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | App Router: file-based routing, `app/` is routing only | ✅ | `web/app/page.tsx` → `HomePage`; `web/app/login/page.tsx` → `LoginPage`; `web/app/dashboard/page.tsx` → `DashboardPage` | [`app-router`](concepts/app-router.md) |
 | Server Components vs Client Components | ✅ | `web/app/layout.tsx` → `RootLayout` (server); `web/providers/query-provider.tsx` → `QueryProvider` (`"use client"`) | [`server-client-components`](concepts/server-client-components.md) |
 | Route guard in the Next.js proxy (UX only, not security) | ✅ | `web/proxy.ts` → `proxy`, `config.matcher` | [`route-guard-proxy`](concepts/route-guard-proxy.md) |
-| TanStack Query: the server-state cache | ✅ | `web/providers/query-provider.tsx` → `QueryProvider`; `web/features/auth/hooks/use-me.ts` → `useMe` | [`tanstack-query`](concepts/tanstack-query.md) |
+| TanStack Query: the server-state cache | ✅ | `web/providers/query-provider.tsx` → `QueryProvider`; `web/features/auth/hooks/use-me.ts` → `useMe`; `web/features/events/hooks/use-events.ts` → `useEvents` | [`tanstack-query`](concepts/tanstack-query.md) |
 | Cache invalidation after a mutation | ✅ | `web/features/auth/hooks/use-login.ts` → `useLogin` (`invalidateQueries`); `use-logout.ts` → `useLogout` (`queryClient.clear`) | [`query-invalidation`](concepts/query-invalidation.md) |
 | tRPC client and request batching | ✅ | `web/lib/trpc/client.ts` → `makeTrpcClient` (`httpBatchLink`, `credentials: "include"`) | [`trpc-client`](concepts/trpc-client.md) |
 | Feature folders: components use hooks, never tRPC | ✅ | `web/features/account/hooks/use-profile.ts` → `useProfile`; `web/features/account/components/profile-card.tsx` → `ProfileCard` | [`feature-folders`](concepts/feature-folders.md) |
@@ -54,6 +54,7 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 | Forms: shared-schema validation, accessible errors, focus | ✅ | `web/features/auth/components/signup-form.tsx` → `validate`, `focusField`; `web/components/ui/input.tsx` → `Input` | [`accessible-forms`](concepts/accessible-forms.md) |
 | Showing API errors in the UI (field errors, 401 redirect) | ✅ | `signup-form.tsx` → `handleSubmit` (`onError`); `web/features/account/hooks/use-profile.ts` → `useProfile` | [`ui-error-handling`](concepts/ui-error-handling.md) |
 | Tailwind CSS (utility classes) | ✅ | `apps/web/postcss.config.mjs`; `web/app/globals.css` | [`tailwind`](concepts/tailwind.md) |
+| Client-side vs server-side rendering | 🟡 | `web/features/events/hooks/use-events.ts` → `useEvents` (CSR built); SSR planned | [`csr-vs-ssr`](concepts/csr-vs-ssr.md) |
 | Rendering strategies: SSR, SSG, ISR, streaming | 📖 | Explain-only | `rendering-strategies` · P5 |
 | Optimistic updates | 📖 | Explain-only | `optimistic-updates` · P5 |
 | Web performance: Core Web Vitals, bundle size, code splitting | 📖 | Explain-only | `web-vitals` · P5 |
@@ -88,11 +89,13 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 
 | Concept | Status | Where in our code | Card |
 | ------- | ------ | ----------------- | ---- |
-| Postgres schema with Drizzle ORM (UUID keys) | ✅ | `api/db/schema/users.ts` → `users`; `api/db/client.ts` → `db` | [`drizzle-schema`](concepts/drizzle-schema.md) |
+| Postgres schema with Drizzle ORM (UUID keys) | ✅ | `api/db/schema/users.ts` → `users`; `api/db/schema/events.ts` → `events`; `api/db/client.ts` → `db` | [`drizzle-schema`](concepts/drizzle-schema.md) |
 | SQL migrations: generate, apply, one-off runner | ✅ | `apps/api/drizzle/0000_first_northstar.sql`; `api/db/migrate.ts`; `scripts/run-migrations.sh` | [`migrations`](concepts/migrations.md) |
+| CHECK constraints (the database refuses bad data) | ✅ | `api/db/schema/events.ts` → `events` (`check(...)` x3) | [`db-check-constraints`](concepts/db-check-constraints.md) |
+| Seed data (safe to run twice) | ✅ | `api/db/seed.ts` → `rows`, `onConflictDoNothing()` | [`seed-data`](concepts/seed-data.md) |
 | Connection pooling | ✅ | `api/db/client.ts` → `pool` (`max: 10`) | [`connection-pooling`](concepts/connection-pooling.md) |
 | Unique constraint vs check-then-insert (race condition) | ✅ | `api/services/auth.ts` → `signup`; `api/queries/users.ts` → `create`, `isUniqueViolation` | [`unique-constraint-race`](concepts/unique-constraint-race.md) |
-| Indexes (B-tree) | 🟡 | `api/db/schema/users.ts` → `email … .unique()` (Postgres backs it with an index). No other indexes. | [`indexing`](concepts/indexing.md) |
+| Indexes (B-tree) | 🟡 | `api/db/schema/users.ts` → `email … .unique()` (Postgres backs it with an index). `events` has none yet. | [`indexing`](concepts/indexing.md) |
 | SQL vs NoSQL | ✅ | `api/db/schema/users.ts` → `users` (SQL); `api/queries/sessions.ts` → `keyFor` (key-value) | [`sql-vs-nosql`](concepts/sql-vs-nosql.md) |
 | Transactions and ACID | 📖 | Explain-only (every write today is one statement) | `acid-transactions` · P5 |
 | Isolation levels | 📖 | Explain-only | `isolation-levels` · P5 |

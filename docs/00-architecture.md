@@ -3,7 +3,7 @@
 This file shows the **whole system as it exists today**. It is updated in every step.
 Boxes marked "planned" are not built yet.
 
-Last updated: Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
+Last updated: Feature 1, step 1 (events list, no caching: [21](21-events-list.md)). Before that: Step 11g (CloudFront + HTTPS in front of the ALB, origin protection, real `WEB_ORIGIN`,
 `trustProxy`) and the deploy-day runbook ([20](20-deploy-day.md)).
 
 The same system explained **by concept** (interview-ready, tied to the code) is in the
@@ -17,14 +17,21 @@ flowchart TB
     subgraph local["Built: the app (runs locally and in Docker)"]
         web["web<br/>Next.js :3000"]
         api["api<br/>Fastify + tRPC :4000"]
-        pg[("Postgres")]
+        pg[("Postgres<br/>users, events")]
         redis[("Redis")]
     end
+    planned["planned: events index,<br/>caching, server rendering"]
     browser --> web
     web --> api
     api --> pg
     api --> redis
+    planned -.-> api
 ```
+
+The first events feature is built: `/events` (client-side rendering) calls `events.list`, which reads
+the `events` table. Nothing is cached yet. The planned boxes come in later steps, each measured
+against the baseline in [doc 21](21-events-list.md). In the AWS diagram below, the `events` table
+exists on RDS once the new migration is run (`pnpm infra:migrate`); the seed script is a laptop and CI tool only.
 
 ```mermaid
 flowchart TB
@@ -152,3 +159,4 @@ service outside our VPC too.
 | [18](18-infra-alb-web.md) | AWS entry + web (switchable) | ALB (HTTP :80), api + web target groups (type ip, 30 s draining), listener (default -> web, `/trpc/*` -> api); web log group, web execution role (no secrets), web task definition + service; api service joins the ALB; `entryEnabled` + `webImageTag` | 12 (public subnets, vpcId), 13 (alb, web, api groups), 16 (web image), 17 (cluster, api service), 14 (via 17) |
 | [19](19-infra-cloudfront.md) | AWS CloudFront + origin protection (switchable, part of entry) | CloudFront distribution (`*.cloudfront.net` HTTPS, 3 cache behaviors: static cached, `/trpc/*` and pages never cached), `appUrl`; alb group: port 80 from the CloudFront prefix list only (443 rule removed); `X-Origin-Verify` secret header, listener default 403 + 2 header rules; api `WEB_ORIGIN` = `appUrl`, `TRUST_PROXY_HOPS` = 2 + Fastify `trustProxy` | 13 (alb group), 18 (ALB, target groups, listener), 17 (api task definition) |
 | [20](20-deploy-day.md) | Deploy day (runbook) | Nothing new. One ordered runbook for the whole stack: prepare, push, data, compute + entry, migrate, verify, console tour, off, troubleshooting | 12 – 19 |
+| [21](21-events-list.md) | Events list (read path baseline) | `events` table with 3 CHECK constraints, `db:seed` (12 events), `events.list` (public), `/events` page (client-side rendering), Events header link | 05 (database), 09 (procedure and hook pattern) |

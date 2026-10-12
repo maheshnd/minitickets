@@ -74,6 +74,7 @@ flowchart LR
 
 - **Backoff (exponential)** – waiting longer after each failed retry (1 s, 2 s, 4 s…). TanStack
   Query's default delay is `min(1000 × 2^n, 30000)` ms.
+- **Baseline (measurement)** – the number you measure before changing something, so you can show the change helped. Ours: `events.list` about 1.8 ms typical on a laptop, no cache ([step 21](../21-events-list.md)).
 - **Breakpoint (CSS)** – a screen width where the layout changes. Tailwind's `sm:` prefix applies
   from the small breakpoint up.
 - **B-tree index** – the default kind of database index: a sorted tree that makes lookups by a
@@ -132,6 +133,7 @@ flowchart LR
 - **Certificate authority (CA)** – an organisation whose signature on a TLS certificate we trust.
 - **CHANGELOG** – a file listing what changed, when and why. Ours: [CHANGELOG.md](CHANGELOG.md), one
   entry per handbook commit.
+- **CHECK constraint** – a rule inside a table that Postgres tests on every insert and update, for any writer. Ours: three on `events` seat counts ([card](concepts/db-check-constraints.md)).
 - **CI (continuous integration)** – running the checks (types, lint, tests, builds) on every push.
   Ours: `.github/workflows/ci.yml`.
 - **CIDR block** – a range of IP addresses written like `10.0.0.0/16`. The number after the slash
@@ -178,6 +180,7 @@ flowchart LR
 - **CQRS** – using separate models for writing data and for reading it.
 - **Credential stuffing** – trying username/password pairs leaked from other sites. User enumeration
   and missing rate limits make it easier.
+- **CSR (client-side rendering)** – the browser gets the page frame and then fetches the data and draws it. Ours: `/events` ([card](concepts/csr-vs-ssr.md)).
 - **CSRF (cross-site request forgery)** – another website tricking your browser into sending a
   request to ours, with your cookie.
 - **Customer-managed key (KMS)** – a KMS key that you create and control (policy, rotation,
@@ -575,6 +578,7 @@ flowchart LR
 - **Secure (cookie flag)** – the browser sends the cookie only over HTTPS. On in production.
 - **Security group** – a stateful firewall attached to a resource; it lists what is allowed in
   and out. We have five: alb, web, api, db, redis.
+- **Seed data** – sample rows a script puts into a fresh database. Ours: `pnpm --filter @minitickets/api db:seed` ([card](concepts/seed-data.md)).
 - **Sequential scan** – Postgres reading every row of a table to find matches; what happens without
   a useful index.
 - **Server Component** – a React component rendered only on the server; it sends HTML and no
@@ -600,6 +604,7 @@ flowchart LR
   with form-like content types). JSON POSTs are not simple, so they get a preflight.
 - **Site (same-site)** – the registrable domain (like `example.com`), ignoring subdomains and ports.
   SameSite cookies are about sites; CORS is about origins.
+- **Skeleton (loading)** – grey placeholder shapes shown while data loads, so the page does not jump. Ours: `EventList`.
 - **SLI / SLO / error budget** – a measured indicator (e.g. % successful requests), the target for it (e.g. 99.9%), and how much failure the target still allows.
 - **Sliding expiration** – a session that is extended on each use, so active users stay logged in.
   Ours is fixed: 7 days after login.
@@ -616,6 +621,7 @@ flowchart LR
 - **SQS** – AWS's managed message queue. Not used by us.
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
 - **ssmmessages** – the AWS Systems Manager channels that ECS Exec uses.
+- **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Planned for a later step; `/events` is CSR today ([card](concepts/csr-vs-ssr.md)).
 - **Stale (TanStack Query)** – a cached answer that may be out of date and will be refetched on the
   next trigger (mount, window focus). With `staleTime` 0 (the default), answers are stale at once.
 - **Standalone output (Next.js)** – a build mode that copies only the files the app needs into one small server folder.

@@ -28,6 +28,7 @@ flowchart TB
 - Anchor: `apps/api/src/services/auth.ts` · `logout`: no session id → return; otherwise delete (deleting a missing key is not an error).
 - Anchor: `apps/api/src/procedures/auth.ts` · `logout`: always clears the cookie and returns `{ ok: true }`.
 - Anchor: `apps/api/src/db/migrate.ts` · `migrate(...)`: Drizzle records finished migrations, so a second run applies nothing.
+- Anchor: `apps/api/src/db/seed.ts` · `onConflictDoNothing()`: fixed ids plus "on conflict do nothing", so running the seed twice adds nothing (see [seed-data](seed-data.md)).
 
 Step by step:
 

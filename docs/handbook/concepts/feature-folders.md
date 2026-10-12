@@ -30,6 +30,7 @@ flowchart LR
 - Anchor: `apps/web/src/features/account/hooks/use-profile.ts` · `useProfile`: the only code in `account` that knows about tRPC.
 - Anchor: `apps/web/src/features/auth/hooks/use-signup.ts` · `useSignup`: "wraps the signup mutation so components never call tRPC directly".
 - Anchor: `apps/web/src/features/landing/components/landing-page.tsx` · `LandingPage`: a feature's entry component, rendered by `app/page.tsx`.
+- Anchor: `apps/web/src/features/events/hooks/use-events.ts` · `useEvents`: the only code in `events` that knows about tRPC; `EventList` and `EventCard` stay free of it.
 
 Step by step:
 

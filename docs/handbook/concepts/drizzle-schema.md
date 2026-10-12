@@ -28,6 +28,7 @@ flowchart LR
 
 - Anchor: `apps/api/src/db/schema/users.ts` · `users`: the table definition.
 - Anchor: `apps/api/src/db/client.ts` · `db`: the Drizzle instance on top of the pool.
+- Anchor: `apps/api/src/db/schema/events.ts` · `events`: the second table (with three `check` constraints, see [db-check-constraints](db-check-constraints.md)).
 
 The table:
 
