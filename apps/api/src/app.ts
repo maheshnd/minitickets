@@ -38,10 +38,12 @@ export async function buildApp() {
       },
     },
     // @concept: trust-proxy
-    // 1b. Proxies: on AWS every request reaches us through CloudFront and the load balancer, so the
-    //     connection always comes from the load balancer. trustProxy makes request.ip (and the
-    //     remoteAddress in every request log line) the REAL visitor's IP, read from the
-    //     X-Forwarded-For header, and request.protocol come from X-Forwarded-Proto.
+    // 1b. Proxies: on AWS every VISITOR request reaches us through CloudFront and the load balancer,
+    //     so the connection comes from the load balancer. (The web server's own calls come straight
+    //     from the Service Connect proxy on localhost; those are never trusted.)
+    //     trustProxy makes request.ip (and the remoteAddress in every request log line) the REAL
+    //     visitor's IP, read from the X-Forwarded-For header, and request.protocol come from
+    //     X-Forwarded-Proto.
     //     WHY: real client IPs in the logs now, and per-visitor rate limiting later.
     //     Locally TRUST_PROXY_HOPS is 0, so nothing changes: trust nobody (see ./config/trust-proxy.ts).
     trustProxy: trustProxyHops(env.TRUST_PROXY_HOPS),

@@ -24,6 +24,8 @@ import { createCdn } from "./src/entry/cdn";
 import { createWebIamRole } from "./src/compute/web-iam";
 import { createWebTask } from "./src/compute/web-task";
 import { createWebService } from "./src/compute/web-service";
+import { createRevalidateSecret } from "./src/compute/revalidate-secret";
+import { createServiceConnect } from "./src/compute/service-connect";
 
 const config = new pulumi.Config();
 
@@ -119,6 +121,8 @@ const apiImageTag = computeEnabled ? config.require("apiImageTag") : undefined;
 //     WHAT it adds: the load balancer (ALB, target groups, listener), CloudFront in front of it
 //     (with its origin secret), AND the web app (log group, role, task definition, service). It
 //     connects the api service to the ALB and gives the api its real WEB_ORIGIN.
+//     Since Step 11h also: Service Connect (namespace + 2 proxy-port rules) and the revalidate
+//     secret, so web and api can call each other privately (SSR and the revalidate hook).
 //     WHY one switch for both: web is useless without the ALB (its security group lets in only
 //     the ALB), and the ALB is useless without web (its default action sends pages there).
 //     WHY a switch at all: the ALB is billed every hour it exists, even with zero visitors.
@@ -150,14 +154,21 @@ const logs = computeEnabled ? createLogs("api") : undefined;
 // 12. Cluster + capacity providers. Needs: nothing. Only the compute switch.
 const cluster = computeEnabled ? createCluster() : undefined;
 
+// 12b. Revalidate secret (Step 11h). Needs: nothing. Only the entry switch (with entry off there is
+//      no web app to revalidate). The ONE password both the api and the web task read, so the two
+//      always agree. It comes before the IAM roles because both execution roles name its ARN.
+const revalidateSecret = entryEnabled ? createRevalidateSecret() : undefined;
+
 // 13. IAM roles. Needs: the two secret ARNs from the data layer, because the execution role
-//     may read exactly those two secrets. (postgres and secrets exist whenever compute is on,
-//     see 9a; checking them here also tells TypeScript they are not undefined.)
+//     may read exactly those two secrets, plus the revalidate secret when entry is on (12b).
+//     (postgres and secrets exist whenever compute is on, see 9a; checking them here also tells
+//     TypeScript they are not undefined.)
 const iam =
   computeEnabled && postgres && secrets
     ? createIamRoles({
         dbMasterSecretArn: postgres.masterSecretArn,
         redisUrlSecretArn: secrets.redisUrlSecretArn,
+        revalidateSecretArn: revalidateSecret?.secretArn,
       })
     : undefined;
 
@@ -203,11 +214,21 @@ const cdn =
       })
     : undefined;
 
+// 18b. Service Connect (Step 11h). Needs: the api and web security groups (security), for the two
+//      proxy-port rules. Creates the Cloud Map namespace both services join. Only the entry switch:
+//      the web service exists only then, and with compute only the api has nobody to talk to.
+//      See src/compute/service-connect.ts for why the ALB can't be used for web <-> api calls.
+const serviceConnect = entryEnabled
+  ? createServiceConnect({ apiSgId: security.apiSgId, webSgId: security.webSgId })
+  : undefined;
+
 // 19. Api task definition. Needs: the image (registry + tag), both roles (iam), the log group
 //     (logs), the data layer's address and secret ARNs and, only when entry is on, appUrl (cdn).
 //     That is why it comes AFTER the entry layer since Step 11g.
 //     With entry off: WEB_ORIGIN keeps the placeholder and no proxy is trusted, exactly as in
 //     Step 11e. (.invalid is a top-level domain reserved for "never a real address".)
+//     With entry on it also gets the revalidate hook (Step 11h): the web server's Service Connect
+//     name and the shared secret. With entry off serviceConnect is undefined: hook off, small size.
 const apiTask =
   apiImageTag && iam && logs && postgres && secrets
     ? createApiTask({
@@ -221,13 +242,17 @@ const apiTask =
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         webOrigin: cdn?.appUrl ?? "https://placeholder.invalid",
         trustProxyHops: cdn ? 2 : 0,
+        serviceConnect: revalidateSecret
+          ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
+          : undefined,
       })
     : undefined;
 
 // 20. Api service. Needs: the cluster, the task definition, the public subnets (network), the
-//     api security group (security) and, only when entry is on, the api target group (listener).
-//     With entry off, listener is undefined, so apiTargetGroupArn is undefined and the service
-//     is exactly the Step 11e one (no load balancer).
+//     api security group (security) and, only when entry is on, the api target group (listener)
+//     and the Service Connect namespace (18b).
+//     With entry off, both are undefined and the service is exactly the Step 11e one
+//     (no load balancer, no Service Connect).
 const apiService =
   cluster && apiTask
     ? createApiService({
@@ -236,36 +261,51 @@ const apiService =
         publicSubnetIds: network.publicSubnetIds,
         apiSgId: security.apiSgId,
         apiTargetGroupArn: listener?.apiTargetGroupArn,
+        namespaceArn: serviceConnect?.namespaceArn,
       })
     : undefined;
 
 // 21. Web log group. Needs: nothing. Only the entry switch.
 const webLogs = entryEnabled ? createLogs("web") : undefined;
 
-// 22. Web execution role. Needs: nothing. Only the entry switch. A SEPARATE role from the api's:
-//     web needs no secrets, so its role cannot read any (least privilege, see web-iam.ts).
-const webIam = entryEnabled ? createWebIamRole() : undefined;
+// 22. Web execution role. Needs: the revalidate secret ARN (12b). A SEPARATE role from the api's:
+//     web may read ONLY that one secret, never the database password (least privilege, web-iam.ts).
+const webIam = revalidateSecret
+  ? createWebIamRole({ revalidateSecretArn: revalidateSecret.secretArn })
+  : undefined;
 
-// 23. Web task definition. Needs: the web image (registry + tag), the web role and the web log group.
+// 23. Web task definition. Needs: the web image (registry + tag), the web role, the web log group
+//     and the revalidate secret. API_INTERNAL_URL is the api's Service Connect name (service.ts 1g).
 const webTask =
-  webImageTag && webIam && webLogs
+  webImageTag && webIam && webLogs && revalidateSecret
     ? createWebTask({
         image: pulumi.interpolate`${registry.webRepoUrl}:${webImageTag}`,
         executionRoleArn: webIam.executionRoleArn,
         logGroupName: webLogs.logGroupName,
+        apiInternalUrl: "http://api:4000",
+        revalidateSecretArn: revalidateSecret.secretArn,
       })
     : undefined;
 
 // 24. Web service. Needs: the cluster, the web task definition, the public subnets (network), the
-//     web security group (security) and the web target group (listener).
+//     web security group (security), the web target group (listener), the Service Connect
+//     namespace (18b) and the api service (20): web waits for it, so the name "api" exists before
+//     the first web task starts (web-service.ts 1f).
+//     ONE-TIME REDEPLOY: the api service is created first, so its first tasks start before "web"
+//     exists and cannot call the revalidate hook yet (new events then show up after <= 30 s, the
+//     web cache's own lifetime). After the first `pulumi up` with entry on, restart the api once:
+//       aws ecs update-service --cluster minitickets-dev --service minitickets-dev-api --force-new-deployment
+//     Later deployments start with both names already in the namespace.
 const webService =
-  cluster && webTask && listener
+  cluster && webTask && listener && serviceConnect && apiService
     ? createWebService({
         clusterName: cluster.clusterName,
         taskDefinitionArn: webTask.taskDefinitionArn,
         publicSubnetIds: network.publicSubnetIds,
         webSgId: security.webSgId,
         webTargetGroupArn: listener.webTargetGroupArn,
+        namespaceArn: serviceConnect.namespaceArn,
+        apiServiceName: apiService.serviceName,
       })
     : undefined;
 

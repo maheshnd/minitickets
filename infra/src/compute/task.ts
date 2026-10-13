@@ -6,6 +6,8 @@
 //                   redisUrlSecretArn  <- from secrets
 //                   webOrigin          <- cdn appUrl when entry is on, else a placeholder
 //                   trustProxyHops     <- 2 when entry is on (CloudFront + ALB), else 0
+//                   serviceConnect     <- OPTIONAL, only when entry is on: WEB_INTERNAL_URL and the
+//                                         revalidate-secret ARN (Step 11h, compute/service-connect.ts)
 // CREATES:          ECS task definition minitickets-dev-api (one new revision per change)
 // GIVES (outputs):  taskDefinitionArn -> used by service, and by scripts/run-migrations.sh
 //
@@ -35,6 +37,12 @@ export interface TaskInputs {
   redisUrlSecretArn: pulumi.Input<string>;
   webOrigin: pulumi.Input<string>;
   trustProxyHops: number;
+  // undefined = no Service Connect (entry off): exactly the Step 11e/11g task. One object, not two
+  // optional fields, because the api's env check wants BOTH values or neither (config/env.ts).
+  serviceConnect?: {
+    webInternalUrl: string;
+    revalidateSecretArn: pulumi.Input<string>;
+  };
 }
 
 export interface TaskOutputs {
@@ -59,10 +67,17 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
     requiresCompatibilities: ["FARGATE"],
     networkMode: "awsvpc",
 
-    // 2b. Size: the smallest Fargate size. 256 CPU units = 1/4 vCPU, 512 MB memory.
-    //     Enough for one Node process that serves a few requests. Values are strings in the API.
-    cpu: "256",
-    memory: "512",
+    // 2b. Size. Values are strings in the API.
+    //     Without Service Connect: the smallest Fargate size, 256 CPU units (1/4 vCPU) + 512 MB.
+    //       Enough for one Node process that serves a few requests.
+    //     With Service Connect (entry on): ECS adds its proxy container to the task, and it shares
+    //       the task's CPU and memory with our container. AWS recommends +256 CPU and +64 MB for it.
+    //       Fargate only sells fixed pairs, and 512 CPU starts at 1024 MB, so: 512 + 1024.
+    //       COST: about twice the price of the small size (0.5 vCPU + 1 GB instead of 0.25 + 0.5),
+    //       roughly +1 US cent per task per hour on demand, about a third of that on FARGATE_SPOT.
+    //       Only while the stack is switched on.
+    cpu: inputs.serviceConnect ? "512" : "256",
+    memory: inputs.serviceConnect ? "1024" : "512",
 
     // @concept: arm64-graviton
     // 2c. ARM64 (Graviton): MUST match the image. scripts/push-images.sh builds linux/arm64.
@@ -80,9 +95,14 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
       {
         name: "api",
         image: inputs.image,
-        // essential: if this container stops, the whole task stops (it is the only one).
+        // essential: if this container stops, the whole task stops. (With Service Connect, ECS adds
+        //   its proxy container next to it; that one is not in this list.)
         essential: true,
-        portMappings: [{ containerPort: 4000, protocol: "tcp" }],
+        // name "api": Service Connect points at a port by NAME (portName in service.ts).
+        // appProtocol "http": tells the proxy to speak HTTP, so it can retry and time out per request
+        //   and count HTTP status codes in its metrics, instead of passing raw bytes through.
+        //   Harmless without Service Connect (nothing reads them then).
+        portMappings: [{ name: "api", containerPort: 4000, protocol: "tcp", appProtocol: "http" }],
 
         // @concept: twelve-factor-config
         // 2f. Plain settings (not secret). The values are visible in the console.
@@ -103,6 +123,12 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           // entry on (CloudFront, then the ALB), 0 without. With 2 the api reads the real visitor
           // IP from X-Forwarded-For (apps/api/src/app.ts, docs/19-infra-cloudfront.md).
           { name: "TRUST_PROXY_HOPS", value: String(inputs.trustProxyHops) },
+          // Where the api calls the web server's revalidate hook (Service Connect name, Step 11h).
+          // Only with entry on: there is no web service otherwise, and the api then runs with the
+          // hook off (a warning at startup, apps/api/src/server.ts).
+          ...(inputs.serviceConnect
+            ? [{ name: "WEB_INTERNAL_URL", value: inputs.serviceConnect.webInternalUrl }]
+            : []),
         ],
 
         // @concept: secrets-management
@@ -117,6 +143,11 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "DB_PASSWORD", valueFrom: pulumi.interpolate`${inputs.dbMasterSecretArn}:password::` },
           // The redis-url secret is a plain string (the whole rediss:// URL), so no key.
           { name: "REDIS_URL", valueFrom: inputs.redisUrlSecretArn },
+          // The revalidate hook's shared secret (a plain string, so no key). The web task reads
+          // the SAME secret (web-task.ts), so both always hold the same value.
+          ...(inputs.serviceConnect
+            ? [{ name: "REVALIDATE_SECRET", valueFrom: inputs.serviceConnect.revalidateSecretArn }]
+            : []),
         ],
 
         // @concept: cloudwatch-logs

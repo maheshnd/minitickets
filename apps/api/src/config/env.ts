@@ -34,9 +34,10 @@ const EnvSchema = z.object({
   // web server's INTERNAL address (http://localhost:3000 locally, http://web:3000 in compose),
   // not the browser's WEB_ORIGIN. The secret proves to the web app that the call is from us.
   // OPTIONAL, but only as a PAIR: without them the hook is off (a warning at startup) and the web
-  // cache's own 30 s lifetime bounds the staleness. WHY not required: the AWS api task has no
-  // route to the web tasks yet (no Service Connect), so it cannot use them; a required value
-  // would stop the whole API from starting there, for a feature that only makes lists fresher.
+  // cache's own 30 s lifetime bounds the staleness. WHY not required: on AWS with only the compute
+  // switch on there IS no web app (it comes with the entry switch, which also adds the Service
+  // Connect route to it, infra/src/compute/service-connect.ts); a required value would stop the
+  // whole API from starting there, for a feature that only makes lists fresher.
   WEB_INTERNAL_URL: z.url({ protocol: /^https?$/ }).optional(),
   REVALIDATE_SECRET: RevalidateSecretSchema.optional(),
 })

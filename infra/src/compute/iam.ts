@@ -1,6 +1,7 @@
 // LAYER: iam (part of the compute layer)
 // NEEDS (inputs):   dbMasterSecretArn  <- from postgres (the RDS master password secret)
 //                   redisUrlSecretArn  <- from secrets
+//                   revalidateSecretArn <- from revalidate-secret (OPTIONAL: only when entry is on)
 // CREATES:          execution role + managed policy attachment + inline secrets policy,
 //                   task role + inline ECS Exec policy
 // GIVES (outputs):  executionRoleArn -> used by task (ECS uses it to START the task)
@@ -28,6 +29,8 @@ const prefix = "minitickets-dev";
 export interface IamInputs {
   dbMasterSecretArn: pulumi.Input<string>;
   redisUrlSecretArn: pulumi.Input<string>;
+  // undefined = entry off: no web app to revalidate, so the role reads only the two data secrets.
+  revalidateSecretArn?: pulumi.Input<string>;
 }
 
 export interface IamOutputs {
@@ -64,7 +67,8 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
   // PERMISSION POLICY (what it can do):
   //   - AmazonECSTaskExecutionRolePolicy (AWS managed): pull images from ECR and write log
   //     lines to CloudWatch Logs.
-  //   - inline "read-secrets": secretsmanager:GetSecretValue on ONLY our two secrets.
+  //   - inline "read-secrets": secretsmanager:GetSecretValue on ONLY our two data secrets, plus
+  //     the revalidate secret when entry is on (Step 11h). Never "*".
   // USED BY: the api task definition (task.ts), field executionRoleArn. The ECS agent wears it
   //   while STARTING a task: before our code runs, so our code never gets these permissions.
 
@@ -88,8 +92,8 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
 
   // @concept: least-privilege
   // @concept: kms
-  // 5. Our own policy: read exactly two secrets, nothing else.
-  //    WHY only these two ARNs (not "*"): least privilege. If this role were ever misused, it
+  // 5. Our own policy: read exactly two secrets (three with entry on), nothing else.
+  //    WHY only these ARNs (not "*"): least privilege. If this role were ever misused, it
   //    still could not read any other secret in the account.
   //    No kms:Decrypt needed: both secrets use the default AWS-managed key (aws/secretsmanager),
   //    which Secrets Manager decrypts for any caller allowed to read the secret.
@@ -103,7 +107,11 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
         {
           Effect: "Allow",
           Action: "secretsmanager:GetSecretValue",
-          Resource: [inputs.dbMasterSecretArn, inputs.redisUrlSecretArn],
+          Resource: [
+            inputs.dbMasterSecretArn,
+            inputs.redisUrlSecretArn,
+            ...(inputs.revalidateSecretArn ? [inputs.revalidateSecretArn] : []),
+          ],
         },
       ],
     }),

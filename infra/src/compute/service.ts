@@ -4,13 +4,16 @@
 //                   publicSubnetIds   <- from network
 //                   apiSgId           <- from security
 //                   apiTargetGroupArn <- from listener (OPTIONAL: only when the entry switch is on)
+//                   namespaceArn      <- from service-connect (OPTIONAL: only when entry is on)
 // CREATES:          ECS service minitickets-dev-api (keeps 1 api task running,
-//                   registered in the ALB's api target group when entry is on)
+//                   registered in the ALB's api target group when entry is on,
+//                   reachable as http://api:4000 through Service Connect when entry is on)
 // GIVES (outputs):  serviceName -> stack output, for the deploy-day commands
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { apiProxyPort } from "./service-connect";
 
 // The service part of the compute layer.
 // See docs/17-infra-ecs-api.md for the diagrams.
@@ -29,6 +32,8 @@ export interface ServiceInputs {
   apiSgId: pulumi.Input<string>;
   // undefined = no load balancer (computeEnabled on, entryEnabled off): exactly the Step 11e service.
   apiTargetGroupArn?: pulumi.Input<string>;
+  // undefined = no Service Connect (entry off): again exactly the Step 11e service.
+  namespaceArn?: pulumi.Input<string>;
 }
 
 export interface ServiceOutputs {
@@ -68,7 +73,8 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
     //     subnet with a public IP it reaches them through the internet gateway.
     //     Is that unsafe? The public IP only makes the task REACHABLE in theory. The api security
     //     group still blocks ALL inbound traffic except port 4000 from the load balancer group
-    //     (docs/13-infra-security-groups.md). So the only way in from the internet is through the
+    //     (docs/13-infra-security-groups.md) and, since Step 11h, the proxy port 14000 from the web
+    //     group (compute/service-connect.ts). So the only way in from the internet is through the
     //     ALB (when entry is on). Production: private subnets + NAT gateway or VPC endpoints.
     networkConfiguration: {
       subnets: inputs.publicSubnetIds,
@@ -99,6 +105,34 @@ export function createApiService(inputs: ServiceInputs): ServiceOutputs {
       ? [{ targetGroupArn: inputs.apiTargetGroupArn, containerName: "api", containerPort: 4000 }]
       : undefined,
     healthCheckGracePeriodSeconds: inputs.apiTargetGroupArn ? 60 : undefined,
+
+    // 1g. Service Connect (only when entry is on, compute/service-connect.ts). The api is both:
+    //     SERVER: it offers the name "api" to the namespace, so web tasks can call it.
+    //       portName "api": the named port in the task definition (task.ts 2e, port 4000).
+    //       discoveryName "api": its entry in the Cloud Map phone book.
+    //       clientAlias port 4000: what callers type. With no dnsName, the name is discoveryName,
+    //         so a web task reaches it as http://api:4000 (the same address as in docker compose).
+    //       ingressPortOverride: the api's proxy listens on its OWN port (14000), so the ALB keeps
+    //         calling the container on 4000 directly, NOT through the proxy. WHY that matters: the
+    //         api counts proxies to find the visitor's IP (TRUST_PROXY_HOPS = 2, task.ts 2f). Keeping
+    //         the proxy out of the ALB path keeps that count true (apps/api/src/config/trust-proxy.ts).
+    //     CLIENT: "enabled" also puts a proxy in front of the api's OWN outgoing calls, so it can
+    //       call http://web:3000 (the revalidate hook).
+    //     Changing this block starts a new deployment: Service Connect only reaches NEW tasks.
+    serviceConnectConfiguration: inputs.namespaceArn
+      ? {
+          enabled: true,
+          namespace: inputs.namespaceArn,
+          services: [
+            {
+              portName: "api",
+              discoveryName: "api",
+              clientAlias: [{ port: 4000 }],
+              ingressPortOverride: apiProxyPort,
+            },
+          ],
+        }
+      : undefined,
 
     tags: tagsFor(`${prefix}-api-service`),
   });

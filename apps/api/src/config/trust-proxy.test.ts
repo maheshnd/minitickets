@@ -6,11 +6,12 @@ import { trustProxyHops } from "./trust-proxy";
 // @concept: in-process-api-tests
 // A tiny Fastify app that answers with what it thinks the visitor's IP and protocol are.
 // inject() sends a fake request without opening a real port.
-async function whoAmI(hops: number, headers: Record<string, string>) {
+async function whoAmI(hops: number, headers: Record<string, string>, remoteAddress = "10.0.0.37") {
   const app = Fastify({ trustProxy: trustProxyHops(hops) });
   app.get("/", async (request) => ({ ip: request.ip, protocol: request.protocol }));
-  // 1. remoteAddress = who opened the connection: on AWS that is always the ALB (a VPC address).
-  const res = await app.inject({ method: "GET", url: "/", headers, remoteAddress: "10.0.0.37" });
+  // 1. remoteAddress = who opened the connection: for visitors on AWS that is the ALB (a VPC
+  //    address); for web server -> api calls it is the Service Connect proxy (127.0.0.1).
+  const res = await app.inject({ method: "GET", url: "/", headers, remoteAddress });
   await app.close();
   return res.json();
 }
@@ -36,5 +37,14 @@ describe("trustProxyHops", () => {
     //    address, so the fake one is the furthest left, at hop 3.
     const headers = { ...viaCloudFront, "x-forwarded-for": "6.6.6.6, 203.0.113.7, 130.176.0.1" };
     expect(await whoAmI(2, headers)).toMatchObject({ ip: "203.0.113.7" });
+  });
+
+  // 4. Web server -> api through Service Connect (Step 11h): no CloudFront, no ALB, so nothing in
+  //    front of us wrote these headers. Before the localhost rule this answered ip 6.6.6.6 + https.
+  it("2 hops, connection from localhost (Service Connect): forwarded headers are ignored", async () => {
+    const forged = { "x-forwarded-for": "6.6.6.6, 7.7.7.7", "x-forwarded-proto": "https" };
+    expect(await whoAmI(2, forged, "127.0.0.1")).toEqual({ ip: "127.0.0.1", protocol: "http" });
+    expect(await whoAmI(2, forged, "::ffff:127.0.0.1")).toEqual({ ip: "::ffff:127.0.0.1", protocol: "http" });
+    expect(await whoAmI(2, {}, "127.0.0.1")).toEqual({ ip: "127.0.0.1", protocol: "http" });
   });
 });
