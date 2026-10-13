@@ -1,5 +1,99 @@
 {
   "permissions": {
+    "allow": [
+      "Edit(/**)",
+      "Write(/**)",
+
+      "Bash(pnpm install)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm test:e2e*)",
+      "Bash(pnpm test:integration*)",
+      "Bash(pnpm docs:check)",
+      "Bash(pnpm docs:history*)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm dev*)",
+      "Bash(pnpm db:migrate*)",
+      "Bash(pnpm db:seed*)",
+      "Bash(pnpm demo:*)",
+      "Bash(pnpm app:up)",
+      "Bash(pnpm app:down)",
+      "Bash(pnpm db:up)",
+      "Bash(pnpm --filter * typecheck*)",
+      "Bash(pnpm --filter * lint*)",
+      "Bash(pnpm --filter * test*)",
+      "Bash(pnpm --filter * test:e2e*)",
+      "Bash(pnpm --filter * test:integration*)",
+      "Bash(pnpm --filter * build*)",
+      "Bash(pnpm --filter * dev*)",
+      "Bash(pnpm --filter * db:migrate*)",
+      "Bash(pnpm --filter * db:seed*)",
+      "Bash(pnpm --filter * demo:*)",
+      "Bash(pnpm --filter * docs:check)",
+      "Bash(pnpm --filter * docs:history*)",
+
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch)",
+      "Bash(git branch --list*)",
+      "Bash(git branch -a*)",
+      "Bash(git branch -r*)",
+      "Bash(git branch -v*)",
+
+      "Bash(ls*)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(curl *localhost*)",
+      "Bash(curl *127.0.0.1*)",
+      "Bash(redis-cli *)",
+      "Bash(psql *localhost*)",
+      "Bash(psql *127.0.0.1*)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose logs*)",
+      "Bash(docker compose exec *)",
+
+      "Bash(pulumi preview*)",
+      "Bash(pulumi stack output*)",
+      "Bash(pulumi config get*)",
+      "Bash(cd infra && pulumi preview*)",
+      "Bash(cd infra && pulumi stack output*)",
+      "Bash(cd infra && pulumi config get*)",
+
+      "Bash(PORT=* pnpm dev*)",
+      "Bash(PORT=* node *)",
+      "Bash(kill [0-9]*)"
+    ],
+    "ask": [
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+
+      "Bash(pulumi up*)",
+      "Bash(pulumi config set*)",
+      "Bash(cd infra && pulumi up*)",
+      "Bash(cd infra && pulumi config set*)",
+
+      "Bash(aws *)",
+
+      "Bash(docker compose up*)",
+      "Bash(docker compose start*)",
+
+      "Bash(pnpm add*)",
+      "Bash(pnpm --filter * add*)",
+      "Bash(pnpm install *)",
+      "Bash(npm install*)",
+      "Bash(npm i *)",
+
+      "Bash(find *-delete*)",
+      "Bash(find *-exec*)",
+      "Bash(redis-cli *-h *)",
+      "Bash(redis-cli *--host*)"
+    ],
     "deny": [
       "Bash(pkill *)",
       "Bash(*pkill *)",
@@ -13,7 +107,21 @@
       "Bash(git reset --hard*)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
-      "Bash(git clean*)"
+      "Bash(git clean*)",
+
+      "Bash(pulumi destroy*)",
+      "Bash(cd infra && pulumi destroy*)",
+      "Bash(docker compose down*)",
+      "Bash(docker compose stop*)",
+      "Bash(docker system prune*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -fr /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -fr ~*)",
+      "Bash(rm -rf ..*)",
+      "Bash(rm -fr ..*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(rm -fr $HOME*)"
     ]
   }
 }
