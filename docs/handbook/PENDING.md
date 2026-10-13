@@ -72,3 +72,25 @@ docs, cards, story chapters and a CHANGELOG entry, then clears this list (see CL
 | `events.list` (tRPC) | no (no-store) | no (/trpc/* disabled) | via data cache | yes | yes, SWR | Redis is the shared cache; HTTP stays no-store by default |
 | `events.create` | no | no | invalidates (hook) | invalidates queries | invalidates (gen bump) | write |
 | API `/health`, `/ready` | no | not routed | – | – | – | live status |
+
+- **Step:** Step 12a: CD part 1, publish images to ECR from GitHub Actions with OIDC, no deploy yet (would be `docs/31-*`).
+- **Concepts:** CI vs CD (CI = "is this commit good?", CD = "ship the commit CI approved"); workflow_run gating (`types: [completed]` also fires on failure → `conclusion == 'success'`; `branches: [main]` matches the BRANCH NAME, so a fork PR from a branch called "main" would match → also require `event == 'push'`; cd.yml is read from main only); OIDC vs stored keys (short-lived JWT → `sts:AssumeRoleWithWebIdentity` → 1 h credentials; nothing to leak or rotate); trust conditions (`aud` = sts.amazonaws.com; `sub` = `repo:maheshnd/minitickets:ref:refs/heads/main`; without `sub` ANY GitHub repo could assume the role, since the provider trusts all of GitHub; StringEquals, not StringLike); least privilege (publish role = ECR login + 7 push/pull actions on 2 repo ARNs; no delete, no ECS; the deploy step gets its OWN role); build once / promote (the CD image is the only build of a commit; web has no baked-in API URL, so one image fits every environment); immutable tags + idempotent re-runs (check with `imagetools inspect` = `ecr:BatchGetImage`, so no `DescribeImages` needed; skip if present; concurrency group per SHA so two runs cannot race); repo variable vs secret (an ARN is an address, not a password); native ARM runner vs QEMU (free for public repos; emulation is several times slower); GHA build cache per arch (`api-arm64` vs CI's `api`); checkout `workflow_run.head_sha`, not "main".
+- **Key files:** `.github/workflows/cd.yml` (read first: flow diagram at top, steps 1-18); `infra/src/cicd.ts` `createCicd` (provider, trust policy step 4, permission policy step 6); `infra/src/registry.ts` (now also returns `apiRepoArn`/`webRepoArn`); `infra/index.ts` 8b + 27b (`publishRoleArn` output); `infra/Pulumi.dev.yaml` (`githubOwner`, `githubRepo`); `ci.yml` (docker job comment only).
+- **Measured (local, 2026-10-13):** `pnpm typecheck` + `pnpm lint` OK; actionlint 1.7.7 (Docker, with shellcheck 0.10.0, proven active on a bad sample) → 0 errors on cd.yml and ci.yml. `docker buildx imagetools inspect` on Docker Hub: existing tag → digest + exit 0; missing → "…: not found" + exit 1. Repo visibility = PUBLIC (so `ubuntu-24.04-arm` is free).
+- **Unsure / for the docs:** (1) `pulumi preview` NOT run: AWS SSO session expired. Expected: + OIDC provider, + role, + role policy, new output `publishRoleArn`, nothing else. (2) Not checked whether the account already has a GitHub OIDC provider (only one per URL is allowed; `pulumi up` would fail with EntityAlreadyExists → then `pulumi import` it instead). (3) The "not found" text was tested on Docker Hub, not ECR. (4) Nothing ran on GitHub yet: workflow_run only fires once cd.yml is on main. (5) A manual run skips the CI gate (builds main's newest commit). (6) RISK for the deploy step: the ECR lifecycle keeps only the newest 10 tagged images; with CD on every push to main, the tag pinned in Pulumi config (`8510e1f`) is deleted after 10 more pushes, and ECS then can't pull it on a task restart. (7) CI's docker job builds x86 only; an ARM-only build failure would show up first in CD. (8) Tag = `--short=7`; push-images.sh uses `--short` (auto length, 7 today). (9) A custom OIDC `sub` template, or adding `environment:` to the job, changes `sub` → the role refuses.
+- **Setup for the owner (once):**
+  ```
+  aws sso login --profile ticketlite                      # the session has expired
+  aws iam list-open-id-connect-providers --profile ticketlite   # a token.actions.githubusercontent.com entry already? -> import it, don't create
+  cd infra
+  pulumi config get githubOwner; pulumi config get githubRepo   # already set: maheshnd / minitickets
+  pulumi preview                                          # expect exactly 3 to create (provider, role, policy)
+  pulumi up
+  pulumi stack output publishRoleArn                      # arn:aws:iam::<account>:role/minitickets-dev-gh-publish
+  # GitHub: repo -> Settings -> Secrets and variables -> Actions -> tab "Variables" -> New repository variable
+  #   name AWS_PUBLISH_ROLE_ARN, value = the ARN above.  Or: gh variable set AWS_PUBLISH_ROLE_ARN --body "$(pulumi stack output publishRoleArn)"
+  # Trigger: commit + push to main -> CI runs -> CD starts when CI is green. Or Actions -> CD -> "Run workflow" (branch main).
+  # Verify: the CD run's summary shows both tags + digests; then:
+  aws ecr describe-images --profile ticketlite --repository-name minitickets-dev-api --image-ids imageTag=$(git rev-parse --short=7 HEAD)
+  # Re-run the CD job: green, both rows "already in ECR (skipped)". Run CD from another branch: job "skipped".
+  ```

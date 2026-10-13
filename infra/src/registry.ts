@@ -3,6 +3,7 @@
 // CREATES:          2 ECR repositories (api, web), each with a lifecycle policy
 // GIVES (outputs):  apiRepoUrl -> used by task (image), and the push script
 //                   webRepoUrl -> used by the push script (and, later, the web task)
+//                   apiRepoArn, webRepoArn -> used by cicd (the only repos CD may push to)
 //
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
@@ -73,8 +74,11 @@ export function createRegistry() {
   const api = createRepo("api");
   const web = createRepo("web");
 
+  // 4. URLs are for docker (where to push/pull); ARNs are for IAM policies (what a role may touch).
   return {
     apiRepoUrl: api.repositoryUrl,
     webRepoUrl: web.repositoryUrl,
+    apiRepoArn: api.arn,
+    webRepoArn: web.arn,
   };
 }

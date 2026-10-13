@@ -1,0 +1,256 @@
+# CD part 1: publish the api and web images to ECR. No deploy yet (that is a later step).
+#
+# FLOW (read this first):
+#
+#   push to main
+#       │
+#       ▼
+#   CI workflow (ci.yml): typecheck, lint, tests, e2e, docker build
+#       │ finishes
+#       ▼
+#   CD workflow (this file) starts ── CI failed? ──▶ job skipped, nothing published
+#       │ CI succeeded
+#       ▼
+#   1. check out the EXACT commit CI tested
+#   2. ask GitHub for an OIDC token ──▶ AWS STS checks it ──▶ 1-hour AWS credentials
+#   3. docker login to ECR (with those credentials)
+#   4. tag = short git SHA; does api:<tag> / web:<tag> already exist in ECR?
+#       │ yes ─▶ skip that image (tags are immutable; re-runs must not fail)
+#       │ no
+#       ▼
+#   5. build for linux/arm64 on a native ARM runner, push to ECR
+#   6. write tags + digests to the job summary
+#
+# Build once, promote: the image built here is the ONLY build of this commit. Later steps
+# deploy THIS image (same tag, same digest) instead of building again for each environment.
+#
+# Explained in docs/handbook/PENDING.md (Step 12a) until the next handbook catch-up.
+name: CD
+
+on:
+  # 1. Start after the "CI" workflow (the `name:` in ci.yml) has finished on main.
+  #    WHY workflow_run and not `push`: CD only ever ships code CI approved. A plain `push`
+  #    trigger would start CD at the same time as CI, before anyone knows if the code works.
+  #    `completed` fires for failed runs too, so the job below also checks the result.
+  #    NOTE: GitHub reads this file from the default branch (main), so changes to cd.yml only
+  #    take effect once they are on main.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # 2. A "Run workflow" button in the Actions tab, for manual runs (e.g. a re-publish).
+  #    A manual run builds the newest commit on main WITHOUT waiting for CI, so use it only
+  #    for a commit whose CI run is green.
+  workflow_dispatch:
+
+# 3. Permissions of the job's GITHUB_TOKEN. Everything not listed is "none".
+#    id-token: write -> lets the job ask GitHub for an OIDC token (an ID card that says "I am
+#      a job of repo X on branch main"). AWS swaps it for temporary credentials (step 9).
+#      Without it there is no token, and the AWS login fails. It does NOT allow writing to
+#      the repo; the name only means "may create (write) an ID token".
+#    contents: read -> lets actions/checkout read the code. Nothing here writes to the repo.
+permissions:
+  id-token: write
+  contents: read
+
+# 4. At most one run per commit at a time; a second one WAITS (not cancelled).
+#    WHY: two runs for the same commit (e.g. a re-run while the first is still busy) could both
+#    see "tag missing" and both push; the slower one would fail on the immutable tag. Queued,
+#    the second one sees the tag and skips. Different commits still run side by side.
+concurrency:
+  group: cd-publish-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+env:
+  # 5. Same region as the Pulumi stack (infra/Pulumi.dev.yaml, aws:region).
+  AWS_REGION: us-east-1
+  # 6. The two ECR repositories (infra/src/registry.ts). The publish role may push ONLY here.
+  API_REPO_NAME: minitickets-dev-api
+  WEB_REPO_NAME: minitickets-dev-web
+
+jobs:
+  publish:
+    # 7. Run only when it is safe to ship:
+    #    - a manual run (workflow_dispatch) from main, OR
+    #    - CI finished with "success" AND that CI run was started by a PUSH.
+    #    WHY event == 'push': `branches: [main]` above filters on the BRANCH NAME of the CI run.
+    #      A pull request from a fork whose branch happens to be called "main" would match it
+    #      too, and we would build a stranger's code. Only pushes come from our own repo.
+    #    (The AWS role refuses anything but main of our repo anyway; this check makes the run
+    #    show "skipped" instead of failing.)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
+    # 8. A native ARM64 GitHub runner.
+    #    WHY: the ECS tasks run on ARM64, and an image only runs on the CPU it was built for.
+    #    On this runner Docker builds ARM natively, at full speed.
+    #    The alternative is ubuntu-latest (x86) + docker/setup-qemu-action, which EMULATES an
+    #    ARM CPU in software: it works, but every instruction is translated, so `pnpm install`
+    #    and `next build` get several times slower (minutes instead of seconds per stage).
+    #    ARM runners are free for PUBLIC repos (this one is). If the repo turns private, check
+    #    GitHub's current runner pricing, or switch to ubuntu-latest + setup-qemu-action.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+
+    steps:
+      # 9. Fail early, with a clear message, if the one-time setup was not done.
+      #    WHY: without the variable, the AWS step below fails with a vague "could not load
+      #    credentials". See the setup steps in docs/handbook/PENDING.md (Step 12a).
+      - name: Check setup
+        env:
+          ROLE_ARN: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Repo variable AWS_PUBLISH_ROLE_ARN is not set. Set it to: cd infra && pulumi stack output publishRoleArn"
+            exit 1
+          fi
+
+      # 10. Check out the EXACT commit CI tested.
+      #     WHAT: workflow_run.head_sha is the commit the CI run tested. For a manual run there
+      #       is no CI run, so it falls back to github.sha (the newest commit on main).
+      #     WHY: by the time CD starts, someone may have pushed again. Checking out "main" would
+      #       build that NEWER commit, which CI has not approved yet.
+      - name: Check out the commit CI tested
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # 11. The image tag: the short git SHA (7 characters), the same format as
+      #     `pnpm images:push` (scripts/push-images.sh). Never "latest".
+      #     WHY: a SHA names exactly one commit, so any running container can be traced back to
+      #     its code. The ECR repositories are IMMUTABLE: a tag can be pushed only once.
+      - name: Compute the image tag
+        id: tag
+        run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      # 12. Log in to AWS with OIDC: no stored access keys.
+      #     WHAT: the action asks GitHub for the OIDC token (allowed by `id-token: write`) and
+      #       calls sts:AssumeRoleWithWebIdentity. AWS checks the token's signature and the
+      #       role's trust conditions (aud = sts.amazonaws.com, sub = repo:<owner>/<repo>:ref:
+      #       refs/heads/main; see infra/src/cicd.ts) and returns credentials valid for 1 hour.
+      #     WHY a repo VARIABLE (vars.), not a SECRET: a role ARN is just an address, not a
+      #       password. Knowing it does not let anyone use it (the trust conditions decide
+      #       that). Variables are visible in logs, which makes debugging easier; secrets
+      #       are for things that grant access on their own.
+      #     role-session-name: shows up in AWS CloudTrail, so each AWS call can be traced back
+      #       to one GitHub run.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          role-session-name: gh-publish-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 13. docker login to our ECR registry.
+      #     WHAT: calls ecr:GetAuthorizationToken (12-hour password) and runs `docker login`.
+      #     WHY: ECR repositories are private. Gives `registry`, e.g.
+      #       123456789012.dkr.ecr.us-east-1.amazonaws.com.
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 14. Set up Buildx, Docker's modern builder.
+      #     WHY: the default builder cannot use the GitHub Actions cache (step 16); Buildx can.
+      #     It also gives the `imagetools` command used in step 15.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 15. Does each image already exist in ECR with this tag?
+      #     WHAT: `imagetools inspect` reads the image's manifest (ecr:BatchGetImage).
+      #       found      -> <service>_exists=true and its digest (that image is skipped)
+      #       not found  -> <service>_exists=false (that image is built and pushed)
+      #       any other error (e.g. not allowed) -> stop here; better than guessing.
+      #     WHY: tags are immutable. Re-running a run, or a manual run for a commit that was
+      #       already published, must SUCCEED without pushing again (the push would be refused).
+      - name: Check which images already exist
+        id: check
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          # check <service> <repo name>: writes <service>_exists (and <service>_digest if found)
+          check() {
+            SERVICE="$1"
+            REF="$REGISTRY/$2:$TAG"
+            if OUT="$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}' 2>&1)"; then
+              echo "${SERVICE}_exists=true" >> "$GITHUB_OUTPUT"
+              echo "${SERVICE}_digest=$OUT" >> "$GITHUB_OUTPUT"
+              echo "$REF already exists ($OUT): skipping its build."
+            elif [[ "$OUT" == *"not found"* ]]; then
+              echo "${SERVICE}_exists=false" >> "$GITHUB_OUTPUT"
+              echo "$REF is not in ECR yet: it will be built and pushed."
+            else
+              echo "::error::Could not check $REF: $OUT"
+              exit 1
+            fi
+          }
+          check api "$API_REPO_NAME"
+          check web "$WEB_REPO_NAME"
+
+      # 16. Build the api image for linux/arm64 and push it (only if step 15 did not find it).
+      #     push: true = upload to ECR right after the build.
+      #     provenance: false = no extra "attestation" manifest, so each tag is one plain ARM64
+      #       image (the same as scripts/push-images.sh).
+      #     cache-from / cache-to (GitHub Actions cache): reuse unchanged layers (like the pnpm
+      #       install) from the previous run. mode=max also stores the build stages' layers.
+      #       scope "api-arm64": CI's docker job builds x86 images with scope "api"; a separate
+      #       name stops the two CPU types from overwriting each other's cache.
+      - name: Build and push api
+        id: build_api
+        if: steps.check.outputs.api_exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.API_REPO_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=api-arm64
+          cache-to: type=gha,mode=max,scope=api-arm64
+
+      # 17. The same for web. No NEXT_PUBLIC_API_URL build-arg: empty means "call /trpc on the
+      #     same origin as the page" (see apps/web/Dockerfile step 6), so one image fits every
+      #     environment. That is what makes "build once, promote" possible for web.
+      - name: Build and push web
+        id: build_web
+        if: steps.check.outputs.web_exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.WEB_REPO_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=web-arm64
+          cache-to: type=gha,mode=max,scope=web-arm64
+
+      # 18. Write what was published to the job summary (the run's page in the Actions tab).
+      #     WHAT: for each image: the tag, the digest, and whether it was pushed now or skipped.
+      #     WHY: the tag is a name; the digest (sha256 of the content) is the exact content.
+      #       The deploy step will need both. The digest comes from the build (pushed now) or
+      #       from step 15 (already in ECR).
+      - name: Write job summary
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+          API_DIGEST: ${{ steps.build_api.outputs.digest || steps.check.outputs.api_digest }}
+          WEB_DIGEST: ${{ steps.build_web.outputs.digest || steps.check.outputs.web_digest }}
+          API_STATUS: ${{ steps.check.outputs.api_exists == 'true' && 'already in ECR (skipped)' || 'pushed now' }}
+          WEB_STATUS: ${{ steps.check.outputs.web_exists == 'true' && 'already in ECR (skipped)' || 'pushed now' }}
+        run: |
+          {
+            echo "## Published images"
+            echo
+            echo "Commit: \`$COMMIT\` (tag \`$TAG\`)"
+            echo
+            echo "| Image | Tag | Digest | Status |"
+            echo "|---|---|---|---|"
+            echo "| \`$REGISTRY/$API_REPO_NAME\` | \`$TAG\` | \`$API_DIGEST\` | $API_STATUS |"
+            echo "| \`$REGISTRY/$WEB_REPO_NAME\` | \`$TAG\` | \`$WEB_DIGEST\` | $WEB_STATUS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"

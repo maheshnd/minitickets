@@ -9,3 +9,5 @@ config:
   minitickets:entryEnabled: "false"
   minitickets:apiImageTag: 8510e1f
   minitickets:webImageTag: 8510e1f
+  minitickets:githubOwner: maheshnd
+  minitickets:githubRepo: minitickets

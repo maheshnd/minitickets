@@ -10,6 +10,7 @@ import { createPostgres } from "./src/data/postgres";
 import { createCache } from "./src/data/cache";
 import { createSecrets } from "./src/data/secrets";
 import { createRegistry } from "./src/registry";
+import { createCicd } from "./src/cicd";
 import { createLogs } from "./src/compute/logs";
 import { createCluster } from "./src/compute/cluster";
 import { createIamRoles } from "./src/compute/iam";
@@ -77,6 +78,19 @@ const secrets = cache
 // 8. Registry (ECR). Needs: nothing. Always on, because storing images costs cents.
 //    The push script (scripts/push-images.sh) reads its two URLs from the stack outputs.
 const registry = createRegistry();
+
+// 8b. CI/CD (GitHub OIDC + publish role). Needs: the two repo ARNs (registry), because the role
+//     may push to exactly those, and which GitHub repo may use it (config). Always on: IAM is free.
+//     require() stops with a clear error if either is missing: a wrong or empty value would
+//     trust the wrong repo (or none). Set them with:
+//       pulumi config set githubOwner <owner>   (e.g. maheshnd)
+//       pulumi config set githubRepo  <repo>    (e.g. minitickets)
+const cicd = createCicd({
+  githubOwner: config.require("githubOwner"),
+  githubRepo: config.require("githubRepo"),
+  apiRepoArn: registry.apiRepoArn,
+  webRepoArn: registry.webRepoArn,
+});
 
 // 9. The compute layer ON/OFF switch (see docs/17-infra-ecs-api.md).
 //    WHY: a running Fargate task is billed every second it runs. Same idea as dataEnabled.
@@ -279,6 +293,9 @@ export const redisUrlSecretArn = secrets?.redisUrlSecretArn ?? null;
 // 27. Registry outputs: where to push the images.
 export const apiRepoUrl = registry.apiRepoUrl;
 export const webRepoUrl = registry.webRepoUrl;
+
+// 27b. CI/CD output: copy it into the GitHub repo variable AWS_PUBLISH_ROLE_ARN (cd.yml reads it).
+export const publishRoleArn = cicd.publishRoleArn;
 
 // 28. Compute layer outputs: names and ARNs for the deploy-day commands and the migration
 //     script. null when the layer is off (same reason as 26).
