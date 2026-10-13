@@ -53,7 +53,7 @@ test("an admin creates an event and it is on /events right away (cache invalidat
 
   // 5. Look at /events BEFORE creating. This fills the API's Redis cache (and this browser's
   //    React Query cache) with a list that does not have the new event. Without invalidation that
-  //    old list would keep being served for up to ~33 s.
+  //    old list would keep being served until its next refresh (soft TTL, ~30 s).
   await page.goto("/events");
   await expect(main.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
   await expect(main.getByRole("heading", { name: eventTitle })).toHaveCount(0);

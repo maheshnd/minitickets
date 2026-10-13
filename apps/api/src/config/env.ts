@@ -23,7 +23,18 @@ const EnvSchema = z.object({
   // The lowest log level that is printed. "info" hides debug lines (like "db query: …"); start
   // the API with LOG_LEVEL=debug to see them, e.g. when counting database queries.
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-});
+  // The events list cache's two TTLs, in milliseconds (see services/events.ts, step 1).
+  // SOFT: how long a cached list counts as fresh. HARD: when Redis deletes it (the oldest it may
+  // ever be served). Shorten both for a demo, e.g. 3000 and 60000.
+  EVENTS_CACHE_SOFT_TTL_MS: z.coerce.number().int().positive().default(30_000),
+  EVENTS_CACHE_HARD_TTL_MS: z.coerce.number().int().positive().default(300_000),
+})
+  // A soft TTL at or above the hard TTL would mean "never stale": Redis would delete the list
+  // while it still counts as fresh. Almost surely a typo, so we stop at startup.
+  .refine((e) => e.EVENTS_CACHE_SOFT_TTL_MS < e.EVENTS_CACHE_HARD_TTL_MS, {
+    message: "must be greater than EVENTS_CACHE_SOFT_TTL_MS",
+    path: ["EVENTS_CACHE_HARD_TTL_MS"],
+  });
 
 // 2. Check process.env once, when the API starts: the app settings and the database settings.
 const app = EnvSchema.safeParse(process.env);

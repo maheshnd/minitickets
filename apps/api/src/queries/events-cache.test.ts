@@ -43,14 +43,14 @@ describe("events cache queries", () => {
   it("reads the key of the given generation (shape version + generation)", async () => {
     get.mockResolvedValue("[]");
     await expect(getUpcomingFromCache(7)).resolves.toBe("[]");
-    expect(get).toHaveBeenCalledWith("events:upcoming:v1:g7");
-    expect(upcomingKey(7)).toBe("events:upcoming:v1:g7");
+    expect(get).toHaveBeenCalledWith("events:upcoming:v2:g7");
+    expect(upcomingKey(7)).toBe("events:upcoming:v2:g7");
   });
 
-  it("writes the text to the given generation's key with the TTL in seconds (EX)", async () => {
+  it("writes the text to the given generation's key with the TTL in milliseconds (PX)", async () => {
     set.mockResolvedValue("OK");
-    await setUpcomingInCache(7, "[]", 31);
-    expect(set).toHaveBeenCalledWith("events:upcoming:v1:g7", "[]", "EX", 31);
+    await setUpcomingInCache(7, "[]", 300_000);
+    expect(set).toHaveBeenCalledWith("events:upcoming:v2:g7", "[]", "PX", 300_000);
   });
 
   it("gives up on a read when Redis is too slow", async () => {
@@ -63,7 +63,7 @@ describe("events cache queries", () => {
 
   it("gives up on a write when Redis is too slow", async () => {
     set.mockReturnValue(new Promise(() => {}));
-    const result = setUpcomingInCache(0, "[]", 30);
+    const result = setUpcomingInCache(0, "[]", 30_000);
     const assertion = expect(result).rejects.toThrow(/did not answer/);
     await vi.advanceTimersByTimeAsync(CACHE_TIMEOUT_MS);
     await assertion;
@@ -126,8 +126,8 @@ describe("events rebuild lock queries", () => {
   it("takes the lock with SET <lock key of the generation> <token> PX <ms> NX", async () => {
     useFakeRedisStore();
     await expect(tryLockUpcomingRebuild(7, "token-a", 5000)).resolves.toBe(true);
-    expect(set).toHaveBeenCalledWith("lock:events:upcoming:v1:g7", "token-a", "PX", 5000, "NX");
-    expect(upcomingLockKey(7)).toBe("lock:events:upcoming:v1:g7");
+    expect(set).toHaveBeenCalledWith("lock:events:upcoming:v2:g7", "token-a", "PX", 5000, "NX");
+    expect(upcomingLockKey(7)).toBe("lock:events:upcoming:v2:g7");
   });
 
   it("each generation has its own lock", async () => {

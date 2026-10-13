@@ -3,7 +3,6 @@
 import type {} from "@fastify/cookie";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import * as sessions from "../queries/sessions";
-import * as users from "../queries/users";
 
 // The name of the session cookie.
 export const SESSION_COOKIE = "sid";
@@ -19,14 +18,15 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
   //    id all give null.
   const stored = sessionId ? await sessions.get(sessionId) : null;
 
-  // 2b. Look up the user's ROLE in Postgres (one primary-key lookup, about a millisecond).
-  //     WHY Postgres on every request, and not a copy of the role saved in the session at login:
-  //     a copy would stay old until the session expires (7 days). Making someone admin would only
-  //     work after they log in again, and, much worse, taking admin AWAY would not work for a week.
-  //     Reading it here means a role change counts from the very next request.
-  //     If the user row is gone (account deleted), the session is worth nothing: treat it as logged out.
-  const user = stored ? await users.findById(stored.userId) : undefined;
-  const session = user ? { userId: user.id, role: user.role } : null;
+  // 2b. The session holds only WHO is calling (the userId), never the ROLE. We do NOT look up the
+  //     role here: this runs for EVERY request, and a lookup here would make every route depend on
+  //     Postgres for something only admin routes need. Example (a real bug before): with Postgres
+  //     down, a logged-in visitor got an error on events.list, although the events cache still had
+  //     a copy to serve (stale-if-error). Public and normal routes must not depend on a lookup that
+  //     only admin routes need, so adminProcedure reads the role itself (trpc/init.ts, isAdmin).
+  //     If the account was deleted, the session still says "logged in"; procedures that need the
+  //     user row already handle "no such user" (account.getProfile: 404, auth.me: null).
+  const session = stored ? { userId: stored.userId } : null;
 
   return {
     // 3. req and res let procedures read and set cookies. Only procedures use them;
@@ -35,7 +35,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
     res,
     // 4. Kept for logout, which must delete the session by its id.
     sessionId,
-    // 5. Who is calling: { userId, role } or null (logged out). `protectedProcedure` and
+    // 5. Who is calling: { userId } or null (logged out). `protectedProcedure` and
     //    `adminProcedure` rely on this.
     session,
   };

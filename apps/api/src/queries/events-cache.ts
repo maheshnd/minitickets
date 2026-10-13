@@ -6,22 +6,23 @@ import { redis } from "../redis/client";
 // whether it is valid, or how long it should live: the service decides all of that.
 
 // @concept: cache-key-versioning
-// 1. The Redis key for the public list of upcoming events. The "v1" is the shape version.
-//    When a deploy changes the shape of an event (a field added, renamed or removed), change
-//    this to "v2". The new code then reads a key that does not exist yet (a clean miss) and
+// 1. The Redis key for the public list of upcoming events. The "v2" is the shape version.
+//    When a deploy changes the shape of the cached value (a field added, renamed or removed), change
+//    this to the next number. The new code then reads a key that does not exist yet (a clean miss) and
 //    never meets old-shaped data left behind by the previous version. The old key just expires
 //    by itself after its TTL. Without a version, new code could read old-shaped data for up to
-//    30 seconds, right after every deploy.
-//    The "g<gen>" part is the GENERATION (see step 1b): e.g. "events:upcoming:v1:g7".
+//    one TTL, right after every deploy.
+//    v2 (Step 7): the value changed from a bare list to { data, fetchedAt } (stale-while-revalidate).
+//    The "g<gen>" part is the GENERATION (see step 1b): e.g. "events:upcoming:v2:g7".
 export function upcomingKey(gen: number): string {
-  return `events:upcoming:v1:g${gen}`;
+  return `events:upcoming:v2:g${gen}`;
 }
 
 // 1b. The generation counter: a number in Redis that goes up by one every time the list changes
 //     (an event is created). A missing key means 0. Readers read it FIRST and then use the key of
 //     that generation; a writer only bumps it. Old generations' keys are never read again and
 //     expire by their TTL. The service explains why this beats deleting the key (createEvent).
-//     It has no "v1": it counts changes to the DATA, which has nothing to do with the shape.
+//     It has no shape version: it counts changes to the DATA, which has nothing to do with the shape.
 export const UPCOMING_GEN_KEY = "events:upcoming:gen";
 
 // @concept: fail-fast
@@ -74,18 +75,18 @@ export async function getUpcomingFromCache(gen: number): Promise<string | null> 
 }
 
 // @concept: ttl
-// 7. Store the JSON text under generation `gen` and let Redis delete it after `ttlSeconds` ("EX").
-//    The caller picks the TTL.
-export async function setUpcomingInCache(gen: number, json: string, ttlSeconds: number): Promise<void> {
-  await withTimeout(redis.set(upcomingKey(gen), json, "EX", ttlSeconds), CACHE_TIMEOUT_MS);
+// 7. Store the JSON text under generation `gen` and let Redis delete it after `ttlMs` milliseconds
+//    ("PX"; "EX" would be seconds). The caller picks the TTL (the service's HARD TTL).
+export async function setUpcomingInCache(gen: number, json: string, ttlMs: number): Promise<void> {
+  await withTimeout(redis.set(upcomingKey(gen), json, "PX", ttlMs), CACHE_TIMEOUT_MS);
 }
 
 // 8. The Redis key of the REBUILD LOCK for the list above. Whoever holds it is the one API
-//    instance allowed to rebuild that generation's list from Postgres right now. Same "v1" as the
-//    cache key, so a v2 deploy also gets its own lock. Same generation too: a rebuild for the new
+//    instance allowed to rebuild that generation's list from Postgres right now. Same "v2" as the
+//    cache key, so the next shape version also gets its own lock. Same generation too: a rebuild for the new
 //    generation never has to wait for a (now useless) rebuild of the old one.
 export function upcomingLockKey(gen: number): string {
-  return `lock:events:upcoming:v1:g${gen}`;
+  return `lock:events:upcoming:v2:g${gen}`;
 }
 
 // 9. Try to take the lock. One Redis command, so two instances can never both get it:

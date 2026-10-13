@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { ZodError, z } from "zod";
 import { AppError, type AppErrorKind } from "../errors";
+import * as usersService from "../services/users";
 import type { Context } from "./context";
 
 // 1. Set up tRPC once for the whole API and tell it what `ctx` looks like.
@@ -89,8 +90,27 @@ const isAuthed = t.middleware(({ ctx, next }) => {
 //     - 403 FORBIDDEN (from here): "we know who you are, and you may not do this": logged in, but
 //       not an admin. Logging in again will not help.
 //     Like isAuthed, this is the REAL check. Hiding the admin link in the web app is only for looks.
-const isAdmin = t.middleware(({ ctx, next }) => {
-  if (ctx.session?.role !== "admin") {
+//     The ROLE is looked up HERE, lazily, and nowhere else (not in createContext):
+//     - only admin routes need it, and public and normal routes must not depend on a lookup they
+//       do not need (with Postgres down, events.list must still work for logged-in visitors);
+//     - WHY Postgres on every admin request, and not a copy of the role saved in the session at
+//       login: a copy would stay old until the session expires (7 days). Making someone admin would
+//       only work after they log in again, and, much worse, taking admin AWAY would not work for a
+//       week. Reading it here means a role change counts from the very next admin request.
+//     If the lookup itself fails (Postgres down), the error goes up as a 500: we cannot tell
+//     whether this caller is an admin, so we never let them through.
+const isAdmin = t.middleware(async ({ ctx, next }) => {
+  // 1. isAuthed already ran, but its narrowed type does not reach this separate middleware.
+  if (!ctx.session) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "You must be logged in" });
+  }
+  // 2. One primary-key lookup (about a millisecond). null = the account no longer exists, so the
+  //    session is worth nothing: 401, like being logged out.
+  const role = await usersService.getRole(ctx.session.userId);
+  if (role === null) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "You must be logged in" });
+  }
+  if (role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can do this" });
   }
   return next();

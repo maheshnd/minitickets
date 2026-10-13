@@ -6,8 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //      adds a row that later reads see);
 //    - the cache fake is a one-slot store whose behaviour each test can change (value, error);
 //    - the generation is 0 by default, and bumping it works;
-//    - the lock fake grants the lock by default (this instance is the only one).
+//    - the lock fake grants the lock by default (this instance is the only one);
+//    - the env fake sets the two cache TTLs to their defaults (soft 30 s, hard 5 min).
 //    The real SQL and the real Redis calls are checked by the e2e test and by hand (docs/24).
+//    THE CLOCK: the service takes `now` as a parameter, so each test decides how old a cached
+//    value is by choosing its `fetchedAt` (see cachedValue below). That is our fake clock.
 const allEvents = [
   { id: "c", title: "Later", venue: "V", startsAt: new Date("2026-12-01T10:00:00Z"), totalSeats: 10, seatsLeft: 0, createdAt: new Date() },
   { id: "a", title: "Past", venue: "V", startsAt: new Date("2026-01-01T10:00:00Z"), totalSeats: 10, seatsLeft: 5, createdAt: new Date() },
@@ -49,7 +52,16 @@ vi.mock("../queries/events-cache", () => ({
   releaseUpcomingRebuildLock: (gen: number, token: string) => releaseUpcomingRebuildLock(gen, token),
 }));
 
-const { listUpcomingEvents, createEvent } = await import("./events");
+const SOFT_TTL_MS = 30_000;
+const HARD_TTL_MS = 300_000;
+vi.mock("../config/env", () => ({
+  env: { EVENTS_CACHE_SOFT_TTL_MS: SOFT_TTL_MS, EVENTS_CACHE_HARD_TTL_MS: HARD_TTL_MS },
+}));
+
+// A fresh copy of the service before EVERY test (see beforeEach): it keeps some memory between
+// calls (single-flight, the last failed refresh), and one test must never see another test's.
+let listUpcomingEvents: typeof import("./events").listUpcomingEvents;
+let createEvent: typeof import("./events").createEvent;
 
 const now = new Date("2026-10-12T00:00:00Z");
 const log = { error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
@@ -59,7 +71,25 @@ const publicList = [
   { id: "00000000-0000-4000-8000-00000000000b", title: "Soon", venue: "V", startsAt: "2026-11-01T10:00:00.000Z", totalSeats: 10, seatsLeft: 5 },
 ];
 
-beforeEach(() => {
+// The text Redis would hold: the list plus when it was read from Postgres, `ageMs` before `now`.
+function cachedValue(list: unknown, ageMs: number): string {
+  return JSON.stringify({ data: list, fetchedAt: now.getTime() - ageMs });
+}
+
+// A Postgres query that does not answer until the test calls `finish()`.
+function holdPostgres() {
+  let finish!: () => void;
+  const answered = new Promise<void>((resolve) => (finish = resolve));
+  listUpcoming.mockImplementation(async (at: Date) => {
+    await answered;
+    return fakeQuery(at);
+  });
+  return { finish: () => finish() };
+}
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ listUpcomingEvents, createEvent } = await import("./events"));
   dbRows = [...allEvents];
   listUpcoming.mockReset().mockImplementation(fakeQuery);
   create.mockReset().mockImplementation(fakeInsert);
@@ -75,13 +105,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe("listUpcomingEvents: cache hit", () => {
-  it("returns the cached list and does NOT call Postgres", async () => {
-    getUpcomingFromCache.mockResolvedValue(JSON.stringify(publicList));
+describe("listUpcomingEvents: fresh (younger than the soft TTL)", () => {
+  it("returns the cached list and does NOT call Postgres or start a refresh", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, SOFT_TTL_MS - 1));
 
     const result = await listUpcomingEvents(log, now);
 
-    expect(result).toEqual({ events: publicList, cache: "hit" });
+    expect(result).toEqual({ events: publicList, cache: "fresh" });
     expect(listUpcoming).not.toHaveBeenCalled();
     expect(setUpcomingInCache).not.toHaveBeenCalled();
     expect(tryLockUpcomingRebuild).not.toHaveBeenCalled();
@@ -112,15 +142,14 @@ describe("listUpcomingEvents: cache miss", () => {
     });
   });
 
-  it("writes the result to the cache once, with a TTL of 30 to 33 seconds", async () => {
+  it("writes { data, fetchedAt: now } to the cache once, with the HARD TTL (5 min, in ms)", async () => {
     const result = await listUpcomingEvents(log, now);
 
     expect(result.cache).toBe("miss");
     expect(setUpcomingInCache).toHaveBeenCalledTimes(1);
-    const [, json, ttl] = setUpcomingInCache.mock.calls[0]!;
-    expect(JSON.parse(json)).toEqual(result.events);
-    expect(ttl).toBeGreaterThanOrEqual(30);
-    expect(ttl).toBeLessThanOrEqual(33);
+    const [, json, ttlMs] = setUpcomingInCache.mock.calls[0]!;
+    expect(JSON.parse(json)).toEqual({ data: result.events, fetchedAt: now.getTime() });
+    expect(ttlMs).toBe(HARD_TTL_MS);
   });
 
   it("still returns the list when the cache write fails", async () => {
@@ -180,9 +209,10 @@ describe("listUpcomingEvents: Redis down or slow", () => {
 describe("listUpcomingEvents: bad cached value", () => {
   // Each of these must be treated as a miss: read Postgres, overwrite the bad value, warn.
   const badValues: Record<string, string> = {
-    "text that is not JSON (cut off)": '[{"id":"00000000-0000-4000-8000-00000000000b","tit',
-    "an old shape (field renamed)": JSON.stringify([{ ...publicList[0], startsAt: undefined, starts_at: "2026-11-01T10:00:00.000Z" }]),
+    "text that is not JSON (cut off)": '{"data":[{"id":"00000000-0000-4000-8000-00000000000b","tit',
+    "an old shape (field renamed)": cachedValue([{ ...publicList[0], startsAt: undefined, starts_at: "2026-11-01T10:00:00.000Z" }], 0),
     "the wrong kind of value": JSON.stringify({ events: publicList }),
+    "a v1 value (a bare list, no fetchedAt)": JSON.stringify(publicList),
   };
 
   for (const [name, value] of Object.entries(badValues)) {
@@ -249,7 +279,7 @@ describe("stampede protection, level 2: Redis lock across instances", () => {
 
   it("double-check: the holder finds the cache already filled and does NOT query Postgres", async () => {
     // First read: empty. Re-check after getting the lock: another instance just filled it.
-    getUpcomingFromCache.mockResolvedValueOnce(null).mockResolvedValueOnce(JSON.stringify(publicList));
+    getUpcomingFromCache.mockResolvedValueOnce(null).mockResolvedValueOnce(cachedValue(publicList, 0));
 
     const result = await listUpcomingEvents(log, now);
 
@@ -262,7 +292,7 @@ describe("stampede protection, level 2: Redis lock across instances", () => {
     vi.useFakeTimers();
     tryLockUpcomingRebuild.mockResolvedValue(false);
     // First read and first re-check: empty. Second re-check: the holder has written it.
-    getUpcomingFromCache.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce(JSON.stringify(publicList));
+    getUpcomingFromCache.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce(cachedValue(publicList, 0));
 
     const pending = listUpcomingEvents(log, now);
     await vi.runAllTimersAsync();
@@ -385,7 +415,7 @@ describe("createEvent: write, then invalidate", () => {
     expect(result.title).toBe("New Show");
     expect(create).toHaveBeenCalledTimes(1);
     expect(log.error).toHaveBeenCalledTimes(1);
-    expect(log.error).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("stale for up to one TTL"));
+    expect(log.error).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("stale until its next refresh"));
   });
 });
 
@@ -430,12 +460,169 @@ describe("the stale-refill race", () => {
     letSlowReaderFinish();
     const slow = await slowReader;
     expect(slow.events.map((e) => e.title)).not.toContain("Brand New");
-    expect(JSON.parse(cache.get(0)!).map((e: { title: string }) => e.title)).not.toContain("Brand New");
+    expect(JSON.parse(cache.get(0)!).data.map((e: { title: string }) => e.title)).not.toContain("Brand New");
 
-    // 6. The next read is a HIT on generation 1, and it has the new event.
+    // 6. The next read is a FRESH hit on generation 1, and it has the new event.
     const after = await listUpcomingEvents(log, now);
-    expect(after.cache).toBe("hit");
+    expect(after.cache).toBe("fresh");
     expect(after.events.map((e) => e.title)).toContain("Brand New");
     expect(listUpcoming).toHaveBeenCalledTimes(2); // the slow reader + the reader in step 4, no more
+  });
+});
+
+describe("stale-while-revalidate: stale (between the soft and the hard TTL)", () => {
+  it("returns the stale list at once, BEFORE the background refresh has finished", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, SOFT_TTL_MS)); // exactly soft = stale
+    const postgres = holdPostgres();
+
+    // 1. The answer comes back while Postgres has not answered yet: nobody waited for the refresh.
+    const result = await listUpcomingEvents(log, now);
+    expect(result).toEqual({ events: publicList, cache: "stale" });
+    await vi.waitFor(() => expect(listUpcoming).toHaveBeenCalledTimes(1));
+    expect(setUpcomingInCache).not.toHaveBeenCalled();
+
+    // 2. Postgres answers: the refresh writes the new list (fetchedAt = now, hard TTL) and unlocks.
+    postgres.finish();
+    await vi.waitFor(() => expect(releaseUpcomingRebuildLock).toHaveBeenCalledTimes(1));
+    const [gen, json, ttlMs] = setUpcomingInCache.mock.calls[0]!;
+    expect(gen).toBe(0);
+    expect(JSON.parse(json).data.map((e: { title: string }) => e.title)).toEqual(["Soon", "Later"]);
+    expect(JSON.parse(json).fetchedAt).toBe(now.getTime());
+    expect(ttlMs).toBe(HARD_TTL_MS);
+  });
+
+  it("10 concurrent stale reads: all 10 get the stale list, and exactly ONE background refresh runs", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, 60_000));
+    const postgres = holdPostgres();
+
+    const results = await Promise.all(Array.from({ length: 10 }, () => listUpcomingEvents(log, now)));
+    for (const result of results) expect(result).toEqual({ events: publicList, cache: "stale" });
+
+    postgres.finish();
+    await vi.waitFor(() => expect(releaseUpcomingRebuildLock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20)); // room for any extra refresh to show up
+    expect(tryLockUpcomingRebuild).toHaveBeenCalledTimes(1);
+    expect(listUpcoming).toHaveBeenCalledTimes(1);
+    expect(setUpcomingInCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT read Postgres when another instance holds the lock (it is refreshing already)", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, 60_000));
+    tryLockUpcomingRebuild.mockResolvedValue(false);
+
+    const result = await listUpcomingEvents(log, now);
+
+    expect(result.cache).toBe("stale");
+    await vi.waitFor(() => expect(tryLockUpcomingRebuild).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(listUpcoming).not.toHaveBeenCalled();
+  });
+
+  it("double-check: a refresh that finds a FRESH list (another instance just refreshed) skips Postgres", async () => {
+    // First read: stale. The refresh's re-check after taking the lock: fresh.
+    getUpcomingFromCache.mockResolvedValueOnce(cachedValue(publicList, 60_000)).mockResolvedValueOnce(cachedValue(publicList, 0));
+
+    await listUpcomingEvents(log, now);
+
+    await vi.waitFor(() => expect(releaseUpcomingRebuildLock).toHaveBeenCalledTimes(1));
+    expect(listUpcoming).not.toHaveBeenCalled();
+  });
+
+  it("a list as old as the HARD TTL is never served: it counts as a miss", async () => {
+    getUpcomingFromCache.mockResolvedValueOnce(cachedValue(publicList, HARD_TTL_MS));
+
+    const result = await listUpcomingEvents(log, now);
+
+    expect(result.cache).toBe("miss");
+    expect(result.events.map((e) => e.title)).toEqual(["Soon", "Later"]);
+    expect(listUpcoming).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("background refresh failure", () => {
+  it("is caught and logged as a warning, never thrown (no unhandled rejection)", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, 60_000));
+    listUpcoming.mockRejectedValue(new Error("Postgres is down"));
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    try {
+      const result = await listUpcomingEvents(log, now);
+      expect(result).toEqual({ events: publicList, cache: "stale" });
+
+      await vi.waitFor(() =>
+        expect(log.warn).toHaveBeenCalledWith(
+          expect.objectContaining({ cache: "stale-if-error" }),
+          expect.stringContaining("background refresh failed"),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20)); // give Node time to report a rejection
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(releaseUpcomingRebuildLock).toHaveBeenCalledTimes(1); // the lock is released anyway
+      expect(setUpcomingInCache).not.toHaveBeenCalled(); // the stale copy is left as it is
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+});
+
+describe("stale-if-error", () => {
+  it("Postgres down + a stale copy: the copy is served, labelled stale-if-error; the label clears when Postgres is back", async () => {
+    getUpcomingFromCache.mockResolvedValue(cachedValue(publicList, 60_000));
+    listUpcoming.mockRejectedValue(new Error("Postgres is down"));
+
+    // 1. The first stale read cannot know yet: its refresh fails AFTER it has answered.
+    const first = await listUpcomingEvents(log, now);
+    expect(first.cache).toBe("stale");
+    await vi.waitFor(() => expect(log.warn).toHaveBeenCalledTimes(1));
+
+    // 2. Now this process knows the last refresh failed: same copy, honest label. It still starts
+    //    a new refresh each time, so the list heals as soon as Postgres is back.
+    const second = await listUpcomingEvents(log, now);
+    expect(second).toEqual({ events: publicList, cache: "stale-if-error" });
+    await vi.waitFor(() => expect(log.warn).toHaveBeenCalledTimes(2));
+    expect(listUpcoming).toHaveBeenCalledTimes(2);
+
+    // 3. Postgres is back: the next refresh works, and the label goes back to plain "stale".
+    listUpcoming.mockImplementation(fakeQuery);
+    expect((await listUpcomingEvents(log, now)).cache).toBe("stale-if-error");
+    await vi.waitFor(() => expect(setUpcomingInCache).toHaveBeenCalledTimes(1));
+    expect((await listUpcomingEvents(log, now)).cache).toBe("stale");
+  });
+
+  it("Postgres down + NO copy (a miss): the error goes up, as before", async () => {
+    listUpcoming.mockRejectedValue(new Error("Postgres is down"));
+
+    await expect(listUpcomingEvents(log, now)).rejects.toThrow("Postgres is down");
+  });
+});
+
+describe("invalidation overrides SWR", () => {
+  it("after a generation bump, the old list is never returned: not as stale, not even with Postgres down", async () => {
+    // 1. A tiny in-memory Redis: the generation counter and one slot per generation. Generation 0
+    //    holds a STALE copy of the old list (servable, if invalidation did not exist).
+    dbRows = [{ ...allEvents[2]!, id: publicList[0]!.id }];
+    let gen = 0;
+    const cache = new Map<number, string>([[0, cachedValue(publicList, 60_000)]]);
+    getUpcomingGeneration.mockImplementation(async () => gen);
+    bumpUpcomingGeneration.mockImplementation(async () => ++gen);
+    getUpcomingFromCache.mockImplementation(async (g) => cache.get(g) ?? null);
+    setUpcomingInCache.mockImplementation(async (g, json) => {
+      cache.set(g, json);
+    });
+
+    // 2. An admin creates an event: generation 1, whose key is empty.
+    await createEvent({ title: "Brand New", venue: "Hall", startsAt: "2026-10-20T18:00:00.000Z", totalSeats: 40 }, log);
+    expect(gen).toBe(1);
+
+    // 3. Postgres is down. The old list is still in generation 0, but it must NOT be used:
+    //    the request fails instead of showing a list we know is out of date.
+    listUpcoming.mockRejectedValueOnce(new Error("Postgres is down"));
+    await expect(listUpcomingEvents(log, now)).rejects.toThrow("Postgres is down");
+
+    // 4. Postgres is back: a MISS on generation 1 (never "stale"), with the new event.
+    const result = await listUpcomingEvents(log, now);
+    expect(result.cache).toBe("miss");
+    expect(result.events.map((e) => e.title)).toContain("Brand New");
   });
 });
