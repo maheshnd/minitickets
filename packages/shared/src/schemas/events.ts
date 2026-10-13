@@ -16,6 +16,46 @@ export type Event = z.infer<typeof EventSchema>;
 // The output of events.list: an array of events.
 export const ListEventsOutput = z.array(EventSchema);
 
+// 1. A filter date: a day ("2026-11-20", what <input type="date"> gives) or a full UTC time
+//    ("2026-11-20T18:30:00.000Z"). The API works in WHOLE UTC DAYS: it rounds a time down to the
+//    start of its day, so both examples mean "from (or to) 20 November".
+const FilterDate = z.union([z.iso.date(), z.iso.datetime()], { error: "Enter a valid date" });
+
+// The start of the UTC day of a FilterDate, in ms since 1970. Only used by the checks below.
+function utcDay(value: string): number {
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+// Input of events.list. Every field is optional; no fields = all upcoming events.
+// The browser runs it for fast feedback (and on the URL's search params); the API runs it again.
+export const ListEventsInput = z
+  .object({
+    // 2. Trimmed, so " Pune" is "Pune". An empty venue ("" or only spaces) means "any venue".
+    venue: z.string().trim().max(200, "Venue must be at most 200 characters").optional(),
+    from: FilterDate.optional(),
+    to: FilterDate.optional(),
+  })
+  // 3. Both dates given: "from" must not be after "to" (the same day is fine: one day).
+  .refine((input) => !input.from || !input.to || utcDay(input.from) <= utcDay(input.to), {
+    message: "'To' must be on or after 'From'",
+    path: ["to"],
+  })
+  // 4. ...and at most 1 year apart. This bounds how many different date pairs (so cache keys)
+  //    one "from" day can have: at most 366 "to" days (see the API's services/events.ts, step 1b).
+  .refine(
+    (input) => {
+      if (!input.from || !input.to) return true;
+      const limit = new Date(utcDay(input.from));
+      limit.setUTCFullYear(limit.getUTCFullYear() + 1);
+      return utcDay(input.to) <= limit.getTime();
+    },
+    { message: "The date range can be at most 1 year", path: ["to"] },
+  );
+
+export type ListEventsInput = z.infer<typeof ListEventsInput>;
+
 // Input of events.create (admins only). The browser runs it for fast feedback; the API runs it again.
 // There is no seatsLeft here: a new event always starts with every seat free (the service sets it).
 export const CreateEventInput = z.object({

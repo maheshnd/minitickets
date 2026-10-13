@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { ListEventsOutput, type CreateEventInput, type Event as PublicEvent } from "@minitickets/shared";
+import {
+  ListEventsOutput,
+  type CreateEventInput,
+  type Event as PublicEvent,
+  type ListEventsInput,
+} from "@minitickets/shared";
 import { env } from "../config/env";
 import * as eventsCache from "../queries/events-cache";
 import * as events from "../queries/events";
+import { canonicalFilters, canonicalString, type EventFilters } from "./event-filters";
 import { singleFlight } from "./single-flight";
 
 // Services: business logic. No HTTP and no SQL in here.
@@ -11,22 +17,53 @@ import { singleFlight } from "./single-flight";
 // @concept: cache-aside
 // @concept: ttl
 // 1. The cached list has TWO ages that matter (both from env, so a demo can shorten them):
-//    - SOFT TTL (default 30 s): younger than this, the list is FRESH and served as it is.
+//    - SOFT TTL (default 30 s, plus 0-10% jitter, see step 1a): younger than this, the list is
+//      FRESH and served as it is.
 //    - HARD TTL (default 5 min): the key's expiry in Redis. Between soft and hard the list is STALE:
 //      it is still served, at once, while a background refresh replaces it ("stale-while-revalidate",
-//      step 4). Older than the hard TTL it is never served, not even when Postgres is down (step 9b).
+//      step 12). Older than the hard TTL it is never served, not even when Postgres is down (step 12a).
 //    Staleness: creating an event makes the list correct at once (createEvent below). Other changes
 //    (e.g. `seatsLeft` going down, later) do not: a busy list is refreshed about every soft TTL, but
 //    a list nobody asked for in a while can be served ONCE at up to the hard TTL old, while it refreshes.
 //    That is fine for BROWSING. Booking will always check the database, never this cache,
 //    so a stale list can never cause overselling.
-//    No random jitter any more (earlier steps added 0-3 s to the TTL): with SWR a busy key is
-//    refreshed long before its hard TTL, so keys do not all expire at once; and the hard TTL is
-//    meant to be an EXACT limit on age, which a random extra would blur.
 const SOFT_TTL_MS = env.EVENTS_CACHE_SOFT_TTL_MS;
 const HARD_TTL_MS = env.EVENTS_CACHE_HARD_TTL_MS;
 
-// 2. The rebuild lock in Redis (see step 7 below), shared by ALL API instances.
+// 1a. JITTER on the SOFT TTL: each cached list gets its own soft TTL, a random 0-10% longer
+//     (30 s -> somewhere between 30 and 33 s). It is picked when the list is WRITTEN and stored
+//     with it (`staleAt`), so every reader agrees on when that copy turns stale.
+//     WHY NOW: since Step 8 there is one key PER FILTER. Right after an event is created, the
+//     generation is new and every filter's key is empty; a busy minute refills, say, 200 filter keys
+//     within a second or two. Without jitter, all 200 turn stale in the same second 30 s later, and
+//     their 200 background refreshes hit Postgres together, again every 30 s (a "synchronized
+//     refresh"). Jitter spreads them over 3 s.
+//     WHY NOT IN STEP 7: there was only ONE key. One key can only ever cause one refresh at a time
+//     (single-flight + the Redis lock), so there was nothing to spread.
+//     WHY THE SOFT TTL AND NOT THE HARD ONE: refreshes happen at the soft TTL (busy keys never reach
+//     the hard one), and the hard TTL stays an EXACT limit on age, which jitter would blur.
+const SOFT_TTL_JITTER = 0.1;
+
+// 1b. KEY EXPLOSION: one key per filter means the number of keys depends on what people ASK for,
+//     not on how many events we have. These keep it bounded:
+//     - canonical filters (./event-filters.ts): " Pune", "pune" and "PUNE" are one key, not three;
+//     - dates rounded to whole UTC days: one key per day, not one per millisecond;
+//     - the range limit (at most 1 year, in the shared ListEventsInput): one "from" day can pair
+//       with at most 366 "to" days;
+//     - the HARD TTL: a key nobody reads disappears after 5 minutes, so only filters asked for in
+//       the last 5 minutes take memory;
+//     - the generation: after a bump, all old keys are dead weight that the hard TTL removes;
+//     - the Redis EVICTION POLICY (docker-compose.yml: allkeys-lru): if memory still fills up,
+//       Redis deletes the least recently used keys instead of refusing writes.
+//     The venue is free text, so it is NOT bounded by the above: someone could ask for a million
+//     made-up venues. Each costs one small key for 5 minutes (and one Postgres query); rate
+//     limiting would be the real fix (not built).
+//     IF RESPONSES DEPENDED ON THE VIEWER (a price in their currency, a "your bookings" list, a
+//     language), the user / currency / locale would HAVE to be part of the canonical filters (so
+//     the key). Otherwise the first viewer's answer would be served to everyone. Today events.list is
+//     the same for every visitor, so the key holds only the filters.
+
+// 2. The rebuild lock in Redis (see step 8 below), shared by ALL API instances.
 //    - LOCK_TTL_MS: the lock deletes itself after 5 seconds, even if its holder crashed. A rebuild
 //      normally takes a few milliseconds, so 5 s is plenty and a crash blocks nobody for long.
 //    - Instances that do not get the lock re-check the cache up to 5 times, 50 ms apart
@@ -40,10 +77,15 @@ const LOCK_TTL_MS = 5000;
 const LOCK_WAIT_ATTEMPTS = 5;
 const LOCK_WAIT_DELAY_MS = 50;
 
-// 3. What we store in Redis: the list AND when it was read from Postgres (ms since 1970).
-//    `fetchedAt` is what tells fresh from stale: Redis's own TTL only says "still there or gone".
-//    Checked with Zod on every read (step 14), like the list itself.
-const CachedUpcoming = z.object({ data: ListEventsOutput, fetchedAt: z.number().int().nonnegative() });
+// 3. What we store in Redis: the list, when it was read from Postgres (ms since 1970), and when it
+//    turns stale (fetchedAt + its jittered soft TTL, step 1a).
+//    `staleAt` tells fresh from stale; `fetchedAt` is checked against the hard TTL. Redis's own TTL
+//    only says "still there or gone". Checked with Zod on every read (step 14), like the list itself.
+const CachedUpcoming = z.object({
+  data: ListEventsOutput,
+  fetchedAt: z.number().int().nonnegative(),
+  staleAt: z.number().int().nonnegative(),
+});
 type CachedUpcoming = z.infer<typeof CachedUpcoming>;
 
 // Only what we need from a logger, so this file does not depend on Fastify and tests can pass a fake.
@@ -54,47 +96,58 @@ export type Log = {
 };
 
 // The answer plus how we got it, for the request log:
-//   "fresh"          from Redis, younger than the soft TTL;
-//   "stale"          from Redis, older than the soft TTL: served now, refreshed in the background;
+//   "fresh"          from Redis, younger than its soft TTL;
+//   "stale"          from Redis, older than its soft TTL: served now, refreshed in the background;
 //   "stale-if-error" like "stale", but the last background refresh failed (Postgres down): we are
 //                    serving old data BECAUSE of an error, not just while a refresh runs;
 //   "miss"           nothing in Redis: rebuilt from Postgres (or waited for another instance's rebuild);
 //   "error"          Redis down or slow: read Postgres directly.
 export type CacheStatus = "fresh" | "stale" | "stale-if-error" | "miss" | "error";
 
-// 4. The generation whose last background refresh FAILED in this process, or null if the last one
-//    worked. Only used to label stale answers "stale-if-error" (see CacheStatus). It lives in this
-//    process's memory, like single-flight: another instance finds out on its own first refresh.
-let lastFailedRefreshGen: number | null = null;
+// 4. Did the last background refresh in THIS process fail? Only used to label stale answers
+//    "stale-if-error" (see CacheStatus). It lives in this process's memory, like single-flight:
+//    another instance finds out on its own first refresh.
+//    One flag for ALL filters (not one per key): every filter's refresh asks the same Postgres, so
+//    one failed refresh says "Postgres is in trouble" for all of them, and any refresh that works
+//    clears it. (A flag per key would also have to be cleaned up for keys nobody reads any more.)
+let lastRefreshFailed = false;
 
-// Upcoming events for the public list.
-export async function listUpcomingEvents(log: Log, now: Date = new Date()) {
+// Upcoming events for the public list, optionally filtered by venue and dates.
+export async function listUpcomingEvents(input: ListEventsInput | undefined, log: Log, now: Date = new Date()) {
+  // 4b. The CANONICAL filters (./event-filters.ts): ONE form for the Postgres query, the cache key,
+  //     the single-flight key and the lock key. So " Pune", "pune" and "PUNE" are the same question
+  //     everywhere: one cache entry, one rebuild, one lock.
+  const filters = canonicalFilters(input);
+  const canonical = canonicalString(filters);
+
   // @concept: graceful-degradation
   // 5. Ask the cache first. Redis is only a speed-up, so it must never be able to fail the request:
   //    an error or a timeout is caught, logged as a warning, and we carry on with Postgres.
   //    a. Read the current GENERATION first (a number that goes up whenever the list changes).
   //       It must come BEFORE the list and before any Postgres read: createEvent explains why.
-  //    b. Then read that generation's key. Everything below (cache write, lock, refresh) uses the same `gen`.
+  //    b. Build this filter's key in that generation and read it. Everything below (cache write,
+  //       lock, refresh) uses the same `key`. The key ends in a HASH of the filters, which nobody
+  //       can read, so the debug line shows the canonical text next to it.
   //    WHY INVALIDATION BEATS SWR: after an event is created, the generation is new and its key is
   //    EMPTY, so the next read is a MISS (step 6), never the stale list from before the change.
   //    Invalidation means "this data must not be served any more"; SWR and stale-if-error only ever
   //    serve a copy of the CURRENT generation, so they can never bring the old list back.
   let cacheStatus: CacheStatus = "miss";
-  let gen = 0;
+  let key = "";
   try {
-    gen = await eventsCache.getUpcomingGeneration();
-    const cached = await readCache(log, gen);
+    const gen = await eventsCache.getUpcomingGeneration();
+    key = eventsCache.upcomingKey(gen, canonical);
+    log.debug(`events cache key ${key} = ${canonical}`);
+    const cached = await readCache(log, key);
     if (cached !== null) {
-      const age = now.getTime() - cached.fetchedAt;
-
       // c. FRESH: serve it, nothing else to do.
-      if (age < SOFT_TTL_MS) return { events: cached.data, cache: "fresh" as CacheStatus };
+      if (now.getTime() < cached.staleAt) return { events: cached.data, cache: "fresh" as CacheStatus };
 
       // d. STALE: serve it NOW, and start a refresh that this request does NOT wait for.
       //    The visitor gets cache speed; the next visitors get the refreshed list.
-      if (age < HARD_TTL_MS) {
-        refreshInBackground(log, now, gen);
-        const status: CacheStatus = lastFailedRefreshGen === gen ? "stale-if-error" : "stale";
+      if (now.getTime() - cached.fetchedAt < HARD_TTL_MS) {
+        refreshInBackground(log, now, key, filters);
+        const status: CacheStatus = lastRefreshFailed ? "stale-if-error" : "stale";
         return { events: cached.data, cache: status };
       }
 
@@ -112,25 +165,33 @@ export async function listUpcomingEvents(log: Log, now: Date = new Date()) {
   //    same rebuild (single-flight, see ./single-flight.ts). This protects Postgres from a "cache
   //    stampede". It even helps while Redis is down: Postgres still gets one query, not 100.
   //    The waiters share the first request's `now`: it is only milliseconds older than theirs.
-  //    The single-flight key includes the generation. A request that saw the NEW generation must
-  //    not join a rebuild that started before the event was created: that rebuild may have read
-  //    Postgres before the insert, so it would hand back the old list.
+  //    The single-flight key IS the cache key, so it has the generation and the canonical filters:
+  //    - " Pune" and "PUNE" join ONE rebuild; "pune" and "mumbai" never join each other's;
+  //    - a request that saw the NEW generation never joins a rebuild that started before the event
+  //      was created: that rebuild may have read Postgres before the insert (the old list).
   //    If Postgres fails here, the request fails as before: a miss has no copy of this generation
   //    to fall back to (that is what "miss" means), and an older generation must never be used.
-  const flightKey = cacheStatus === "error" ? `${REBUILD_KEY}:no-cache` : `${REBUILD_KEY}:g${gen}`;
-  const list = await singleFlight(flightKey, () => rebuild(log, now, cacheStatus, gen));
+  const flightKey = cacheStatus === "error" ? `${NO_CACHE_FLIGHT_KEY}:${canonical}` : key;
+  const list = await singleFlight(flightKey, () => rebuild(log, now, cacheStatus, key, filters));
   return { events: list, cache: cacheStatus };
 }
 
-// The start of the single-flight keys. Only this process uses them (they are not Redis keys).
-const REBUILD_KEY = "events:upcoming";
+// The single-flight key's start while Redis is down (no generation, so no cache key). Only this
+// process uses it (it is not a Redis key).
+const NO_CACHE_FLIGHT_KEY = "events:upcoming:no-cache";
 
-// Rebuild the list of generation `gen` after a miss. Runs once per process at a time (step 6). The
+// Rebuild the list under `key` after a miss. Runs once per process at a time (step 6). The
 // Redis lock below makes it (normally) once across ALL processes.
-async function rebuild(log: Log, now: Date, cacheStatus: CacheStatus, gen: number): Promise<PublicEvent[]> {
+async function rebuild(
+  log: Log,
+  now: Date,
+  cacheStatus: CacheStatus,
+  key: string,
+  filters: EventFilters,
+): Promise<PublicEvent[]> {
   // 7. Redis already failed for this request: no lock, no cache write, just Postgres.
   //    Waiting for a lock in a broken Redis would only slow the visitor down.
-  if (cacheStatus === "error") return readPostgres(log, now);
+  if (cacheStatus === "error") return readPostgres(log, now, filters);
 
   // 8. Single-flight cannot see other API instances: each one would still send its own query.
   //    So we also take a lock in Redis, which every instance shares. A random token marks the lock
@@ -138,18 +199,18 @@ async function rebuild(log: Log, now: Date, cacheStatus: CacheStatus, gen: numbe
   const token = randomUUID();
   let gotLock: boolean;
   try {
-    gotLock = await eventsCache.tryLockUpcomingRebuild(gen, token, LOCK_TTL_MS);
+    gotLock = await eventsCache.tryLockUpcomingRebuild(key, token, LOCK_TTL_MS);
   } catch (err) {
     // Redis broke between the read and now: same as step 7.
     log.warn({ err }, "events cache lock failed, falling back to Postgres");
-    return readPostgres(log, now);
+    return readPostgres(log, now, filters);
   }
 
   // 9. We hold the lock: we are the one instance that queries Postgres and fills the cache.
-  if (gotLock) return rebuildAsLockHolder(log, now, gen, token);
+  if (gotLock) return rebuildAsLockHolder(log, now, key, filters, token);
 
   // 10. Another instance holds the lock and is rebuilding. Wait for its result in the cache.
-  const fromCache = await waitForCache(log, now, gen);
+  const fromCache = await waitForCache(log, now, key);
   if (fromCache !== null) return fromCache;
 
   // 11. Still nothing after ~250 ms: the holder is slow or has crashed. Read Postgres ourselves.
@@ -157,29 +218,35 @@ async function rebuild(log: Log, now: Date, cacheStatus: CacheStatus, gen: numbe
   //    Postgres query in that rare case. (Waiting longer would protect Postgres more but make
   //    visitors wait; never falling back would make one dead holder break the page.)
   log.warn({ attempts: LOCK_WAIT_ATTEMPTS }, "events cache still empty after waiting for the lock holder, reading Postgres");
-  const list = await readPostgres(log, now);
-  await writeCache(log, gen, list, now);
+  const list = await readPostgres(log, now, filters);
+  await writeCache(log, key, list, now);
   return list;
 }
 
 // 9a. The lock holder's work, shared by a miss (rebuild) and a background refresh (refresh).
 //     The cache is written BEFORE the lock is released, so waiters find it on their next check.
 //     `finally` releases the lock on success AND on error (else others wait until it expires).
-async function rebuildAsLockHolder(log: Log, now: Date, gen: number, token: string): Promise<PublicEvent[]> {
+async function rebuildAsLockHolder(
+  log: Log,
+  now: Date,
+  key: string,
+  filters: EventFilters,
+  token: string,
+): Promise<PublicEvent[]> {
   try {
     // Look at the cache ONE more time first ("double-check"). Another instance may have taken the
     // lock, filled the cache and released the lock in the short gap between our cache read and our
     // lock. Then the lock was free, but the work is done. Without this check we measured
     // 2 Postgres queries (not 1) in 2 of 5 two-instance runs.
     // Only a FRESH copy counts as done: a refresh starts BECAUSE the copy is stale.
-    const alreadyFresh = await recheckCache(log, now, gen);
+    const alreadyFresh = await recheckCache(log, now, key);
     if (alreadyFresh !== null) return alreadyFresh;
 
-    const list = await readPostgres(log, now);
-    await writeCache(log, gen, list, now);
+    const list = await readPostgres(log, now, filters);
+    await writeCache(log, key, list, now);
     return list;
   } finally {
-    await releaseLock(log, gen, token);
+    await releaseLock(log, key, token);
   }
 }
 
@@ -197,17 +264,17 @@ async function rebuildAsLockHolder(log: Log, now: Date, gen: number, token: stri
 //     ticket email) needs a real job queue.
 //     ONE refresh even when many visitors see the stale copy at once: single-flight (same process)
 //     and the Redis lock (all instances) from the miss path are reused.
-function refreshInBackground(log: Log, now: Date, gen: number): void {
+function refreshInBackground(log: Log, now: Date, key: string, filters: EventFilters): void {
   // `void` says "we do not await this on purpose". The catch is INSIDE the single-flight work, so
   // it runs once per refresh (not once per visitor who joined), and the promise never rejects.
-  void singleFlight(`${REBUILD_KEY}:g${gen}:refresh`, () =>
-    refresh(log, now, gen).catch((err: unknown) => {
+  void singleFlight(`${key}:refresh`, () =>
+    refresh(log, now, key, filters).catch((err: unknown) => {
       // 12a. STALE-IF-ERROR: Postgres failed, so we keep serving the stale copy (it stays in Redis,
       //      untouched) and only log a warning. Later stale answers are labelled "stale-if-error".
       //      TRADE-OFF: AVAILABILITY over FRESHNESS. Visitors get an old list instead of an error page.
       //      The HARD TTL caps how old that list can get: after it, Redis has deleted the copy, the
       //      next read is a miss, and a miss with Postgres down returns the error (step 6).
-      lastFailedRefreshGen = gen;
+      lastRefreshFailed = true;
       log.warn(
         { err, cache: "stale-if-error", hardTtlMs: HARD_TTL_MS },
         "events cache background refresh failed: still serving the stale list (stale-if-error)",
@@ -219,11 +286,11 @@ function refreshInBackground(log: Log, now: Date, gen: number): void {
 // 13. The background refresh itself. It takes the same Redis lock as a miss, but it never waits:
 //     if another instance holds the lock, that instance is already refreshing (or rebuilding),
 //     and the stale copy is fine to serve until it is done.
-async function refresh(log: Log, now: Date, gen: number): Promise<void> {
+async function refresh(log: Log, now: Date, key: string, filters: EventFilters): Promise<void> {
   const token = randomUUID();
   let gotLock: boolean;
   try {
-    gotLock = await eventsCache.tryLockUpcomingRebuild(gen, token, LOCK_TTL_MS);
+    gotLock = await eventsCache.tryLockUpcomingRebuild(key, token, LOCK_TTL_MS);
   } catch (err) {
     // Redis broke: we could not write the result anyway, so there is nothing useful to do.
     log.warn({ err }, "events cache lock failed, skipping the background refresh");
@@ -232,18 +299,18 @@ async function refresh(log: Log, now: Date, gen: number): Promise<void> {
   if (!gotLock) return;
 
   // Throws if Postgres fails: refreshInBackground catches it (stale-if-error).
-  await rebuildAsLockHolder(log, now, gen, token);
-  lastFailedRefreshGen = null;
-  log.debug(`events cache background refresh done (generation ${gen})`);
+  await rebuildAsLockHolder(log, now, key, filters, token);
+  lastRefreshFailed = false;
+  log.debug(`events cache background refresh done (${key})`);
 }
 
 // Re-check the cache a few times, a short pause before each check. Returns the list as soon as
 // a fresh one is there, or null if it never shows up (or Redis fails while we wait).
-async function waitForCache(log: Log, now: Date, gen: number): Promise<PublicEvent[] | null> {
+async function waitForCache(log: Log, now: Date, key: string): Promise<PublicEvent[] | null> {
   for (let attempt = 1; attempt <= LOCK_WAIT_ATTEMPTS; attempt++) {
     await sleep(LOCK_WAIT_DELAY_MS);
     try {
-      const fresh = freshList(await readCache(log, gen), now);
+      const fresh = freshList(await readCache(log, key), now);
       if (fresh !== null) return fresh;
     } catch (err) {
       log.warn({ err }, "events cache read failed while waiting for the lock holder");
@@ -255,25 +322,25 @@ async function waitForCache(log: Log, now: Date, gen: number): Promise<PublicEve
 
 // One cache read for the double-check (step 9a). Any problem (Redis error, bad value, only a stale
 // copy) just means "not done yet": the lock holder then reads Postgres as planned.
-async function recheckCache(log: Log, now: Date, gen: number): Promise<PublicEvent[] | null> {
+async function recheckCache(log: Log, now: Date, key: string): Promise<PublicEvent[] | null> {
   try {
-    return freshList(await readCache(log, gen), now);
+    return freshList(await readCache(log, key), now);
   } catch (err) {
     log.warn({ err }, "events cache re-check failed, reading Postgres");
     return null;
   }
 }
 
-// The list if the cached value is fresh (younger than the soft TTL), else null.
+// The list if the cached value is fresh (before its staleAt), else null.
 function freshList(cached: CachedUpcoming | null, now: Date): PublicEvent[] | null {
   if (cached === null) return null;
-  return now.getTime() - cached.fetchedAt < SOFT_TTL_MS ? cached.data : null;
+  return now.getTime() < cached.staleAt ? cached.data : null;
 }
 
 // Release our lock. A failure is only logged: the lock deletes itself after LOCK_TTL_MS anyway.
-async function releaseLock(log: Log, gen: number, token: string) {
+async function releaseLock(log: Log, key: string, token: string) {
   try {
-    const released = await eventsCache.releaseUpcomingRebuildLock(gen, token);
+    const released = await eventsCache.releaseUpcomingRebuildLock(key, token);
     if (!released) log.warn({ lockTtlMs: LOCK_TTL_MS }, "events cache lock had expired before release (rebuild too slow?)");
   } catch (err) {
     log.warn({ err }, "events cache lock release failed");
@@ -281,9 +348,9 @@ async function releaseLock(log: Log, gen: number, token: string) {
 }
 
 // Read Postgres and pick the public fields.
-async function readPostgres(log: Log, now: Date): Promise<PublicEvent[]> {
+async function readPostgres(log: Log, now: Date, filters: EventFilters): Promise<PublicEvent[]> {
   // "Upcoming" means "starts after right now". The clock is a parameter only so tests can set it.
-  const rows = await events.listUpcoming(now, log);
+  const rows = await events.listUpcoming(now, filters, log);
   return rows.map(toPublicEvent);
 }
 
@@ -301,22 +368,30 @@ function toPublicEvent(row: EventRow): PublicEvent {
   };
 }
 
-// Fill the cache of generation `gen` for the next visitors. `fetchedAt` is the time we asked
-// Postgres (a moment before the answer, so the age is never under-counted). Redis deletes the key
-// after the HARD TTL. A failed write is logged and ignored: the visitor already has their answer.
-async function writeCache(log: Log, gen: number, list: PublicEvent[], fetchedAt: Date) {
-  const value: CachedUpcoming = { data: list, fetchedAt: fetchedAt.getTime() };
+// Fill the cache under `key` for the next visitors. `fetchedAt` is the time we asked Postgres (a
+// moment before the answer, so the age is never under-counted). `staleAt` adds the soft TTL plus
+// this copy's random jitter (step 1a), but never past the hard TTL (with a soft TTL set within 10%
+// of the hard one, jitter could otherwise keep a copy "fresh" after the hard limit).
+// Redis deletes the key after the HARD TTL.
+// A failed write is logged and ignored: the visitor already has their answer.
+async function writeCache(log: Log, key: string, list: PublicEvent[], fetchedAt: Date) {
+  const jitterMs = Math.floor(Math.random() * SOFT_TTL_MS * SOFT_TTL_JITTER);
+  const value: CachedUpcoming = {
+    data: list,
+    fetchedAt: fetchedAt.getTime(),
+    staleAt: Math.min(fetchedAt.getTime() + SOFT_TTL_MS + jitterMs, fetchedAt.getTime() + HARD_TTL_MS),
+  };
   try {
-    await eventsCache.setUpcomingInCache(gen, JSON.stringify(value), HARD_TTL_MS);
+    await eventsCache.setUpcomingInCache(key, JSON.stringify(value), HARD_TTL_MS);
   } catch (err) {
     log.warn({ err }, "events cache write failed");
   }
 }
 
-// Read and check generation `gen`'s cached value. null = nothing there, or a bad value.
+// Read and check the cached value under `key`. null = nothing there, or a bad value.
 // Throws when Redis is down or too slow (the callers decide what that means).
-async function readCache(log: Log, gen: number): Promise<CachedUpcoming | null> {
-  const text = await eventsCache.getUpcomingFromCache(gen);
+async function readCache(log: Log, key: string): Promise<CachedUpcoming | null> {
+  const text = await eventsCache.getUpcomingFromCache(key);
   return text === null ? null : parseCached(text, log);
 }
 
@@ -387,6 +462,14 @@ export async function createEvent(input: CreateEventInput, log: Log): Promise<Pu
 //   generation at its start (the OLD number), so it writes to the OLD key. Nobody reads that key
 //   any more, and Redis deletes it when its TTL runs out. (A background refresh of the old
 //   generation that is still running is the same: it can only write the old key.)
+//
+// WITH FILTERS (Step 8) THE GENERATION IS EVEN MORE USEFUL:
+//   A new event can change MANY filtered lists ("no filter", its venue, every date range that
+//   contains it). Every filter's key contains the generation, so this ONE INCR invalidates all of
+//   them at once, in one atomic step that costs the same for 1 key or 10,000. Deleting them one by
+//   one instead would mean: finding them first (we do not even know which filters people asked for;
+//   SCAN walks EVERY key in Redis, slowly), deleting each (not atomic: a reader can refill one we
+//   already deleted, the stale-refill race once per key), and missing keys written during the scan.
 //
 // IF REDIS IS DOWN (the INCR fails):
 //   The event IS saved, so the request still succeeds; we only log an error. Readers keep using

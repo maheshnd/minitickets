@@ -14,6 +14,9 @@ export function useCreateEvent() {
       // the API answers with the new list at once. But OTHER people's browsers have their own
       // React Query cache, which nothing here can reach: they may show the old list until their
       // staleTime (30 s) has passed and they fetch again.
+      // queryKey() with no input is [["events","list"], { type: "query" }]. React Query matches keys
+      // PARTIALLY ({ type: "query" } is contained in { input: {...}, type: "query" }), so this also
+      // invalidates every filtered list, whatever its input.
       onSuccess: () => queryClient.invalidateQueries({ queryKey: trpc.events.list.queryKey() }),
     }),
   );

@@ -65,6 +65,48 @@ test("the browser makes no events.list request: hydration reuses the server's da
   expect(eventsCalls).toEqual([]);
 });
 
+test("filter by venue: only matching events; reload keeps the filter (server-rendered); clear filters shows all", async ({ page }) => {
+  const main = page.getByRole("main");
+  const filters = page.getByRole("search", { name: "Filter events" });
+  await page.goto("/events");
+
+  // 1. Odd case and spaces on purpose: the API treats " the FOUNDRY " like "The Foundry".
+  await filters.getByLabel("Venue").fill("  the FOUNDRY ");
+  await filters.getByRole("button", { name: "Apply" }).click();
+
+  // 2. The filter is in the URL (trimmed), and only events at The Foundry are listed.
+  await expect(page).toHaveURL("/events?venue=the+FOUNDRY");
+  await expect(main.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Symphony Under the Stars" })).toHaveCount(0);
+  for (const card of await main.getByRole("listitem").all()) await expect(card).toContainText(/the foundry/i);
+
+  // 3. Reload. The SERVER renders the filtered list: its HTML has the matching event and not the
+  //    others. And the browser asks for no events.list: hydration found the server's data under the
+  //    key that includes the filter (same as the unfiltered hydration test above).
+  const eventsCalls: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("events.list")) eventsCalls.push(request.url());
+  });
+  const authMe = page.waitForResponse((response) => response.url().includes("auth.me"));
+  const response = await page.reload();
+  const html = await response!.text();
+  expect(html).toContain("Indie Rock Showcase");
+  expect(html).not.toContain("Symphony Under the Stars");
+  await authMe;
+  await page.waitForLoadState("networkidle");
+  await expect(filters.getByLabel("Venue")).toHaveValue("the FOUNDRY");
+  await expect(main.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
+  expect(eventsCalls).toEqual([]);
+
+  // 4. Clear filters: back to /events, every upcoming event, an empty venue box.
+  await filters.getByRole("link", { name: "Clear filters" }).click();
+  await expect(page).toHaveURL("/events");
+  await expect(main.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Symphony Under the Stars" })).toBeVisible();
+  await expect(filters.getByLabel("Venue")).toHaveValue("");
+  await expect(filters.getByRole("link", { name: "Clear filters" })).toHaveCount(0);
+});
+
 // The old test "a failing API shows the error message and a Retry button" was removed in Step 22.
 // It made the BROWSER's events.list call fail with page.route(), but the browser no longer makes
 // that call (the test above proves it), and Playwright cannot reach the web server's call to the

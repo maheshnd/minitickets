@@ -39,23 +39,49 @@ afterEach(() => {
   evalScript.mockReset();
 });
 
-describe("events cache queries", () => {
-  it("reads the key of the given generation (shape version + generation)", async () => {
-    get.mockResolvedValue("[]");
-    await expect(getUpcomingFromCache(7)).resolves.toBe("[]");
-    expect(get).toHaveBeenCalledWith("events:upcoming:v2:g7");
-    expect(upcomingKey(7)).toBe("events:upcoming:v2:g7");
+// A key as the service would build it: generation 7, filter "venue = pune".
+const PUNE = '{"venue":"pune"}';
+const KEY = upcomingKey(7, PUNE);
+
+describe("events cache keys", () => {
+  it("shape version v3 + generation + a 16-character hex hash of the canonical filters", () => {
+    expect(KEY).toMatch(/^events:upcoming:v3:g7:[0-9a-f]{16}$/);
   });
 
-  it("writes the text to the given generation's key with the TTL in milliseconds (PX)", async () => {
+  it("the same canonical filters always give the same key (in any process, any time)", () => {
+    expect(upcomingKey(7, PUNE)).toBe(KEY);
+  });
+
+  it("different filters, or a different generation, give a different key", () => {
+    expect(upcomingKey(7, '{"venue":"mumbai"}')).not.toBe(KEY);
+    expect(upcomingKey(7, "{}")).not.toBe(KEY);
+    expect(upcomingKey(8, PUNE)).not.toBe(KEY);
+    // The generation changes only the g<gen> part: the filter hash stays the same.
+    expect(upcomingKey(8, PUNE).split(":").pop()).toBe(KEY.split(":").pop());
+  });
+
+  it("the venue text never reaches the key: a 200-character venue with ':' and '*' is still 16 safe characters", () => {
+    const nasty = JSON.stringify({ venue: `a:b*c ${"x".repeat(190)}` });
+    expect(upcomingKey(7, nasty)).toMatch(/^events:upcoming:v3:g7:[0-9a-f]{16}$/);
+  });
+});
+
+describe("events cache queries", () => {
+  it("reads the given key", async () => {
+    get.mockResolvedValue("[]");
+    await expect(getUpcomingFromCache(KEY)).resolves.toBe("[]");
+    expect(get).toHaveBeenCalledWith(KEY);
+  });
+
+  it("writes the text to the given key with the TTL in milliseconds (PX)", async () => {
     set.mockResolvedValue("OK");
-    await setUpcomingInCache(7, "[]", 300_000);
-    expect(set).toHaveBeenCalledWith("events:upcoming:v2:g7", "[]", "PX", 300_000);
+    await setUpcomingInCache(KEY, "[]", 300_000);
+    expect(set).toHaveBeenCalledWith(KEY, "[]", "PX", 300_000);
   });
 
   it("gives up on a read when Redis is too slow", async () => {
     get.mockReturnValue(new Promise(() => {})); // never answers
-    const result = getUpcomingFromCache(0);
+    const result = getUpcomingFromCache(KEY);
     const assertion = expect(result).rejects.toThrow(/did not answer/);
     await vi.advanceTimersByTimeAsync(CACHE_TIMEOUT_MS);
     await assertion;
@@ -63,7 +89,7 @@ describe("events cache queries", () => {
 
   it("gives up on a write when Redis is too slow", async () => {
     set.mockReturnValue(new Promise(() => {}));
-    const result = setUpcomingInCache(0, "[]", 30_000);
+    const result = setUpcomingInCache(KEY, "[]", 30_000);
     const assertion = expect(result).rejects.toThrow(/did not answer/);
     await vi.advanceTimersByTimeAsync(CACHE_TIMEOUT_MS);
     await assertion;
@@ -123,45 +149,46 @@ describe("events rebuild lock queries", () => {
     return store;
   }
 
-  it("takes the lock with SET <lock key of the generation> <token> PX <ms> NX", async () => {
+  it("takes the lock with SET lock:<cache key> <token> PX <ms> NX", async () => {
     useFakeRedisStore();
-    await expect(tryLockUpcomingRebuild(7, "token-a", 5000)).resolves.toBe(true);
-    expect(set).toHaveBeenCalledWith("lock:events:upcoming:v2:g7", "token-a", "PX", 5000, "NX");
-    expect(upcomingLockKey(7)).toBe("lock:events:upcoming:v2:g7");
+    await expect(tryLockUpcomingRebuild(KEY, "token-a", 5000)).resolves.toBe(true);
+    expect(set).toHaveBeenCalledWith(`lock:${KEY}`, "token-a", "PX", 5000, "NX");
+    expect(upcomingLockKey(KEY)).toBe(`lock:${KEY}`);
   });
 
-  it("each generation has its own lock", async () => {
+  it("each generation, and each filter, has its own lock", async () => {
     useFakeRedisStore();
-    await tryLockUpcomingRebuild(7, "token-a", 5000);
-    await expect(tryLockUpcomingRebuild(8, "token-b", 5000)).resolves.toBe(true);
+    await tryLockUpcomingRebuild(KEY, "token-a", 5000);
+    await expect(tryLockUpcomingRebuild(upcomingKey(8, PUNE), "token-b", 5000)).resolves.toBe(true);
+    await expect(tryLockUpcomingRebuild(upcomingKey(7, '{"venue":"mumbai"}'), "token-c", 5000)).resolves.toBe(true);
   });
 
   it("a second instance does not get a lock that is already held", async () => {
     useFakeRedisStore();
-    await tryLockUpcomingRebuild(7, "token-a", 5000);
-    await expect(tryLockUpcomingRebuild(7, "token-b", 5000)).resolves.toBe(false);
+    await tryLockUpcomingRebuild(KEY, "token-a", 5000);
+    await expect(tryLockUpcomingRebuild(KEY, "token-b", 5000)).resolves.toBe(false);
   });
 
   it("release with the WRONG token does nothing; with the right token it frees the lock", async () => {
     const store = useFakeRedisStore();
-    await tryLockUpcomingRebuild(7, "token-a", 5000);
+    await tryLockUpcomingRebuild(KEY, "token-a", 5000);
 
     // 1. Someone else's token (e.g. our lock expired and they took it): nothing is deleted.
-    await expect(releaseUpcomingRebuildLock(7, "token-b")).resolves.toBe(false);
-    expect(store.get(upcomingLockKey(7))).toBe("token-a");
+    await expect(releaseUpcomingRebuildLock(KEY, "token-b")).resolves.toBe(false);
+    expect(store.get(upcomingLockKey(KEY))).toBe("token-a");
 
     // 2. The owner's token: the lock is gone, so the next instance can take it.
-    await expect(releaseUpcomingRebuildLock(7, "token-a")).resolves.toBe(true);
-    expect(store.has(upcomingLockKey(7))).toBe(false);
-    await expect(tryLockUpcomingRebuild(7, "token-b", 5000)).resolves.toBe(true);
+    await expect(releaseUpcomingRebuildLock(KEY, "token-a")).resolves.toBe(true);
+    expect(store.has(upcomingLockKey(KEY))).toBe(false);
+    await expect(tryLockUpcomingRebuild(KEY, "token-b", 5000)).resolves.toBe(true);
   });
 
   it("the release script compares the token and deletes in ONE script (atomic)", async () => {
     useFakeRedisStore();
-    await releaseUpcomingRebuildLock(7, "token-a");
+    await releaseUpcomingRebuildLock(KEY, "token-a");
     const [script, numKeys, key, token] = evalScript.mock.calls[0]!;
     expect(script).toContain('redis.call("GET", KEYS[1]) == ARGV[1]');
     expect(script).toContain('redis.call("DEL", KEYS[1])');
-    expect([numKeys, key, token]).toEqual([1, upcomingLockKey(7), "token-a"]);
+    expect([numKeys, key, token]).toEqual([1, upcomingLockKey(KEY), "token-a"]);
   });
 });

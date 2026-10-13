@@ -33,7 +33,18 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     # 3. Named volume + appendonly: sessions survive a container restart.
-    command: ["redis-server", "--appendonly", "yes"]
+    # 3b. Memory limit + eviction policy (Step 8: one events cache key per filter, so the number of
+    #     keys depends on what people ask for). What happens when memory is full:
+    #     - maxmemory 256mb: the limit. Without one (the default, 0) Redis never evicts anything; it
+    #       grows until the machine runs out of memory. 256mb is far more than local dev needs.
+    #     - maxmemory-policy allkeys-lru: when memory is full, evict the LEAST RECENTLY USED keys
+    #       (any key, with or without a TTL) to make room. Busy keys stay; forgotten filters go first.
+    #       The default, "noeviction", would instead REFUSE new writes with an error.
+    #     Trade-off: sessions live in this same Redis, so under real memory pressure an idle
+    #     session could be evicted too (= that user is logged out). The generation key is read on
+    #     every events.list, so LRU practically never picks it.
+    #     A running container only picks this up when it is recreated: `pnpm db:up` does that.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     # 4. Healthcheck: `redis-cli ping` answers PONG once Redis accepts commands.
