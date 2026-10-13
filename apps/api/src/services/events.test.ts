@@ -67,6 +67,13 @@ vi.mock("../queries/events-cache", () => ({
   releaseUpcomingRebuildLock: (key: string, token: string) => releaseUpcomingRebuildLock(key, token),
 }));
 
+// The web app's revalidate hook (an HTTP call to the web server in real life). Resolves true
+// ("sent") by default; tests make it fail or hang.
+const revalidateEventsPages = vi.fn<() => Promise<boolean>>();
+vi.mock("../queries/web-cache", () => ({
+  revalidateEventsPages: () => revalidateEventsPages(),
+}));
+
 const SOFT_TTL_MS = 30_000;
 const HARD_TTL_MS = 300_000;
 vi.mock("../config/env", () => ({
@@ -117,6 +124,7 @@ beforeEach(async () => {
   setUpcomingInCache.mockReset().mockResolvedValue(undefined);
   tryLockUpcomingRebuild.mockReset().mockResolvedValue(true); // default: we get the lock
   releaseUpcomingRebuildLock.mockReset().mockResolvedValue(true);
+  revalidateEventsPages.mockReset().mockResolvedValue(true);
   log.error.mockClear();
   log.warn.mockClear();
   log.debug.mockClear();
@@ -440,6 +448,67 @@ describe("createEvent: write, then invalidate", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(log.error).toHaveBeenCalledTimes(1);
     expect(log.error).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("stale until its next refresh"));
+  });
+});
+
+describe("createEvent: then the web cache above (the revalidate hook)", () => {
+  const input = { title: "New Show", venue: "Hall", startsAt: "2026-10-20T18:00:00.000Z", totalSeats: 40 };
+
+  it("calls the hook once, AFTER the generation bump (bottom-up: Redis first, then the web cache)", async () => {
+    await createEvent(input, log);
+
+    expect(revalidateEventsPages).toHaveBeenCalledTimes(1);
+    expect(bumpUpcomingGeneration.mock.invocationCallOrder[0]).toBeLessThan(revalidateEventsPages.mock.invocationCallOrder[0]!);
+  });
+
+  it("waits for the bump to FINISH before calling the hook (not just to start)", async () => {
+    // The bump answers only when we say so. Until then, the hook must not have been called.
+    let finishBump!: (gen: number) => void;
+    bumpUpcomingGeneration.mockReturnValue(new Promise<number>((resolve) => (finishBump = resolve)));
+
+    const pending = createEvent(input, log);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(revalidateEventsPages).not.toHaveBeenCalled();
+
+    finishBump(1);
+    await pending;
+    expect(revalidateEventsPages).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failing hook does NOT fail the request: the event is returned, a warning is logged", async () => {
+    revalidateEventsPages.mockRejectedValue(new Error("web revalidate hook answered 401"));
+
+    const result = await createEvent(input, log);
+
+    expect(result.title).toBe("New Show");
+    // The warning comes from the .catch, one tick after createEvent returned (fire-and-forget).
+    await vi.waitFor(() => expect(log.warn).toHaveBeenCalledTimes(1));
+    expect(log.warn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("web cache revalidate failed"));
+    expect(log.error).not.toHaveBeenCalled();
+  });
+
+  it("is fire-and-forget: a hook that never answers does not hold up the request", async () => {
+    revalidateEventsPages.mockReturnValue(new Promise<boolean>(() => {}));
+
+    const result = await createEvent(input, log);
+
+    expect(result.title).toBe("New Show");
+    expect(revalidateEventsPages).toHaveBeenCalledTimes(1);
+  });
+
+  it("is still called when the INCR failed (Redis down: the API then reads Postgres, so the web refill is fresh)", async () => {
+    bumpUpcomingGeneration.mockRejectedValue(new Error("Redis did not answer within 100 ms"));
+
+    await createEvent(input, log);
+
+    expect(revalidateEventsPages).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not called when the insert fails (nothing changed)", async () => {
+    create.mockRejectedValue(new Error("violates check constraint"));
+
+    await expect(createEvent(input, log)).rejects.toThrow("violates check constraint");
+    expect(revalidateEventsPages).not.toHaveBeenCalled();
   });
 });
 

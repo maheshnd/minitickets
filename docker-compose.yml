@@ -102,10 +102,16 @@ services:
     # 3. environment: the settings the API checks at startup (apps/api/src/config/env.ts).
     #    WEB_ORIGIN must be the address the BROWSER uses for the web app, because CORS compares it.
     #    postgres and redis are reached by service name, on their normal container ports.
+    #    WEB_INTERNAL_URL + REVALIDATE_SECRET: after an event is created, the API calls the web
+    #    server's revalidate hook (Step 9a). Server to server, so the service name "web" and its
+    #    container port 3000 (not localhost:3100, which is the BROWSER's address). The secret comes
+    #    from the root .env and must be the same in both services (it is: both read this one value).
     environment:
       WEB_ORIGIN: http://localhost:3100
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
+      WEB_INTERNAL_URL: http://web:3000
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET}
     # 4. depends_on: start only after migrate finished successfully (exit code 0) and redis is healthy.
     #    If migrate fails, the api never starts on an old database.
     depends_on:
@@ -143,9 +149,13 @@ services:
     #    API_INTERNAL_URL is where the web server calls the API to render /events. Server to server,
     #    so it uses the compose service name "api" and the container port 4000, unlike the
     #    browser's NEXT_PUBLIC_API_URL above (localhost:4100, the address the BROWSER sees).
+    #    REVALIDATE_SECRET: what the api must send to POST /api/revalidate (the same root .env value).
     environment:
       API_INTERNAL_URL: http://api:4000
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET}
     # 4. depends_on: start after the API is healthy, so the first page load can already log in.
+    #    The api calls the web too (the revalidate hook), but only when an event is created, never
+    #    at startup, so it needs no depends_on on web (that would be a circle).
     depends_on:
       api:
         condition: service_healthy

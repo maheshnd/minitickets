@@ -56,6 +56,10 @@ jobs:
       # @concept: server-to-server-calls
       # Read by the web SERVER at request time (not baked in): where it calls the API to render /events.
       API_INTERNAL_URL: http://localhost:4000
+      # The revalidate hook (Step 9a): the API calls the web server after an event is created, with
+      # a secret both read from here. A throwaway value for this job, like the database password above.
+      WEB_INTERNAL_URL: http://localhost:3000
+      REVALIDATE_SECRET: ci-only-revalidate-secret-0123456789abcdef0123456789
 
     # Service containers: GitHub starts them before the steps and waits for the healthchecks.
     # Same pinned versions and healthchecks as docker-compose.yml.

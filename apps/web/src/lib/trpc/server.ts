@@ -22,21 +22,28 @@ export const getQueryClient = cache(
   () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 );
 
+// 2. A plain tRPC client for the server: sends real HTTP requests to API_INTERNAL_URL (web server ->
+//    API, never via the browser). httpLink, not httpBatchLink: the server makes one call per page
+//    today, so batching buys nothing. Used directly by the cached events fetch
+//    (features/events/server/cached-events.ts), and by getServerTrpc below.
+//    No cookies are forwarded: events.list is public. A page with private data would have to
+//    pass the visitor's "sid" cookie on purpose (and must never put that answer in a SHARED cache).
+export function makeServerTrpcClient() {
+  return createTRPCClient<AppRouter>({
+    links: [httpLink({ url: `${getServerEnv().API_INTERNAL_URL}/trpc` })],
+  });
+}
+
 // @concept: server-to-server-calls
-// 2. A typed tRPC "options proxy" for the server: trpc.events.list.queryOptions() works exactly like
+// 3. A typed tRPC "options proxy" for the server: trpc.events.list.queryOptions() works exactly like
 //    the useTRPC() version in the browser, so the query key is the SAME in both
 //    ([["events","list"],{type:"query"}]). That shared key is how the browser later finds the data
 //    the server put in the cache.
-//    - client: sends real HTTP requests to API_INTERNAL_URL (web server -> API, never via the browser).
-//      httpLink, not httpBatchLink: the server makes one call per page today, so batching buys nothing.
-//      No cookies are forwarded: events.list is public. A page with private data would have to
-//      pass the visitor's "sid" cookie on purpose.
+//    - client: the plain client from step 2.
 //    - cache() again, so the URL is read at request time (see getServerEnv) and built once per request.
 export const getServerTrpc = cache(() =>
   createTRPCOptionsProxy<AppRouter>({
-    client: createTRPCClient<AppRouter>({
-      links: [httpLink({ url: `${getServerEnv().API_INTERNAL_URL}/trpc` })],
-    }),
+    client: makeServerTrpcClient(),
     queryClient: getQueryClient,
   }),
 );

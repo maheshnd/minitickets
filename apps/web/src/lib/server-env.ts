@@ -1,3 +1,4 @@
+import { RevalidateSecretSchema } from "@minitickets/shared";
 import { z } from "zod";
 
 // @concept: config-validation
@@ -32,4 +33,24 @@ export function getServerEnv(): ServerEnv {
   }
   parsed = result.data;
   return parsed;
+}
+
+// 4. REVALIDATE_SECRET: the shared secret the API must send to POST /api/revalidate
+//    (app/api/revalidate/route.ts). Same rules as above (server only, no NEXT_PUBLIC_, read at
+//    request time), checked with the SAME schema the API uses (@minitickets/shared).
+//    Its OWN function and schema, not part of ServerEnvSchema: only the revalidate endpoint needs
+//    it, so a missing secret must break only that endpoint, never /events (one feature's setting
+//    must not take down another feature's page). Parsed on every call: it is a tiny check, and the
+//    endpoint is called once per created event.
+const RevalidateEnvSchema = z.object({ REVALIDATE_SECRET: RevalidateSecretSchema });
+
+export function getRevalidateSecret(): string {
+  const result = RevalidateEnvSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new Error(
+      `Invalid web server environment: ${JSON.stringify(z.flattenError(result.error).fieldErrors)}. ` +
+        "Hint: set REVALIDATE_SECRET in apps/web/.env.local to the same value as in apps/api/.env",
+    );
+  }
+  return result.data.REVALIDATE_SECRET;
 }

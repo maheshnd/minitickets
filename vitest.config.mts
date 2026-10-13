@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 // @concept: unit-tests
@@ -7,5 +8,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["apps/*/src/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+  },
+  // The web app imports its own files as "@/..." (apps/web/tsconfig.json "paths"). Next.js knows
+  // that; Vitest needs to be told. "@" only matches "@" and "@/...", never "@minitickets/...".
+  resolve: {
+    alias: { "@": path.join(import.meta.dirname, "apps/web/src") },
   },
 });

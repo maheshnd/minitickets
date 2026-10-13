@@ -1,3 +1,4 @@
+import { RevalidateSecretSchema } from "@minitickets/shared";
 import { z } from "zod";
 import { DatabaseEnvSchema } from "./database";
 
@@ -28,12 +29,28 @@ const EnvSchema = z.object({
   // ever be served). Shorten both for a demo, e.g. 3000 and 60000.
   EVENTS_CACHE_SOFT_TTL_MS: z.coerce.number().int().positive().default(30_000),
   EVENTS_CACHE_HARD_TTL_MS: z.coerce.number().int().positive().default(300_000),
+  // The web app's revalidate hook (queries/web-cache.ts): after an event is created, the API tells
+  // the web server to drop its cached events list. API -> web, server to server, so this is the
+  // web server's INTERNAL address (http://localhost:3000 locally, http://web:3000 in compose),
+  // not the browser's WEB_ORIGIN. The secret proves to the web app that the call is from us.
+  // OPTIONAL, but only as a PAIR: without them the hook is off (a warning at startup) and the web
+  // cache's own 30 s lifetime bounds the staleness. WHY not required: the AWS api task has no
+  // route to the web tasks yet (no Service Connect), so it cannot use them; a required value
+  // would stop the whole API from starting there, for a feature that only makes lists fresher.
+  WEB_INTERNAL_URL: z.url({ protocol: /^https?$/ }).optional(),
+  REVALIDATE_SECRET: RevalidateSecretSchema.optional(),
 })
   // A soft TTL at or above the hard TTL would mean "never stale": Redis would delete the list
   // while it still counts as fresh. Almost surely a typo, so we stop at startup.
   .refine((e) => e.EVENTS_CACHE_SOFT_TTL_MS < e.EVENTS_CACHE_HARD_TTL_MS, {
     message: "must be greater than EVENTS_CACHE_SOFT_TTL_MS",
     path: ["EVENTS_CACHE_HARD_TTL_MS"],
+  })
+  // Only one of the pair set is half a configuration (a URL with no secret would always get 401):
+  // almost surely a forgotten line, so we stop at startup instead of silently turning the hook off.
+  .refine((e) => (e.WEB_INTERNAL_URL === undefined) === (e.REVALIDATE_SECRET === undefined), {
+    message: "set both WEB_INTERNAL_URL and REVALIDATE_SECRET, or neither",
+    path: ["REVALIDATE_SECRET"],
   });
 
 // 2. Check process.env once, when the API starts: the app settings and the database settings.

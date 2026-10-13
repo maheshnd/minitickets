@@ -17,6 +17,12 @@ try {
   process.exit(1);
 }
 
+// 2b. Say it once at startup if the web revalidate hook is off (see config/env.ts): then a new
+//     event shows on the server-rendered /events only after the web cache's 30 s, not at once.
+if (!env.WEB_INTERNAL_URL) {
+  app.log.warn("WEB_INTERNAL_URL and REVALIDATE_SECRET are not set: the web revalidate hook is off (new events reach /events within 30 s)");
+}
+
 // @concept: graceful-shutdown
 // 3. Graceful shutdown: on Ctrl+C (SIGINT) or `kill` (SIGTERM), finish cleanly instead of dying mid-request.
 let shuttingDown = false;

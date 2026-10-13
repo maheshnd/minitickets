@@ -82,6 +82,43 @@ test("an admin creates an event and it is on /events right away (cache invalidat
   await expect(main.getByRole("heading", { name: eventTitle })).toBeVisible();
 });
 
+test("the server-rendered /events shows a new event at once, not after the web cache's 30 s (revalidate hook)", async ({ page }) => {
+  await logIn(page, adminEmail);
+  const title = `E2E Revalidate ${runId}`;
+
+  // 12. Ask the web SERVER for /events (page.request: a plain HTTP request, no browser, no
+  //     JavaScript, so this is exactly the HTML the server rendered). This fills the web server's
+  //     data cache (Next.js, 30 s) with a list WITHOUT the new event; the second request is a hit.
+  for (let i = 0; i < 2; i++) {
+    const html = await (await page.request.get("/events")).text();
+    expect(html).toContain("Indie Rock Showcase");
+    expect(html).not.toContain(title);
+  }
+
+  // 13. Create the event as the admin. Straight through the API (page.request shares the admin's
+  //     session cookie); the UI path is the first test in this file. The API saves it, bumps the
+  //     Redis generation, then calls the web server's POST /api/revalidate (fire-and-forget).
+  const response = await page.request.post(`${API_URL}/trpc/events.create`, {
+    data: { title, venue: "Test Hall", startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), totalSeats: 7 },
+  });
+  expect(response.status()).toBe(200);
+  const createdAt = Date.now();
+
+  // 14. The server's HTML has the new event almost at once. We allow 5 s (the hook is
+  //     fire-and-forget, so it can land a few ms after the API answered), far below the 30 s the
+  //     web cache would otherwise keep the old list. Without the hook this step fails.
+  const serverHtmlHasIt = async () => (await (await page.request.get("/events")).text()).includes(title);
+  await expect
+    .poll(serverHtmlHasIt, { message: "new event in the server-rendered /events", timeout: 5_000, intervals: [100] })
+    .toBe(true);
+  expect(Date.now() - createdAt).toBeLessThan(5_000);
+
+  // 15. And in the browser: a full reload renders on the server and shows it.
+  await page.goto("/events");
+  await page.reload();
+  await expect(page.getByRole("main").getByRole("heading", { name: title })).toBeVisible();
+});
+
 test("a normal user cannot create events: no link, 'not allowed' page, and the API says 403", async ({ page }) => {
   await logIn(page, userEmail);
 

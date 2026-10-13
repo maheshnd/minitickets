@@ -13,9 +13,12 @@ import { prefetchEvents } from "@/features/events/server/prefetch-events";
 // @concept: csr-vs-ssr
 // The /events route. It is rendered on the server: the first HTML already contains the events.
 
-// 1. Rendered fresh on every request: no Next.js data cache, no "use cache", no build-time HTML.
-//    WHY: this step only changes WHERE the page is rendered (server instead of browser), so the
-//    comparison with the client-side version is fair. Caching comes in later steps.
+// 1. The PAGE is rendered fresh on every request: no build-time HTML, no cached HTML.
+//    The DATA inside it is cached since Step 9a: prefetchEvents reads the Next.js data cache
+//    (features/events/server/cached-events.ts), so most renders make no call to the API.
+//    Two different caches: this line is about the finished HTML; the data cache is about one
+//    function's answer. The filters come from the URL anyway, so a cached page would need one
+//    copy per URL; caching the data (per canonical filter) is simpler and enough.
 export const dynamic = "force-dynamic";
 
 // 2. The browser tab title. It becomes "Upcoming events | MiniTickets" through the layout's template.

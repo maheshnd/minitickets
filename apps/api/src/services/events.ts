@@ -9,6 +9,7 @@ import {
 import { env } from "../config/env";
 import * as eventsCache from "../queries/events-cache";
 import * as events from "../queries/events";
+import * as webCache from "../queries/web-cache";
 import { canonicalFilters, canonicalString, type EventFilters } from "./event-filters";
 import { singleFlight } from "./single-flight";
 
@@ -439,7 +440,45 @@ export async function createEvent(input: CreateEventInput, log: Log): Promise<Pu
   //     nothing to invalidate.
   await invalidateUpcomingList(log);
 
+  // 17. Then the cache ABOVE ours: the web server's Next.js data cache (30 s). See revalidateWebCache.
+  revalidateWebCache(log);
+
   return toPublicEvent(row);
+}
+
+// Tell the web app to drop its cached events lists (POST /api/revalidate, queries/web-cache.ts).
+//
+// STACKED CACHES: a server-rendered /events reads Next.js's data cache (web, 30 s), which on a miss
+// asks the API, which reads Redis, which on a miss reads Postgres. The INCR above only fixed Redis.
+// Without this call, the web server could keep showing the old list for up to 30 s more.
+//
+// WHY AFTER THE INCR (bottom-up, the same rule as "write, then invalidate"):
+//   If the web cache were dropped FIRST, the next page view could ask the API before the INCR and
+//   get the OLD list from Redis, and the web cache would then keep that old list for another 30 s.
+//   Invalidate the cache nearest the data first, then each cache above it, in order.
+//   It runs even when the INCR failed: usually that means Redis is down, and then the API reads
+//   Postgres directly (step 5), so the web cache refills with the NEW list.
+//
+// WHY FIRE-AND-FORGET (started, never awaited):
+//   The event IS saved and Redis IS fixed: the admin's request is done. Waiting would make every
+//   create as slow as the web server (up to the 1 s timeout when it hangs), and failing the request
+//   would be wrong (the admin might create the event twice). So we start the call and return.
+//   If it fails (web down, timeout, wrong secret), we log a WARNING and nothing else: the web
+//   cache's 30 s lifetime is the safety net that bounds the staleness. No retries, for the same
+//   reason: the timer fixes it anyway, and a retry loop is more code than the gain.
+//   TRADE-OFF: the call is in flight for a few ms after the admin's answer, so a page view in that
+//   window can still get the old list. And like the background refresh (step 12), it lives only in
+//   this process: if the API stops right now, the call is lost (the 30 s still applies).
+//   The .catch is right here, so the promise can never become an "unhandled rejection".
+function revalidateWebCache(log: Log): void {
+  void webCache
+    .revalidateEventsPages()
+    .then((sent) => {
+      if (sent) log.debug("web cache revalidated: tag events");
+    })
+    .catch((err: unknown) => {
+      log.warn({ err }, "web cache revalidate failed: /events on the web server may be stale for up to 30 s");
+    });
 }
 
 // Make every reader use a new, empty cache key ("start a new generation").
