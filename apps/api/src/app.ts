@@ -4,6 +4,7 @@ import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/a
 import Fastify, { type FastifyError } from "fastify";
 import { env } from "./config/env";
 import { trustProxyHops } from "./config/trust-proxy";
+import { addNoStoreDefault } from "./http/no-store";
 import { pingDb, pingRedis } from "./queries/health";
 import { createContext } from "./trpc/context";
 import { appRouter, type AppRouter } from "./trpc/router";
@@ -45,6 +46,11 @@ export async function buildApp() {
     //     Locally TRUST_PROXY_HOPS is 0, so nothing changes: trust nobody (see ./config/trust-proxy.ts).
     trustProxy: trustProxyHops(env.TRUST_PROXY_HOPS),
   });
+
+  // 1c. Privacy: "Cache-Control: no-store" on every response by default. tRPC responses can contain
+  //     user data, so shared caches (CloudFront, proxies) must never store them. Added FIRST, so it
+  //     also covers the plugins below (see ./http/no-store.ts).
+  addNoStoreDefault(app);
 
   // @concept: cors
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the

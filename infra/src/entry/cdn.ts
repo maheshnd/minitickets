@@ -1,7 +1,8 @@
 // LAYER: cdn (part of the entry layer)
 // NEEDS (inputs):   albDnsName                           <- from alb
 //                   originHeaderName, originHeaderValue  <- from origin-secret
-// CREATES:          CloudFront distribution (HTTPS on *.cloudfront.net, 3 cache behaviors)
+// CREATES:          CloudFront distribution (HTTPS on *.cloudfront.net, 4 cache behaviors)
+//                   1 cache policy for the /events page (Step 9b)
 // GIVES (outputs):  appUrl -> used by the api task (WEB_ORIGIN) and as a stack output
 //                             (the address you open in the browser)
 //
@@ -48,6 +49,76 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
 
   // 2. The id of our one origin. Every cache behavior points at it by this name.
   const albOriginId = "alb";
+
+  // 2b. Our own cache policy for the /events PAGE (Step 9b). No managed policy fits: we need a
+  //     cache key with exactly the query strings and headers listed below.
+  //
+  //     HOW LONG: the web app decides, with its Cache-Control header (apps/web/next.config.ts):
+  //       "public, max-age=0, s-maxage=30, stale-while-revalidate=300"
+  //       = CloudFront keeps the page 30 s; then, for up to 5 more minutes, it hands out the old
+  //         copy once while it fetches a new one in the background. The browser keeps no copy.
+  //     The TTLs here are only the edges of what that header may do:
+  //     - minTtl 0: CloudFront RESPECTS no-store/private. With minTtl > 0 it would store even
+  //       responses marked no-store (AWS docs, "Manage how long content stays in the cache"),
+  //       e.g. Next's RSC payloads and error pages below.
+  //     - defaultTtl 0: a response WITHOUT Cache-Control is not stored. Example: Next's 307 that
+  //       fixes a missing `_rsc`. Nothing gets cached by accident; if the web app ever stops sending
+  //       its header, the page is simply not cached (fails closed, never open).
+  //     - maxTtl 330: an upper bound on s-maxage, AND the end of the stale-while-revalidate window
+  //       (CloudFront serves stale content only until maxTtl). 330 = 30 s fresh + 300 s stale.
+  //
+  //     WHAT MAKES TWO REQUESTS "THE SAME" (the cache key). Everything in it is also passed on
+  //     to the web app; everything else is NOT (there is no origin request policy on /events).
+  const eventsPagePolicy = new aws.cloudfront.CachePolicy(`${prefix}-events-page`, {
+    name: `${prefix}-events-page`,
+    comment: "minitickets /events page: key = venue/from/to + Next.js RSC headers, no cookies",
+    minTtl: 0,
+    defaultTtl: 0,
+    maxTtl: 330,
+    parametersInCacheKeyAndForwardedToOrigin: {
+      // a. Query strings: ONLY the three filters the page reads (plus `_rsc`, see c).
+      //    Everything else is dropped from the key AND from the request to the web app: a link with
+      //    ?utm_source=newsletter (or ?x=<random>) gets the SAME cached copy as the plain URL.
+      //    Without this list every junk parameter would make a new cache entry and a new render
+      //    (key explosion, as in Step 8 for Redis). The filter values themselves are free text,
+      //    so ?venue=<random> still makes new entries; each one is a normal, rate-limitable request.
+      queryStringsConfig: {
+        queryStringBehavior: "whitelist",
+        queryStrings: { items: ["venue", "from", "to", "_rsc"] },
+      },
+      // b. Cookies: none in the key and none passed on. The HTML is the same for every visitor
+      //    (checked: logged-in and logged-out HTML differ only in a render timestamp; the header's
+      //    "Signed in as" comes from the browser's own auth.me call, after the page loads).
+      //    Not passing the cookie on is what KEEPS it that way: the web app cannot render anything
+      //    per user here, because it never sees who the user is.
+      cookiesConfig: { cookieBehavior: "none" },
+      // c. THE RSC TRAP. Next.js uses the SAME URL for two different answers:
+      //    - a normal visit (typing the URL, a reload) gets the full HTML page;
+      //    - a client-side navigation (clicking a <Link>) sends "RSC: 1" and gets an RSC payload
+      //      (React's own format, text/x-component), not HTML.
+      //    Next marks this with "Vary: rsc, next-router-state-tree, ...", but CloudFront IGNORES Vary:
+      //    it only looks at its cache key. If the key were only the URL, a stored HTML page could be
+      //    handed to a navigation (the router gets HTML it cannot read) or a stored RSC payload to a
+      //    visitor (the browser shows raw RSC text). So the headers Next varies on go INTO the key:
+      //    an HTML request (none of them) and an RSC request never share an entry.
+      //    The RSC answers are never stored anyway: Next sends "private, no-store" for them (the
+      //    web app's header rule skips requests with an RSC header), and minTtl 0 respects that.
+      //    Why `_rsc` and Next-Url too: Next 16 checks that `_rsc` is a hash of these headers and
+      //    answers a 307 to the URL with the right `_rsc` when it is missing or wrong. If CloudFront
+      //    dropped `_rsc` or one of the headers, the 307 target would lose it again: a redirect loop
+      //    on every client-side navigation to /events.
+      headersConfig: {
+        headerBehavior: "whitelist",
+        headers: {
+          items: ["RSC", "Next-Router-State-Tree", "Next-Router-Prefetch", "Next-Router-Segment-Prefetch", "Next-Url"],
+        },
+      },
+      // d. Accept-Encoding, normalised by CloudFront to gzip / br / none: a compressed copy is never
+      //    sent to a browser that cannot unpack it, and `compress: true` on the behavior works.
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+    },
+  });
 
   // @concept: cloudfront
   // 3. The distribution
@@ -125,11 +196,41 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
         cachePolicyId: cachingDisabled.id,
         originRequestPolicyId: allViewer.id,
       },
+      {
+        // /events: the public events page, cached at the edge with the policy from 2b (Step 9b).
+        // The pattern has no wildcard: it matches the path "/events" only (query strings are not
+        // part of the path). /events/ (Next redirects it) and any future /events/<id> page fall
+        // through to the default behavior, i.e. are not cached.
+        // GET and HEAD only, like every page. NO origin request policy: the web app receives only
+        // what is in the cache key (no cookies, no other headers), so its answer can only depend
+        // on what the key holds.
+        //
+        // A NEW EVENT reaches visitors here after at most ~30 s on a busy page (the cached copy's
+        // s-maxage); on a quiet page the first visitor within the next 5 min can get the old copy
+        // once (stale-while-revalidate). events.create fixes the layers below at once (Redis
+        // generation bump, then the Next.js revalidate hook), so this 30 s is then the whole delay.
+        // (On AWS the revalidate hook is not wired up yet, so the web app's 30 s data cache adds to it.)
+        // Not built, on purpose: a CloudFront INVALIDATION from events.create
+        // (CreateInvalidation for "/events*"): the first 1,000 paths a month are free, then
+        // $0.005 per path; it takes from seconds to a few minutes to reach every edge; it needs
+        // IAM rights + the AWS SDK in the api task; and it can fail like any call. A short TTL costs
+        // nothing, needs no code, and its delay (30 s) is known and bounded. Events are created
+        // rarely and nobody is harmed by seeing a new one 30 s late.
+        pathPattern: "/events",
+        targetOriginId: albOriginId,
+        viewerProtocolPolicy: "redirect-to-https",
+        allowedMethods: ["GET", "HEAD"],
+        cachedMethods: ["GET", "HEAD"],
+        compress: true,
+        cachePolicyId: eventsPagePolicy.id,
+      },
     ],
 
     // 3e. Default behavior (*): everything else = the pages.
     //     Pages are dynamic for now (the header shows who is logged in), so never cache them, and
-    //     pass the cookie on. GET and HEAD only: pages are only read. Every write goes through
+    //     pass the cookie on. This includes /dashboard and /admin/*, which must never be shared
+    //     (the web app also marks them "private, no-store"). Only /events (above) is cached.
+    //     GET and HEAD only: pages are only read. Every write goes through
     //     /trpc/*, so a POST to a page is refused at the edge and never reaches the ALB.
     defaultCacheBehavior: {
       targetOriginId: albOriginId,
