@@ -1,10 +1,13 @@
 // LAYER: cicd
-// NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish)
-//                   apiRepoArn, webRepoArn  <- from registry (the ONLY repos it may push to)
+// NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish / deploy)
+//                   apiRepoArn, webRepoArn  <- from registry (the ONLY repos it may push to / tag)
+//                   imageTagParameterArn    <- from release (the ONLY parameter CD may write)
 // CREATES:          1 IAM OIDC provider (trust GitHub's login tokens),
-//                   1 role "minitickets-dev-gh-publish" + its inline permission policy
-// GIVES (outputs):  publishRoleArn -> copied by hand into a GitHub repo variable,
-//                                     read by .github/workflows/cd.yml
+//                   1 role "minitickets-dev-gh-publish" + its inline permission policy,
+//                   1 role "minitickets-dev-gh-deploy" + its inline permission policy (Step 12b)
+// GIVES (outputs):  publishRoleArn -> copied by hand into the GitHub repo variable AWS_PUBLISH_ROLE_ARN
+//                   deployRoleArn  -> copied by hand into the GitHub repo variable AWS_DEPLOY_ROLE_ARN
+//                   (both read by .github/workflows/cd.yml)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -25,8 +28,11 @@ import { tagsFor } from "./tags";
 //   GitHub job ◀── temporary credentials (1 h) ── AWS STS
 //   GitHub job ── docker push ──▶ ECR (only our 2 repos)
 //
-// Only PUBLISHING lives here. A later deploy step gets its OWN role (least privilege): the
-// role that builds and pushes images must not also be able to change what runs in ECS.
+// TWO roles, one per job (least privilege):
+//   publish role: build + push images. Runs on every push to main, with no human in the loop.
+//   deploy role:  `pulumi up` + migrate + roll the services. Only for jobs a human APPROVED.
+// The job that builds images (and runs `pnpm install`, i.e. lots of third-party code) must not
+// also be able to change what runs in AWS.
 
 const prefix = "minitickets-dev";
 
@@ -38,10 +44,12 @@ export interface CicdInputs {
   githubSubjectPrefix: string;
   apiRepoArn: pulumi.Input<string>;
   webRepoArn: pulumi.Input<string>;
+  imageTagParameterArn: pulumi.Input<string>;
 }
 
 export interface CicdOutputs {
   publishRoleArn: pulumi.Output<string>;
+  deployRoleArn: pulumi.Output<string>;
 }
 
 export function createCicd(inputs: CicdInputs): CicdOutputs {
@@ -72,8 +80,8 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //    The part before ":ref:..." is the "subject prefix" (Pulumi config githubSubjectPrefix).
   //    Find it with:  gh api repos/<owner>/<repo>/actions/oidc/customization/sub
   //      -> "sub_claim_prefix": "repo:maheshnd@63289193/minitickets@1412723955"
-  //    (cd.yml has no `environment:`; with one, GitHub would write "...:environment:<name>"
-  //    instead and this role would refuse the job.)
+  //    (The publish job has no `environment:`; with one, GitHub would write "...:environment:<name>"
+  //    instead and this role would refuse the job. The deploy job HAS one: see step 8.)
   const allowedSubject = `${inputs.githubSubjectPrefix}:ref:refs/heads/main`;
 
   // ---------- Publish role ----------
@@ -175,10 +183,273 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
     }),
   });
 
-  // 7. Return the ARN only once the policy is attached (same idea as compute/iam.ts step 8).
-  //    WHY: someone copies this ARN into GitHub; a role without its policy would make the
-  //    first CD run fail with "not authorized".
+  // ---------- Deploy role (Step 12b) ----------
+  // TRUST POLICY (who can use it):
+  //   a GitHub Actions job of our repo that runs in the GitHub ENVIRONMENT "dev" (step 8b). That
+  //   environment has a required reviewer, so only a job a human approved gets that far.
+  // PERMISSION POLICY (what it can do): whatever `pulumi up` needs for OUR stack (it creates,
+  //   changes and deletes everything from the VPC to CloudFront), plus: write the deployed tag to
+  //   SSM, add the "deployed-<sha>" tag in ECR, run + watch the migration task. See step 10.
+  // USED BY: .github/workflows/cd.yml, job "deploy", step "Configure AWS credentials".
+
+  // 8. The trust policy. Same shape as step 4, with a different "sub".
+  //    8a. aud = sts.amazonaws.com: same as 4a.
+  //    8b. sub = <subject prefix>:environment:dev.
+  //        WHY not ":ref:refs/heads/main": a job that declares `environment: dev` gets the
+  //        ENVIRONMENT form of "sub" from GitHub, never the branch form. So this role can only be
+  //        used by jobs in the "dev" environment, and GitHub starts those only after the required
+  //        reviewer clicked "Approve" (set up in the repo settings, not here). An unapproved job,
+  //        the publish job, a pull request or a fork never gets this "sub".
+  //        LIMIT to know: "sub" names the environment, not the branch. Which branches may deploy to
+  //        "dev" is a setting of the environment ("Deployment branches"); cd.yml also only runs the
+  //        deploy job for main. The approval is the real gate.
+  // DEPENDS ON: provider.arn.
+  const deployTrustPolicy = pulumi.jsonStringify({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: { Federated: provider.arn },
+        Action: "sts:AssumeRoleWithWebIdentity",
+        Condition: {
+          StringEquals: {
+            [`${githubOidcHost}:aud`]: "sts.amazonaws.com",
+            [`${githubOidcHost}:sub`]: `${inputs.githubSubjectPrefix}:environment:dev`,
+          },
+        },
+      },
+    ],
+  });
+
+  // 9. The role itself.
+  //    maxSessionDuration 7200 s (2 hours, not 1): a deploy that turns everything on or off waits for
+  //    RDS (10-15 min) and, in CloudFront mode, for CloudFront (15-30 min), twice over in a two-phase
+  //    deploy. Credentials that die halfway through `pulumi up` would leave the stack half-changed.
+  // DEPENDS ON: deployTrustPolicy (so: the provider).
+  const deployRole = new aws.iam.Role(`${prefix}-gh-deploy`, {
+    name: `${prefix}-gh-deploy`,
+    description: "GitHub Actions (approved jobs in environment dev only): pulumi up, migrate, roll services",
+    assumeRolePolicy: deployTrustPolicy,
+    maxSessionDuration: 7200,
+    tags: tagsFor(`${prefix}-gh-deploy`),
+  });
+
+  // 10. The permission policy.
+  //     HONEST SUMMARY: this role is BROAD. `pulumi up` creates and deletes VPCs, databases, load
+  //     balancers, CloudFront distributions and IAM roles, and Pulumi does not know the ids of most
+  //     of them in advance (a new VPC gets a random id). Most of those services cannot be limited
+  //     to "only resources that will be ours" in a simple way, so statement 10a grants whole
+  //     services, on every resource in the account: an approved deploy job could also change or
+  //     delete things that are NOT ours, if this account holds other projects.
+  //     WHAT LIMITS IT:
+  //       - WHO: only an approved job in the "dev" environment of our repo (step 8).
+  //       - WHERE: only us-east-1 (10j). Global services (IAM, CloudFront, Budgets) are called
+  //         through us-east-1, so they still work.
+  //       - IAM (the dangerous one, 10c-10g): only roles named minitickets-dev-*, only passed to ECS
+  //         tasks, and only one AWS managed policy may be attached.
+  //       - Secrets (10b): only minitickets/* and the RDS-managed rds!* secrets.
+  //       - ECR and SSM (10h, 10i): only our 2 repositories and our 1 parameter.
+  //       - TIME: credentials last at most 2 hours (step 9).
+  //     WHAT IT DOES NOT STOP (be aware):
+  //       - PutRolePolicy cannot be limited by CONTENT: an approved job could write an inline policy
+  //         that gives a minitickets-dev-* role (even this one) more power. The proper fix is a
+  //         "permissions boundary" (a ceiling no inline policy can raise) or one AWS account per
+  //         environment. Not built in dev.
+  //       - It can READ the secrets it manages (Pulumi reads them back), e.g. the DB password.
+  //     The real protection is the approval: you see WHICH commit you approve.
+  // DEPENDS ON: deployRole, the 2 repo ARNs (registry), the parameter ARN (release), account + region.
+  const accountId = aws.getCallerIdentityOutput().accountId;
+  const region = aws.getRegionOutput().region;
+  const deployPolicy = new aws.iam.RolePolicy(`${prefix}-gh-deploy-policy`, {
+    name: "deploy",
+    role: deployRole.id,
+    policy: pulumi.jsonStringify({
+      Version: "2012-10-17",
+      Statement: [
+        // 10a. The services our stack is made of: network + security groups (ec2), ALB
+        //      (elasticloadbalancing), cluster/services/task definitions/run-task (ecs), Postgres
+        //      (rds), Valkey (elasticache), CloudFront, the certificate (acm), log groups (logs),
+        //      Service Connect's namespace (servicediscovery) and the budget.
+        //      ecs:* also covers what cd.yml does besides `pulumi up`: run-task (the migration),
+        //      describe-tasks / describe-services (what the `aws ecs wait ...` commands poll) and
+        //      update-service --force-new-deployment (Step 11h restart).
+        //      kms:DescribeKey: RDS checks the key of the secret it manages for us (read-only).
+        //      Resource "*": see the HONEST SUMMARY above.
+        {
+          Sid: "StackServices",
+          Effect: "Allow",
+          Action: [
+            "ec2:*",
+            "elasticloadbalancing:*",
+            "ecs:*",
+            "rds:*",
+            "elasticache:*",
+            "cloudfront:*",
+            "acm:*",
+            "logs:*",
+            "servicediscovery:*",
+            "budgets:*",
+            "kms:DescribeKey",
+          ],
+          Resource: "*",
+        },
+        // 10b. Secrets Manager, only our secrets: minitickets/* (redis-url, revalidate-secret, ...)
+        //      and rds!* (the master password secret that RDS creates for us; RDS creates it with
+        //      the CALLER's permissions, so this role needs CreateSecret on it).
+        {
+          Sid: "OurSecrets",
+          Effect: "Allow",
+          Action: "secretsmanager:*",
+          Resource: [
+            pulumi.interpolate`arn:aws:secretsmanager:${region}:${accountId}:secret:minitickets/*`,
+            pulumi.interpolate`arn:aws:secretsmanager:${region}:${accountId}:secret:rds!*`,
+          ],
+        },
+        // 10c. Read any role's details. Read-only; Pulumi reads the roles it manages, and ECS /
+        //      RDS look up their service-linked roles.
+        {
+          Sid: "ReadIam",
+          Effect: "Allow",
+          Action: ["iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListRoleTags"],
+          Resource: "*",
+        },
+        // 10d. Manage OUR roles only (execution roles, task role, publish role, this role): their
+        //      names all start with minitickets-dev-. AttachRolePolicy is NOT here (10e).
+        {
+          Sid: "ManageOurRoles",
+          Effect: "Allow",
+          Action: [
+            "iam:CreateRole",
+            "iam:DeleteRole",
+            "iam:UpdateRole",
+            "iam:UpdateRoleDescription",
+            "iam:UpdateAssumeRolePolicy",
+            "iam:TagRole",
+            "iam:UntagRole",
+            "iam:GetRolePolicy",
+            "iam:PutRolePolicy",
+            "iam:DeleteRolePolicy",
+            "iam:DetachRolePolicy",
+            "iam:ListInstanceProfilesForRole",
+          ],
+          Resource: pulumi.interpolate`arn:aws:iam::${accountId}:role/${prefix}-*`,
+        },
+        // 10e. Attach an AWS managed policy to our roles: ONLY AmazonECSTaskExecutionRolePolicy
+        //      (the one compute/iam.ts and web-iam.ts attach). WHY a condition: without it, this role
+        //      could attach AdministratorAccess to one of our roles in a single call.
+        {
+          Sid: "AttachOnlyEcsExecutionPolicy",
+          Effect: "Allow",
+          Action: "iam:AttachRolePolicy",
+          Resource: pulumi.interpolate`arn:aws:iam::${accountId}:role/${prefix}-*`,
+          Condition: {
+            ArnEquals: { "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" },
+          },
+        },
+        // 10f. PassRole: "hand one of our roles to ECS". Needed to register a task definition with
+        //      an execution / task role, and to run the migration task. Only to ECS tasks.
+        {
+          Sid: "PassOurRolesToEcsTasks",
+          Effect: "Allow",
+          Action: "iam:PassRole",
+          Resource: pulumi.interpolate`arn:aws:iam::${accountId}:role/${prefix}-*`,
+          Condition: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } },
+        },
+        // 10g. The GitHub OIDC provider (step 2) is part of the stack too, so Pulumi manages it.
+        //      Plus: let AWS create its own "service-linked roles" for ECS, the ALB, RDS and
+        //      ElastiCache, if the account does not have them yet (they usually exist already).
+        {
+          Sid: "GithubOidcProvider",
+          Effect: "Allow",
+          Action: [
+            "iam:GetOpenIDConnectProvider",
+            "iam:CreateOpenIDConnectProvider",
+            "iam:DeleteOpenIDConnectProvider",
+            "iam:TagOpenIDConnectProvider",
+            "iam:UntagOpenIDConnectProvider",
+            "iam:ListOpenIDConnectProviderTags",
+            "iam:UpdateOpenIDConnectProviderThumbprint",
+            "iam:AddClientIDToOpenIDConnectProvider",
+            "iam:RemoveClientIDFromOpenIDConnectProvider",
+          ],
+          Resource: pulumi.interpolate`arn:aws:iam::${accountId}:oidc-provider/${githubOidcHost}`,
+        },
+        {
+          Sid: "ServiceLinkedRoles",
+          Effect: "Allow",
+          Action: "iam:CreateServiceLinkedRole",
+          Resource: pulumi.interpolate`arn:aws:iam::${accountId}:role/aws-service-role/*`,
+          Condition: {
+            StringEquals: {
+              "iam:AWSServiceName": [
+                "ecs.amazonaws.com",
+                "elasticloadbalancing.amazonaws.com",
+                "rds.amazonaws.com",
+                "elasticache.amazonaws.com",
+              ],
+            },
+          },
+        },
+        // 10h. ECR, only our 2 repositories. Everything there, because Pulumi owns them (create,
+        //      lifecycle policy, delete). cd.yml uses: DescribeImages (does the tag exist?),
+        //      BatchGetImage + PutImage (add the tag "deployed-<sha>" to an existing image).
+        //      No GetAuthorizationToken: the deploy job never runs docker.
+        {
+          Sid: "OurEcrRepos",
+          Effect: "Allow",
+          Action: "ecr:*",
+          Resource: [inputs.apiRepoArn, inputs.webRepoArn],
+        },
+        // 10i. SSM, only our one parameter (release.ts): Pulumi manages it, cd.yml reads and writes
+        //      its value. GetParametersByPath is checked against the PATH (/minitickets/dev): that is
+        //      how Pulumi reads the value (release.ts step 3). DescribeParameters only lists names and
+        //      AWS accepts nothing but "*" for it.
+        {
+          Sid: "OurImageTagParameter",
+          Effect: "Allow",
+          Action: [
+            "ssm:GetParameter",
+            "ssm:GetParameters",
+            "ssm:PutParameter",
+            "ssm:DeleteParameter",
+            "ssm:AddTagsToResource",
+            "ssm:RemoveTagsFromResource",
+            "ssm:ListTagsForResource",
+          ],
+          Resource: inputs.imageTagParameterArn,
+        },
+        {
+          Sid: "ReadOurParameterPath",
+          Effect: "Allow",
+          Action: "ssm:GetParametersByPath",
+          Resource: pulumi.interpolate`arn:aws:ssm:${region}:${accountId}:parameter/minitickets/dev`,
+        },
+        {
+          Sid: "ListParameterNames",
+          Effect: "Allow",
+          Action: "ssm:DescribeParameters",
+          Resource: "*",
+        },
+        // 10j. A DENY beats every Allow above: nothing outside our region. WHY: 10a is broad; this at
+        //      least keeps a mistake (or a misuse) out of every other region of the account.
+        //      Global services (IAM, CloudFront, Budgets) send their requests to us-east-1, so they
+        //      still pass. If the stack ever moves region, change this together with aws:region.
+        {
+          Sid: "DenyOtherRegions",
+          Effect: "Deny",
+          Action: "*",
+          Resource: "*",
+          Condition: { StringNotEquals: { "aws:RequestedRegion": region } },
+        },
+      ],
+    }),
+  });
+
+  // 11. Return each ARN only once its policy is attached (same idea as compute/iam.ts step 8).
+  //     WHY: someone copies these ARNs into GitHub; a role without its policy would make the
+  //     first CD run fail with "not authorized".
   return {
     publishRoleArn: pulumi.all([publishRole.arn, publishPolicy.id]).apply(([arn]) => arn),
+    deployRoleArn: pulumi.all([deployRole.arn, deployPolicy.id]).apply(([arn]) => arn),
   };
 }

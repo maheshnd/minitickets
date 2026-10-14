@@ -11,7 +11,7 @@
 //                   serviceConnect     <- OPTIONAL, only when entry is on: WEB_INTERNAL_URL and the
 //                                         revalidate-secret ARN (Step 11h, compute/service-connect.ts)
 // CREATES:          ECS task definition minitickets-dev-api (one new revision per change)
-// GIVES (outputs):  taskDefinitionArn -> used by service, and by scripts/run-migrations.sh
+// GIVES (outputs):  taskDefinitionArn -> used by service (and cd.yml checks the service runs it)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -58,7 +58,8 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
 
   // 2. The task definition
   // WHAT: the recipe for one api container.
-  // WHY: the service (service.ts) and the migration task (scripts/run-migrations.sh) both run it.
+  // WHY: the service (service.ts) runs it. (Until Step 12b the migration borrowed it too; it now has
+  //      its own task definition, migration-task.ts, so its image can differ during a deploy.)
   // DEPENDS ON: both roles (iam), the log group (logs), the image, and the data layer values.
   const taskDefinition = new aws.ecs.TaskDefinition(`${prefix}-api-task`, {
     family: `${prefix}-api`,

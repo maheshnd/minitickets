@@ -1,14 +1,20 @@
 # Settings for the "dev" stack. No secrets here, so it is safe to commit.
+#
+# SOURCE OF TRUTH (Step 12b): this COMMITTED file decides what exists on AWS (the switches dataEnabled,
+# computeEnabled, entryEnabled, cdnEnabled and domainName). To turn the environment on or off: change
+# it here, commit, push, approve the CD deploy job. Never `pulumi up` locally with uncommitted changes
+# to this file: the next CD run applies the committed file and undoes them.
+# Not here on purpose:
+#   aws:profile  -> it exists only on one laptop and would break CI. Locally: export AWS_PROFILE=ticketlite
+#   image tags   -> the deployed tag lives in SSM /minitickets/dev/image-tag, written by CD (infra/src/release.ts).
+#                   apiImageTag / webImageTag here would OVERRIDE it: emergency use only, never commit them.
 config:
   aws:region: us-east-1
   minitickets:alertEmail:
     secure: AAABAEzBWrcL/MH3pScUxXVexOL6r9IVHtka45kVGj1sh1ZR72EgTkeyXU9r6Cm4ScDy/+p1+iTP3nAK040=
-  aws:profile: ticketlite
   minitickets:dataEnabled: "false"
   minitickets:computeEnabled: "false"
   minitickets:entryEnabled: "false"
-  minitickets:apiImageTag: 8510e1f
-  minitickets:webImageTag: 8510e1f
   minitickets:cdnEnabled: "false"
   minitickets:domainName: minitickets.theversehub.in
   minitickets:githubSubjectPrefix: repo:maheshnd@63289193/minitickets@1412723955

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # @concept: migrations
 # Runs the database migrations on AWS as a one-off ECS task, waits for it, and reports.
-# Run from anywhere:  pnpm infra:migrate
+# Run from anywhere:  pnpm infra:migrate   (locally: export AWS_PROFILE=ticketlite first)
+# CD runs the SAME script between its two phases (.github/workflows/cd.yml, Step 12b).
 # Needs the data AND compute layers on (the cluster and task definition are part of compute).
 # Explained in docs/17-infra-ecs-api.md.
 
@@ -12,12 +13,12 @@ set -euo pipefail
 # 2. WHAT: work from the repo root, wherever the script was started.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# 3. WHAT: use the same AWS profile and region as Pulumi, unless the caller already set them.
-#    WHY: the task must run in the account Pulumi created everything in (same as push-images.sh).
+# 3. WHAT: use the same region as Pulumi, unless the caller already set it. The AWS credentials come
+#    from the environment: locally `export AWS_PROFILE=ticketlite`, in CD the OIDC role.
+#    WHY not from Pulumi config: since Step 12b the profile is not in Pulumi.dev.yaml (it exists only
+#    on one laptop and would break CD). Same as push-images.sh.
 cd "$ROOT/infra"
-export AWS_PROFILE="${AWS_PROFILE:-$(pulumi config get aws:profile 2>/dev/null || true)}"
 export AWS_REGION="${AWS_REGION:-$(pulumi config get aws:region 2>/dev/null || echo us-east-1)}"
-if [ -z "$AWS_PROFILE" ]; then unset AWS_PROFILE; fi
 
 # 4. WHAT: check the compute layer is on. Its cluster name is null (or missing) when it is off.
 #    "|| true": a missing output must reach our clear message below, not stop the script.
@@ -31,17 +32,20 @@ fi
 # 5. WHAT: read the rest from the Pulumi stack outputs.
 #    WHY: Pulumi is the single source of truth; nothing is typed here by hand.
 #    publicSubnetIds is a JSON list; tr turns ["a","b"] into a,b for the AWS CLI.
-TASK_DEF="$(pulumi stack output apiTaskDefinitionArn)"
+TASK_DEF="$(pulumi stack output migrationTaskDefinitionArn)"
 LOG_GROUP="$(pulumi stack output apiLogGroup)"
 SUBNETS="$(pulumi stack output publicSubnetIds --json | tr -d '[]" \n')"
 API_SG="$(pulumi stack output apiSgId)"
 cd "$ROOT"
 
 # @concept: fargate-spot
-# 6. WHAT: start ONE task from the api task definition, but replace its command with the
-#    migration runner. Same image, same secrets, same subnets and security group as the api.
-#    WHY the same task definition: the migration must use exactly the code (and SQL files) of
-#    the image that is deployed, and it needs the same DB_* settings and network access.
+# 6. WHAT: start ONE task from the migration task definition (infra/src/compute/migration-task.ts):
+#    the api image, command `node dist/migrate.js`, the DB settings, in the api's subnets and
+#    security group (the database lets in only that group).
+#    WHICH image: normally the deployed tag (the same code as the api). During a CD deploy, phase A
+#    points it at the NEW image first, so the new code's SQL files run BEFORE the services roll.
+#    (Until Step 12b this borrowed the api task definition with a command override; its own task
+#    definition is what lets its image differ from the api's.)
 #    --launch-type FARGATE (not Spot): a migration must not be interrupted halfway. It runs
 #    for seconds, so the price difference is nothing.
 #    --started-by: a label, so this task is easy to spot in the console.
@@ -51,7 +55,6 @@ TASK_ARN="$(aws ecs run-task \
   --task-definition "$TASK_DEF" \
   --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$API_SG],assignPublicIp=ENABLED}" \
-  --overrides '{"containerOverrides":[{"name":"api","command":["node","dist/migrate.js"]}]}' \
   --started-by migrate \
   --query 'tasks[0].taskArn' --output text)"
 
@@ -75,11 +78,12 @@ STOPPED_REASON="$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN
   --query 'tasks[0].stoppedReason' --output text)"
 
 # 9. WHAT: print the last 20 log lines of this task.
-#    WHY: the awslogs stream name is <prefix>/<container>/<task id> (see task.ts), so we can
-#    find exactly this run's output. If the container never started, there is no stream.
+#    WHY: the awslogs stream name is <prefix>/<container>/<task id>, here migrate/migrate/<task id>
+#    (migration-task.ts 2i), so we can find exactly this run's output. If the container never
+#    started, there is no stream.
 echo
-echo "Last log lines (stream api/api/$TASK_ID):"
-aws logs get-log-events --log-group-name "$LOG_GROUP" --log-stream-name "api/api/$TASK_ID" \
+echo "Last log lines (stream migrate/migrate/$TASK_ID):"
+aws logs get-log-events --log-group-name "$LOG_GROUP" --log-stream-name "migrate/migrate/$TASK_ID" \
   --limit 20 --query 'events[].[message]' --output text \
   || echo "  (no logs: the container probably never started)"
 

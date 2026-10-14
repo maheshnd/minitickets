@@ -41,8 +41,12 @@ pnpm docs:history handbook files with last change (from git); --since <commit> f
 pnpm db:up        start Postgres + Redis in Docker (waits until healthy); db:down stops it
 pnpm --filter @minitickets/api db:generate / db:migrate   create / apply SQL migrations
 pnpm user:make-admin <email>   make an existing (signed-up) user an admin (no UI for roles)
+export AWS_PROFILE=ticketlite  once per terminal, before any aws / pulumi / infra:* command
 cd infra && pulumi preview   show what infra would change (read-only). The owner runs `pulumi up`.
 ```
+
+AWS credentials come from the environment (`AWS_PROFILE`), never from `infra/Pulumi.dev.yaml`: a
+profile name there exists only on one laptop and breaks CD.
 
 Env files: root `.env` (Docker), `apps/api/.env` and `apps/web/.env.local`, both copied from their `.env.example`.
 
@@ -152,6 +156,13 @@ Every commit that changes anything in `docs/handbook/` adds an entry at the TOP 
 - Never commit or stage. Leave changes for the user to review, and suggest a commit message.
 - AWS / Pulumi: use the owner's existing AWS CLI profile and Pulumi login. Never print credentials.
   You may run `pulumi preview`. NEVER run `pulumi up` or `pulumi destroy`: the owner runs those.
+- The environment's shape (dataEnabled, computeEnabled, entryEnabled, cdnEnabled, domainName) is the
+  COMMITTED `infra/Pulumi.dev.yaml`; the deployed image tag is SSM `/minitickets/dev/image-tag`,
+  written only by CD. Never run `pulumi up` locally with uncommitted config: the next CD deploy
+  applies the committed file and undoes it. To turn the environment on or off: change the file,
+  commit, push, approve the CD deploy job. Never commit `apiImageTag`/`webImageTag` (emergency
+  overrides) or `migrationImageTag` (set only by CD with `--config`). `pulumi preview --config ...`
+  also WRITES that config into the file: back it up and restore it afterwards.
 
 - Never kill or restart processes you did not start. If a port is busy, use another port
   for your own test instance.

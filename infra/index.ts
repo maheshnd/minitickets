@@ -2,6 +2,14 @@
 // Entry point of the Pulumi program. This is the ONLY file that connects layers:
 // each layer is a function with typed inputs and outputs, and the lines below pass the
 // outputs of one layer into the inputs of the next. Read top to bottom = dependency order.
+//
+// SOURCE OF TRUTH (Step 12b): what this program builds is decided by the COMMITTED Pulumi.dev.yaml
+// (the switches dataEnabled, computeEnabled, entryEnabled, cdnEnabled and domainName), and which
+// image runs by the SSM parameter /minitickets/dev/image-tag (src/release.ts), written by CD.
+//   To turn the environment on or off: edit Pulumi.dev.yaml (e.g. `pulumi config set computeEnabled
+//   true`), COMMIT and PUSH. CD (.github/workflows/cd.yml) runs `pulumi up` after you approve it.
+//   NEVER run `pulumi up` locally with uncommitted config: the next CD run would apply the committed
+//   file again and undo it (config drift). `pulumi preview` is always fine.
 import * as pulumi from "@pulumi/pulumi";
 import { createNetwork } from "./src/network";
 import { createSecurityGroups } from "./src/security";
@@ -10,11 +18,14 @@ import { createPostgres } from "./src/data/postgres";
 import { createCache } from "./src/data/cache";
 import { createSecrets } from "./src/data/secrets";
 import { createRegistry } from "./src/registry";
+import { createRelease, readDeployedImageTag } from "./src/release";
+import { chooseImageTags } from "./src/image-tag";
 import { createCicd } from "./src/cicd";
 import { createLogs } from "./src/compute/logs";
 import { createCluster } from "./src/compute/cluster";
 import { createIamRoles } from "./src/compute/iam";
 import { createApiTask } from "./src/compute/task";
+import { createMigrationTask } from "./src/compute/migration-task";
 import { createApiService } from "./src/compute/service";
 import { createAlb } from "./src/entry/alb";
 import { createTargetGroups } from "./src/entry/target-groups";
@@ -106,8 +117,13 @@ const secrets = cache
 //    The push script (scripts/push-images.sh) reads its two URLs from the stack outputs.
 const registry = createRegistry();
 
-// 8b. CI/CD (GitHub OIDC + publish role). Needs: the two repo ARNs (registry), because the role
-//     may push to exactly those, and which GitHub repo may use it (config). Always on: IAM is free.
+// 8a. Release (Step 12b). Needs: nothing. Always on (a standard SSM parameter is free). The ONE record
+//     of which image tag is deployed. Pulumi only creates it; CD writes its value (src/release.ts).
+const release = createRelease();
+
+// 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: the two repo ARNs (registry), because
+//     the roles may push to / tag exactly those, the parameter ARN (release, 8a), the only parameter
+//     the deploy role may write, and which GitHub repo may use them (config). Always on: IAM is free.
 //     require() stops with a clear error if it is missing: a wrong or empty value would
 //     trust the wrong repo (or none). The prefix holds the owner and repo names AND their IDs
 //     (GitHub's immutable subject format, see cicd.ts step 3). Find and set it with:
@@ -117,6 +133,7 @@ const cicd = createCicd({
   githubSubjectPrefix: config.require("githubSubjectPrefix"),
   apiRepoArn: registry.apiRepoArn,
   webRepoArn: registry.webRepoArn,
+  imageTagParameterArn: release.parameterArn,
 });
 
 // 9. The compute layer ON/OFF switch (see docs/17-infra-ecs-api.md).
@@ -136,11 +153,34 @@ if (computeEnabled && !dataEnabled) {
 }
 
 // @concept: immutable-image-tags
-// 9b. Which image to run: a git SHA tag pushed by `pnpm images:push`. No default on purpose:
-//     a "latest" default would hide WHICH code runs. require() stops with a clear error if it
-//     is missing, but only when compute is on (it is not needed otherwise).
-//     Set it with: pulumi config set apiImageTag <sha>
-const apiImageTag = computeEnabled ? config.require("apiImageTag") : undefined;
+// 9b. Which image tags to run (Step 12b, src/image-tag.ts). Only when compute is on.
+//     api + web: the tag CD wrote to SSM /minitickets/dev/image-tag (src/release.ts).
+//       Config apiImageTag / webImageTag, if set, OVERRIDE it. EMERGENCY / MANUAL USE ONLY (e.g. CD is
+//       broken): never commit them, or every CD deploy would keep running that old tag.
+//     migration: config migrationImageTag, set ONLY by CD on the command line (cd.yml phase A:
+//       `pulumi up --config migrationImageTag=<new>`), never committed. Unset = the api tag.
+//     No tag anywhere: chooseImageTags stops with a clear message. No "latest" default on purpose:
+//     it would hide WHICH code runs.
+const apiImageTagOverride = config.get("apiImageTag");
+const webImageTagOverride = config.get("webImageTag");
+for (const [key, value] of [["apiImageTag", apiImageTagOverride], ["webImageTag", webImageTagOverride]]) {
+  if (computeEnabled && value) {
+    pulumi.log.warn(
+      `${key}=${value} is set in config and overrides the deployed tag in SSM. Emergency use only: ` +
+        `remove it with "pulumi config rm ${key}" once CD works again.`,
+    );
+  }
+}
+const imageTags = computeEnabled
+  ? readDeployedImageTag().apply((deployedTag) =>
+      chooseImageTags({
+        deployedTag,
+        apiImageTag: apiImageTagOverride,
+        webImageTag: webImageTagOverride,
+        migrationImageTag: config.get("migrationImageTag"),
+      }),
+    )
+  : undefined;
 
 // 10. The entry layer ON/OFF switch (see docs/18-infra-alb-web.md and docs/19-infra-cloudfront.md).
 //     WHAT it adds: the load balancer (ALB, target groups, listener), CloudFront in front of it
@@ -181,10 +221,6 @@ if (entryEnabled && !cdnEnabled && !certificate) {
       "Run: pulumi config set domainName <your.domain> (or set cdnEnabled true).",
   );
 }
-
-// 10b. Which web image to run: a git SHA tag, like apiImageTag (9b). Required only when entry is on.
-//      Set it with: pulumi config set webImageTag <sha>
-const webImageTag = entryEnabled ? config.require("webImageTag") : undefined;
 
 // 11. Api log group. Needs: nothing. Only the compute switch.
 const logs = computeEnabled ? createLogs("api") : undefined;
@@ -298,9 +334,9 @@ const serviceConnect = entryEnabled
 //     With entry on it also gets the revalidate hook (Step 11h): the web server's Service Connect
 //     name and the shared secret. With entry off serviceConnect is undefined: hook off, small size.
 const apiTask =
-  apiImageTag && iam && logs && postgres && secrets
+  imageTags && iam && logs && postgres && secrets
     ? createApiTask({
-        image: pulumi.interpolate`${registry.apiRepoUrl}:${apiImageTag}`,
+        image: pulumi.interpolate`${registry.apiRepoUrl}:${imageTags.api}`,
         executionRoleArn: iam.executionRoleArn,
         taskRoleArn: iam.taskRoleArn,
         logGroupName: logs.logGroupName,
@@ -313,6 +349,22 @@ const apiTask =
         serviceConnect: revalidateSecret
           ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
           : undefined,
+      })
+    : undefined;
+
+// 19b. Migration task definition (Step 12b). Needs: the api image with the MIGRATION tag (9b), the api
+//      execution role (iam: it may read the DB secret), the api log group and the data layer values.
+//      Its own task definition, so CD can point it at the NEW image while the services keep the
+//      current one (src/compute/migration-task.ts). Run by scripts/run-migrations.sh.
+const migrationTask =
+  imageTags && iam && logs && postgres
+    ? createMigrationTask({
+        image: pulumi.interpolate`${registry.apiRepoUrl}:${imageTags.migration}`,
+        executionRoleArn: iam.executionRoleArn,
+        logGroupName: logs.logGroupName,
+        dbHost: postgres.address,
+        dbPort: postgres.port,
+        dbMasterSecretArn: postgres.masterSecretArn,
       })
     : undefined;
 
@@ -345,9 +397,9 @@ const webIam = revalidateSecret
 // 23. Web task definition. Needs: the web image (registry + tag), the web role, the web log group
 //     and the revalidate secret. API_INTERNAL_URL is the api's Service Connect name (service.ts 1g).
 const webTask =
-  webImageTag && webIam && webLogs && revalidateSecret
+  imageTags && webIam && webLogs && revalidateSecret
     ? createWebTask({
-        image: pulumi.interpolate`${registry.webRepoUrl}:${webImageTag}`,
+        image: pulumi.interpolate`${registry.webRepoUrl}:${imageTags.web}`,
         executionRoleArn: webIam.executionRoleArn,
         logGroupName: webLogs.logGroupName,
         apiInternalUrl: "http://api:4000",
@@ -361,8 +413,9 @@ const webTask =
 //     the first web task starts (web-service.ts 1f).
 //     ONE-TIME REDEPLOY: the api service is created first, so its first tasks start before "web"
 //     exists and cannot call the revalidate hook yet (new events then show up after <= 30 s, the
-//     web cache's own lifetime). After the first `pulumi up` with entry on, restart the api once:
+//     web cache's own lifetime). After the first `pulumi up` with entry on, the api is restarted once:
 //       aws ecs update-service --cluster minitickets-dev --service minitickets-dev-api --force-new-deployment
+//     Since Step 12b CD does this by itself (cd.yml, when the web service did not exist before the run).
 //     Later deployments start with both names already in the namespace.
 const webService =
   cluster && webTask && routing && serviceConnect && apiService
@@ -402,8 +455,13 @@ export const redisUrlSecretArn = secrets?.redisUrlSecretArn ?? null;
 export const apiRepoUrl = registry.apiRepoUrl;
 export const webRepoUrl = registry.webRepoUrl;
 
-// 27b. CI/CD output: copy it into the GitHub repo variable AWS_PUBLISH_ROLE_ARN (cd.yml reads it).
+// 27b. CI/CD outputs: copy them into the GitHub repo variables AWS_PUBLISH_ROLE_ARN and
+//      AWS_DEPLOY_ROLE_ARN (cd.yml reads them).
 export const publishRoleArn = cicd.publishRoleArn;
+export const deployRoleArn = cicd.deployRoleArn;
+
+// 27c. Release output (Step 12b): the SSM parameter CD writes the deployed tag to.
+export const imageTagParameterName = release.parameterName;
 
 // 28. Compute layer outputs: names and ARNs for the deploy-day commands and the migration
 //     script. null when the layer is off (same reason as 26).
@@ -411,6 +469,11 @@ export const clusterName = cluster?.clusterName ?? null;
 export const apiServiceName = apiService?.serviceName ?? null;
 export const apiTaskDefinitionArn = apiTask?.taskDefinitionArn ?? null;
 export const apiLogGroup = logs?.logGroupName ?? null;
+// Step 12b: the migration's own task definition (scripts/run-migrations.sh), and the tags in use.
+// cd.yml compares each service's running task definition with apiTaskDefinitionArn /
+// webTaskDefinitionArn, to notice when ECS rolled a deploy back.
+export const migrationTaskDefinitionArn = migrationTask?.taskDefinitionArn ?? null;
+export const imageTagsInUse = imageTags ?? null;
 
 // 29. Entry layer outputs. appUrl is the address to open in the browser: https://<id>.cloudfront.net
 //     in CloudFront mode, https://<domainName> in ALB-only mode.
@@ -424,6 +487,7 @@ export const albDnsName = alb?.albDnsName ?? null;
 export const appDnsRecord =
   alb && httpsListener ? { name: domainName, type: "CNAME", value: alb.albDnsName } : null;
 export const webServiceName = webService?.serviceName ?? null;
+export const webTaskDefinitionArn = webTask?.taskDefinitionArn ?? null;
 export const webLogGroup = webLogs?.logGroupName ?? null;
 
 // 30. Certificate outputs (Step 11i, always on when domainName is set). The validation record is

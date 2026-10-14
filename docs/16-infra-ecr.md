@@ -162,7 +162,8 @@ cd infra && pulumi up
 # 2. Build for arm64 and push both images (you run this; needs Docker running and a clean git tree).
 pnpm images:push
 
-# 3. Verify. Use your AWS profile if it is not the default (the script reads it from Pulumi config).
+# 3. Verify. Set your AWS profile first if it is not the default: export AWS_PROFILE=ticketlite
+#    (Since Step 12b the profile is no longer in Pulumi config, so the script uses this too.)
 TAG=$(git rev-parse --short HEAD)
 for S in api web; do
   aws ecr describe-images --repository-name minitickets-dev-$S --image-ids imageTag=$TAG \

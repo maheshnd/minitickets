@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds the api and web images for ARM64 and pushes them to ECR.
-# Run from anywhere:  pnpm images:push
+# Run from anywhere:  pnpm images:push   (export AWS_PROFILE=ticketlite first)
+# Since Step 12b CD does this on every push to main (.github/workflows/cd.yml, job publish);
+# this script is for manual / emergency pushes.
 # Explained in docs/16-infra-ecr.md.
 
 # 1. WHAT: stop at the first error, on unset variables, and in failed pipes.
@@ -36,12 +38,12 @@ if [ "$HOST_ARCH" != "arm64" ] && [ "$HOST_ARCH" != "aarch64" ]; then
   echo "WARNING: this machine is $HOST_ARCH, not ARM. The ARM64 build will use emulation and be slower." >&2
 fi
 
-# 6. WHAT: use the same AWS profile and region as Pulumi, unless the caller already set them.
+# 6. WHAT: use the same region as Pulumi, unless the caller already set it. The AWS credentials
+#    come from the environment (export AWS_PROFILE=ticketlite), the same ones Pulumi uses.
 #    WHY: the images must go to the account that Pulumi created the repositories in.
+#    (Until Step 12b the profile was read from Pulumi config; it is no longer there, see Pulumi.dev.yaml.)
 cd "$ROOT/infra"
-export AWS_PROFILE="${AWS_PROFILE:-$(pulumi config get aws:profile 2>/dev/null || true)}"
 export AWS_REGION="${AWS_REGION:-$(pulumi config get aws:region 2>/dev/null || echo us-east-1)}"
-if [ -z "$AWS_PROFILE" ]; then unset AWS_PROFILE; fi
 
 # 7. WHAT: read the two repository URLs from the Pulumi stack outputs.
 #    WHY: Pulumi is the single source of truth for them; no URL is typed here by hand.
