@@ -12,9 +12,9 @@ config:
   aws:region: us-east-1
   minitickets:alertEmail:
     secure: AAABAEzBWrcL/MH3pScUxXVexOL6r9IVHtka45kVGj1sh1ZR72EgTkeyXU9r6Cm4ScDy/+p1+iTP3nAK040=
-  minitickets:dataEnabled: "false"
-  minitickets:computeEnabled: "false"
-  minitickets:entryEnabled: "false"
+  minitickets:dataEnabled: "true"
+  minitickets:computeEnabled: "true"
+  minitickets:entryEnabled: "true"
   minitickets:cdnEnabled: "false"
   minitickets:domainName: minitickets.theversehub.in
   minitickets:githubSubjectPrefix: repo:maheshnd@63289193/minitickets@1412723955
