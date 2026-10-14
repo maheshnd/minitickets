@@ -1,6 +1,44 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
+// HSTS (HTTP Strict Transport Security, Step 11i): the header
+//   Strict-Transport-Security: max-age=86400
+// tells the browser "for the next 86400 s (1 day), only ever talk to this host over https". After
+// one visit, the browser turns a typed http://… or an old http link into https BEFORE sending
+// anything, so nobody on the network (café wifi) can catch that first plain-http request and
+// answer it instead of us. The ALB's 301 redirect (infra/src/entry/https-listener.ts) alone cannot
+// do that: the plain request has already left the laptop when the redirect comes back.
+//
+// WHY start short (1 day): HSTS is a promise the browser holds us to. If HTTPS breaks (expired
+//   certificate, a wrong DNS record), browsers that saw the header REFUSE the site, with no "continue
+//   anyway" button, until max-age runs out. 1 day limits that damage while we learn. Once HTTPS has
+//   been stable for a while, raise it step by step (1 week, then 1 year).
+// WHY no "includeSubDomains": the header would then also cover *.minitickets.theversehub.in, which
+//   we do not run. Nothing to gain.
+// WHY no "preload": preload puts the domain on a list built INTO browsers. It needs a 1-year
+//   max-age, includeSubDomains, and must be sent by the parent domain (theversehub.in) for ALL its
+//   subdomains; and getting off the list again takes months. Far too big a promise for a dev app.
+//
+// When it is sent, and why each condition:
+//   1. production build only (NODE_ENV, read when `next build` runs): `next dev` never sends it.
+//   2. the request came over https: the ALB tells us in X-Forwarded-Proto. (Browsers ignore HSTS
+//      on plain http anyway, but sending it there would only confuse anyone reading the headers.)
+//      In CloudFront mode CloudFront talks http to the ALB, so the web app never sees "https" and
+//      sends no HSTS; that would be CloudFront's job (a response headers policy, not built yet).
+//   3. never for localhost: HSTS is per host name, for ALL ports. An entry for localhost would
+//      force https on every local project in that browser, which plain-http dev servers can't serve.
+const hstsRules =
+  process.env.NODE_ENV === "production"
+    ? [
+        {
+          source: "/:path*",
+          has: [{ type: "header" as const, key: "x-forwarded-proto", value: "https" }],
+          missing: [{ type: "host" as const, value: "localhost|127\\.0\\.0\\.1" }],
+          headers: [{ key: "Strict-Transport-Security", value: "max-age=86400" }],
+        },
+      ]
+    : [];
+
 const nextConfig: NextConfig = {
   // @concept: monorepo
   // @minitickets/shared ships TypeScript source (no build step), so Next must compile it too.
@@ -45,6 +83,9 @@ const nextConfig: NextConfig = {
         missing: [{ type: "header", key: "rsc" }],
         headers: [{ key: "Cache-Control", value: "public, max-age=0, s-maxage=30, stale-while-revalidate=300" }],
       },
+
+      // 3. HSTS on every path, only in production over https (see hstsRules at the top).
+      ...hstsRules,
     ];
   },
 };

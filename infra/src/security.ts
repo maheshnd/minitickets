@@ -1,8 +1,8 @@
 // LAYER: security
 // NEEDS (inputs):   vpcId <- from network
 // CREATES:          5 security groups (alb, web, api, db, redis), then 5 ingress rules
-//                   (alb 80 from CloudFront only, web 3000, api 4000, db 5432, redis 6379),
-//                   then 3 egress rules (alb, web, api)
+//                   (alb 80 from CloudFront only [only when cdnEnabled], web 3000, api 4000,
+//                   db 5432, redis 6379), then 3 egress rules (alb, web, api)
 // GIVES (outputs):  albSgId   -> used by alb (entry layer)
 //                   webSgId   -> used by web-service (web tasks)
 //                   apiSgId   -> used by service (api tasks)
@@ -32,6 +32,9 @@ const prefix = "minitickets-dev";
 
 export interface SecurityInputs {
   vpcId: pulumi.Input<string>;
+  // Step 11i: false = no CloudFront in front of the ALB, so rule 6 (CloudFront only) is left out.
+  // The ALB's doors for that mode are opened by the entry layer (entry/alb-public-ingress.ts).
+  cdnEnabled: boolean;
 }
 
 export interface SecurityOutputs {
@@ -121,18 +124,23 @@ export function createSecurityGroups(inputs: SecurityInputs): SecurityOutputs {
   //   size. AWS counts this list as 55, and a group may hold 60 inbound rules. That is one reason
   //   the old 443 rule is gone: nothing listens on 443 (CloudFront talks to the ALB on 80).
   //   Plain 0.0.0.0/0 rules for 80 and 443 are gone too: the internet may no longer call the ALB.
-  const cloudFrontPrefixList = aws.ec2.getManagedPrefixListOutput({
-    name: "com.amazonaws.global.cloudfront.origin-facing",
-  });
-  new aws.vpc.SecurityGroupIngressRule(`${prefix}-alb-in-80`, {
-    securityGroupId: albSg.id,
-    description: "HTTP from CloudFront only",
-    ipProtocol: "tcp",
-    fromPort: 80,
-    toPort: 80,
-    prefixListId: cloudFrontPrefixList.id,
-    tags: tagsFor(`${prefix}-alb-in-80`),
-  });
+  // Only in CloudFront mode (cdnEnabled, Step 11i). Without CloudFront, letting its IP ranges in
+  //   would only open a door nobody of ours uses (any CloudFront distribution, not just ours, uses
+  //   those ranges). Same name and settings as before, so with cdnEnabled = true nothing changes.
+  if (inputs.cdnEnabled) {
+    const cloudFrontPrefixList = aws.ec2.getManagedPrefixListOutput({
+      name: "com.amazonaws.global.cloudfront.origin-facing",
+    });
+    new aws.vpc.SecurityGroupIngressRule(`${prefix}-alb-in-80`, {
+      securityGroupId: albSg.id,
+      description: "HTTP from CloudFront only",
+      ipProtocol: "tcp",
+      fromPort: 80,
+      toPort: 80,
+      prefixListId: cloudFrontPrefixList.id,
+      tags: tagsFor(`${prefix}-alb-in-80`),
+    });
+  }
 
   // 7. (Removed in Step 11g: "alb: HTTPS 443 from the internet". See rule 6 for why.)
 

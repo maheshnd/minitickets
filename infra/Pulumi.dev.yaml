@@ -11,3 +11,5 @@ config:
   minitickets:webImageTag: 8510e1f
   minitickets:githubOwner: maheshnd
   minitickets:githubRepo: minitickets
+  minitickets:cdnEnabled: "false"
+  minitickets:domainName: minitickets.theversehub.in

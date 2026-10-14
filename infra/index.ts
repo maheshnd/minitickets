@@ -26,20 +26,45 @@ import { createWebTask } from "./src/compute/web-task";
 import { createWebService } from "./src/compute/web-service";
 import { createRevalidateSecret } from "./src/compute/revalidate-secret";
 import { createServiceConnect } from "./src/compute/service-connect";
+import { createCertificate } from "./src/certificate";
+import { createHttpsListener } from "./src/entry/https-listener";
+import { createAlbPublicIngress } from "./src/entry/alb-public-ingress";
+import { parseAllowedCidrs, parseDomainName, trustedProxyHops } from "./src/entry/mode";
 
 const config = new pulumi.Config();
+
+// 0. Entry mode (Step 11i, see src/entry/mode.ts). Read first: the security groups (2) need it.
+//    cdnEnabled: true (default) = CloudFront in front of the ALB, exactly as in Step 11g.
+//                false          = no CloudFront: the browser talks to the ALB over HTTPS on our own
+//                                 domain, with our own certificate (3b).
+//      pulumi config set cdnEnabled false
+//    Change it only while entryEnabled is false (src/entry/https-listener.ts says why).
+//    domainName: our own name, e.g. minitickets.theversehub.in. Needed for cdnEnabled = false.
+//      pulumi config set domainName minitickets.theversehub.in
+//    allowedCidrs: who may reach the ALB when cdnEnabled is false. Default: the whole internet.
+//      In dev you may limit it to your own IP:  pulumi config set --path 'allowedCidrs[0]' <ip>/32
+const cdnEnabled = config.getBoolean("cdnEnabled") ?? true;
+const domainName = parseDomainName(config.get("domainName"));
+const allowedCidrs = parseAllowedCidrs(config.getObject<unknown>("allowedCidrs"));
 
 // 1. Network. Needs: nothing. It is the base every other layer sits on.
 const network = createNetwork();
 
-// 2. Security groups. Needs: network.vpcId, because a security group belongs to one VPC.
-const security = createSecurityGroups({ vpcId: network.vpcId });
+// 2. Security groups. Needs: network.vpcId, because a security group belongs to one VPC, and the
+//    entry mode (0): the alb group's "CloudFront only" rule exists only in CloudFront mode.
+const security = createSecurityGroups({ vpcId: network.vpcId, cdnEnabled });
 
 // 3. Budget. Needs: only the alert email (from config). It is not connected to any
 //    other layer: it watches the whole AWS account.
 //    require() stops with a clear error if the email is missing, so we never create a
 //    budget that emails nobody. Set it with: pulumi config set alertEmail you@example.com
 createBudget({ alertEmail: config.require("alertEmail") });
+
+// 3b. Certificate (Step 11i). Needs: only domainName (0). Always on when domainName is set, NOT
+//     behind the entry switch: it is free, and DNS validation waits for a record you add by hand at
+//     your DNS provider. Created early, it is ISSUED long before deploy day (src/certificate.ts).
+//     The record to add: pulumi stack output certificateValidationRecord
+const certificate = domainName ? createCertificate({ domainName }) : undefined;
 
 // @concept: cost-switches
 // 4. The data layer ON/OFF switch (see docs/14-infra-data.md).
@@ -123,6 +148,9 @@ const apiImageTag = computeEnabled ? config.require("apiImageTag") : undefined;
 //     connects the api service to the ALB and gives the api its real WEB_ORIGIN.
 //     Since Step 11h also: Service Connect (namespace + 2 proxy-port rules) and the revalidate
 //     secret, so web and api can call each other privately (SSR and the revalidate hook).
+//     Since Step 11i, with cdnEnabled = false (0): NO CloudFront and no origin secret. Instead an
+//     HTTPS listener with our own certificate (3b), an http -> https redirect, and alb group rules
+//     for allowedCidrs.
 //     WHY one switch for both: web is useless without the ALB (its security group lets in only
 //     the ALB), and the ALB is useless without web (its default action sends pages there).
 //     WHY a switch at all: the ALB is billed every hour it exists, even with zero visitors.
@@ -141,6 +169,16 @@ if (entryEnabled && !(dataEnabled && computeEnabled)) {
       "balancer sends traffic to the api and web tasks, and the api needs Postgres and Valkey. " +
       "Run: pulumi config set dataEnabled true && pulumi config set computeEnabled true " +
       "(or set entryEnabled false).",
+  );
+}
+
+// 10a2. Without CloudFront the ALB itself serves HTTPS, and HTTPS needs a certificate for a name we
+//       own (3b). So cdnEnabled = false with entry on needs domainName.
+if (entryEnabled && !cdnEnabled && !certificate) {
+  throw new pulumi.RunError(
+    "entryEnabled is true and cdnEnabled is false, but domainName is not set. Without CloudFront " +
+      "the load balancer serves HTTPS itself and needs a certificate for your own domain. " +
+      "Run: pulumi config set domainName <your.domain> (or set cdnEnabled true).",
   );
 }
 
@@ -173,7 +211,8 @@ const iam =
     : undefined;
 
 // 14. Load balancer (entry). Needs: network.publicSubnetIds (an internet-facing ALB lives in the
-//     public subnets) and security.albSgId (its firewall: port 80 open only to CloudFront).
+//     public subnets) and security.albSgId (its firewall: port 80 open only to CloudFront, or, in
+//     ALB-only mode, 80 + 443 open to allowedCidrs (14b)).
 const alb = entryEnabled
   ? createAlb({
       publicSubnetIds: network.publicSubnetIds,
@@ -181,15 +220,22 @@ const alb = entryEnabled
     })
   : undefined;
 
+// 14b. ALB-only mode (Step 11i): open ports 80 and 443 of the alb group to allowedCidrs (0).
+//      Needs: security.albSgId. Only while the ALB exists (src/entry/alb-public-ingress.ts).
+if (alb && !cdnEnabled) {
+  createAlbPublicIngress({ albSgId: security.albSgId, allowedCidrs });
+}
+
 // 15. Target groups (entry). Needs: network.vpcId, because a target group belongs to one VPC.
 const targetGroups = entryEnabled ? createTargetGroups({ vpcId: network.vpcId }) : undefined;
 
-// 16. Origin secret (entry). Needs: nothing. The random X-Origin-Verify value that CloudFront
-//     sends (18) and the listener checks (17). See docs/19-infra-cloudfront.md.
-const originSecret = entryEnabled ? createOriginSecret() : undefined;
+// 16. Origin secret (entry, CloudFront mode only). Needs: nothing. The random X-Origin-Verify value
+//     that CloudFront sends (18) and the listener checks (17). See docs/19-infra-cloudfront.md.
+//     Without CloudFront nobody would send it, so it is not created (cdnEnabled = false).
+const originSecret = entryEnabled && cdnEnabled ? createOriginSecret() : undefined;
 
-// 17. Listener + 2 rules (entry). Needs: the ALB, both target groups and the origin secret.
-//     Default 403; secret header + /trpc/* -> api; secret header -> web.
+// 17. Listener + 2 rules (entry, CloudFront mode). Needs: the ALB, both target groups and the
+//     origin secret. Default 403; secret header + /trpc/* -> api; secret header -> web.
 //     It gives the two target group ARNs BACK, but only once each is attached to the ALB:
 //     ECS refuses to register a service in a target group that no load balancer uses yet.
 const listener =
@@ -203,8 +249,24 @@ const listener =
       })
     : undefined;
 
-// 18. CloudFront (entry). Needs: the ALB's DNS name (its origin) and the origin secret (the header
-//     it adds to every request). Gives appUrl, the public https address.
+// 17b. HTTPS listener (entry, ALB-only mode, Step 11i). Needs: the ALB, both target groups and the
+//      certificate (3b). :443 with the certificate (default -> web, /trpc/* -> api), :80 -> 301 to
+//      https. No secret header. Gives the target group ARNs back, like 17.
+const httpsListener =
+  alb && targetGroups && !cdnEnabled && certificate
+    ? createHttpsListener({
+        albArn: alb.albArn,
+        certificateArn: certificate.certificateArn,
+        apiTargetGroupArn: targetGroups.apiTargetGroupArn,
+        webTargetGroupArn: targetGroups.webTargetGroupArn,
+      })
+    : undefined;
+
+// 17c. Whichever of the two exists (never both): the services only need its target group ARNs.
+const routing = listener ?? httpsListener;
+
+// 18. CloudFront (entry, CloudFront mode). Needs: the ALB's DNS name (its origin) and the origin
+//     secret (the header it adds to every request). Gives appUrl, the public https address.
 const cdn =
   alb && originSecret
     ? createCdn({
@@ -213,6 +275,10 @@ const cdn =
         originHeaderValue: originSecret.headerValue,
       })
     : undefined;
+
+// 18a. The public https address of the app: CloudFront's in CloudFront mode, our own domain in
+//      ALB-only mode, nothing with entry off.
+const appUrlValue = cdn?.appUrl ?? (httpsListener ? `https://${domainName}` : undefined);
 
 // 18b. Service Connect (Step 11h). Needs: the api and web security groups (security), for the two
 //      proxy-port rules. Creates the Cloud Map namespace both services join. Only the entry switch:
@@ -223,10 +289,12 @@ const serviceConnect = entryEnabled
   : undefined;
 
 // 19. Api task definition. Needs: the image (registry + tag), both roles (iam), the log group
-//     (logs), the data layer's address and secret ARNs and, only when entry is on, appUrl (cdn).
+//     (logs), the data layer's address and secret ARNs and, only when entry is on, appUrl (18a).
 //     That is why it comes AFTER the entry layer since Step 11g.
 //     With entry off: WEB_ORIGIN keeps the placeholder and no proxy is trusted, exactly as in
 //     Step 11e. (.invalid is a top-level domain reserved for "never a real address".)
+//     TRUST_PROXY_HOPS = the number of our proxies in front of the api: 2 with CloudFront + ALB,
+//     1 with the ALB alone, 0 with entry off (src/entry/mode.ts says why one too many is unsafe).
 //     With entry on it also gets the revalidate hook (Step 11h): the web server's Service Connect
 //     name and the shared secret. With entry off serviceConnect is undefined: hook off, small size.
 const apiTask =
@@ -240,8 +308,8 @@ const apiTask =
         dbPort: postgres.port,
         dbMasterSecretArn: postgres.masterSecretArn,
         redisUrlSecretArn: secrets.redisUrlSecretArn,
-        webOrigin: cdn?.appUrl ?? "https://placeholder.invalid",
-        trustProxyHops: cdn ? 2 : 0,
+        webOrigin: appUrlValue ?? "https://placeholder.invalid",
+        trustProxyHops: trustedProxyHops({ entryEnabled, cdnEnabled }),
         serviceConnect: revalidateSecret
           ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
           : undefined,
@@ -249,8 +317,8 @@ const apiTask =
     : undefined;
 
 // 20. Api service. Needs: the cluster, the task definition, the public subnets (network), the
-//     api security group (security) and, only when entry is on, the api target group (listener)
-//     and the Service Connect namespace (18b).
+//     api security group (security) and, only when entry is on, the api target group (routing,
+//     17c: from whichever listener exists) and the Service Connect namespace (18b).
 //     With entry off, both are undefined and the service is exactly the Step 11e one
 //     (no load balancer, no Service Connect).
 const apiService =
@@ -260,7 +328,7 @@ const apiService =
         taskDefinitionArn: apiTask.taskDefinitionArn,
         publicSubnetIds: network.publicSubnetIds,
         apiSgId: security.apiSgId,
-        apiTargetGroupArn: listener?.apiTargetGroupArn,
+        apiTargetGroupArn: routing?.apiTargetGroupArn,
         namespaceArn: serviceConnect?.namespaceArn,
       })
     : undefined;
@@ -288,7 +356,7 @@ const webTask =
     : undefined;
 
 // 24. Web service. Needs: the cluster, the web task definition, the public subnets (network), the
-//     web security group (security), the web target group (listener), the Service Connect
+//     web security group (security), the web target group (routing, 17c), the Service Connect
 //     namespace (18b) and the api service (20): web waits for it, so the name "api" exists before
 //     the first web task starts (web-service.ts 1f).
 //     ONE-TIME REDEPLOY: the api service is created first, so its first tasks start before "web"
@@ -297,13 +365,13 @@ const webTask =
 //       aws ecs update-service --cluster minitickets-dev --service minitickets-dev-api --force-new-deployment
 //     Later deployments start with both names already in the namespace.
 const webService =
-  cluster && webTask && listener && serviceConnect && apiService
+  cluster && webTask && routing && serviceConnect && apiService
     ? createWebService({
         clusterName: cluster.clusterName,
         taskDefinitionArn: webTask.taskDefinitionArn,
         publicSubnetIds: network.publicSubnetIds,
         webSgId: security.webSgId,
-        webTargetGroupArn: listener.webTargetGroupArn,
+        webTargetGroupArn: routing.webTargetGroupArn,
         namespaceArn: serviceConnect.namespaceArn,
         apiServiceName: apiService.serviceName,
       })
@@ -344,10 +412,22 @@ export const apiServiceName = apiService?.serviceName ?? null;
 export const apiTaskDefinitionArn = apiTask?.taskDefinitionArn ?? null;
 export const apiLogGroup = logs?.logGroupName ?? null;
 
-// 29. Entry layer outputs. appUrl is the address to open in the browser: https://<id>.cloudfront.net.
-//     albDnsName is only for debugging: a direct request to it is blocked (docs/19-infra-cloudfront.md).
+// 29. Entry layer outputs. appUrl is the address to open in the browser: https://<id>.cloudfront.net
+//     in CloudFront mode, https://<domainName> in ALB-only mode.
+//     albDnsName: in CloudFront mode only for debugging (a direct request is blocked,
+//     docs/19-infra-cloudfront.md). In ALB-only mode it is where your domain's CNAME must point:
+//     appDnsRecord spells out that record. It CHANGES every time entry goes off and on again (a new
+//     ALB gets a new name), so update the CNAME on each deploy day.
 //     null when the layer is off (same reason as 26).
-export const appUrl = cdn?.appUrl ?? null;
+export const appUrl = appUrlValue ?? null;
 export const albDnsName = alb?.albDnsName ?? null;
+export const appDnsRecord =
+  alb && httpsListener ? { name: domainName, type: "CNAME", value: alb.albDnsName } : null;
 export const webServiceName = webService?.serviceName ?? null;
 export const webLogGroup = webLogs?.logGroupName ?? null;
+
+// 30. Certificate outputs (Step 11i, always on when domainName is set). The validation record is
+//     the CNAME to add at your DNS provider ONCE and keep (ACM renews with it). It is not a secret:
+//     anyone can look it up in public DNS. Status: aws acm describe-certificate (docs/20-deploy-day.md).
+export const certificateArn = certificate?.certificateArn ?? null;
+export const certificateValidationRecord = certificate?.validationRecord ?? null;

@@ -3,7 +3,8 @@
 //                   albSgId         <- from security
 // CREATES:          Application Load Balancer minitickets-dev (internet-facing)
 // GIVES (outputs):  albArn     -> used by listener
-//                   albDnsName -> stack output (the address you open in the browser)
+//                   albDnsName -> used by cdn (its origin) and as a stack output (in ALB-only
+//                                 mode your domain's CNAME points at it)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -18,6 +19,8 @@ import { tagsFor } from "../tags";
 //   visitor asks for (the URL path) and walks them to the right desk (web or api).
 //   On its own the ALB routes nothing: the listener (listener.ts) holds the routing rules.
 //   Since Step 11g visitors never reach it directly: CloudFront (cdn.ts) stands in front of it.
+//   Since Step 11i that is one of two modes: with cdnEnabled = false visitors DO reach it directly,
+//   over HTTPS on our own domain (https-listener.ts). The ALB itself is the same in both modes.
 
 const prefix = "minitickets-dev";
 
@@ -51,8 +54,8 @@ export function createAlb(inputs: AlbInputs): AlbOutputs {
     internal: false,
     subnets: inputs.publicSubnetIds,
 
-    // 1c. It wears the alb badge: port 80 open only to CloudFront (Step 11g), and allowed out to
-    //     web and api.
+    // 1c. It wears the alb badge: port 80 open only to CloudFront (Step 11g), or ports 80 and 443
+    //     open to allowedCidrs without CloudFront (Step 11i), and allowed out to web and api.
     securityGroups: [inputs.albSgId],
 
     // 1d. Drop requests with malformed HTTP headers instead of passing them on.

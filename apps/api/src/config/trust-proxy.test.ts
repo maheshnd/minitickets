@@ -39,7 +39,29 @@ describe("trustProxyHops", () => {
     expect(await whoAmI(2, headers)).toMatchObject({ ip: "203.0.113.7" });
   });
 
-  // 4. Web server -> api through Service Connect (Step 11h): no CloudFront, no ALB, so nothing in
+  // 4. ALB-only mode (Step 11i, no CloudFront): the ALB appends the address it saw (the visitor,
+  //    203.0.113.7) to whatever X-Forwarded-For the visitor sent, and sets the protocol of its
+  //    listener (https on :443).
+  it("1 hop (ALB only): request.ip is the real visitor, protocol https from the ALB", async () => {
+    const viaAlb = { "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" };
+    expect(await whoAmI(1, viaAlb)).toEqual({ ip: "203.0.113.7", protocol: "https" });
+  });
+
+  it("1 hop (ALB only): a faked X-Forwarded-For is never used, but 2 hops would believe it", async () => {
+    // 5. The visitor sent "X-Forwarded-For: 6.6.6.6"; the ALB appended the real address.
+    const forged = { "x-forwarded-for": "6.6.6.6, 203.0.113.7", "x-forwarded-proto": "https" };
+    expect(await whoAmI(1, forged)).toMatchObject({ ip: "203.0.113.7" });
+    // 6. Why the hop count must follow the mode: CloudFront's 2 hops with only an ALB in front
+    //    reads one address too far, the one the visitor typed.
+    expect(await whoAmI(2, forged)).toMatchObject({ ip: "6.6.6.6" });
+  });
+
+  it("1 hop, connection from localhost (Service Connect): forwarded headers are ignored", async () => {
+    const forged = { "x-forwarded-for": "6.6.6.6", "x-forwarded-proto": "https" };
+    expect(await whoAmI(1, forged, "127.0.0.1")).toEqual({ ip: "127.0.0.1", protocol: "http" });
+  });
+
+  // 7. Web server -> api through Service Connect (Step 11h): no CloudFront, no ALB, so nothing in
   //    front of us wrote these headers. Before the localhost rule this answered ip 6.6.6.6 + https.
   it("2 hops, connection from localhost (Service Connect): forwarded headers are ignored", async () => {
     const forged = { "x-forwarded-for": "6.6.6.6, 7.7.7.7", "x-forwarded-proto": "https" };

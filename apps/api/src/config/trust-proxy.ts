@@ -21,6 +21,11 @@
 //
 // The same trusted hop 0 also lets Fastify read X-Forwarded-Proto into request.protocol.
 //
+// Without CloudFront (Step 11i, cdnEnabled = false) only the ALB stands in front of us:
+//   hop 0 = the ALB, hop 1 = the last address in XFF (written by the ALB: the real visitor),
+//   hop 2+ = whatever the visitor sent itself. So TRUST_PROXY_HOPS must be 1 there (infra decides,
+//   infra/src/entry/mode.ts). With 2, request.ip would be hop 2: an address the visitor typed.
+//
 // The second door (Step 11h, infra/src/compute/service-connect.ts): the web SERVER also calls us
 // directly, through ECS Service Connect, not through CloudFront and the ALB. Those calls reach us
 // from the Service Connect proxy inside our own task, so hop 0 is 127.0.0.1 (localhost). The ALB

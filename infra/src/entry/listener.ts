@@ -12,6 +12,8 @@ import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 
 // The listener part of the entry layer: where the routing decisions live.
+// CloudFront mode only (cdnEnabled = true, the default). Without CloudFront, https-listener.ts
+// takes its place (Step 11i).
 // See docs/18-infra-alb-web.md (routing) and docs/19-infra-cloudfront.md (the secret header).
 //
 // Listener and rule in simple words:

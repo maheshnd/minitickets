@@ -4,8 +4,10 @@
 //                   logGroupName       <- from logs
 //                   dbHost, dbPort, dbMasterSecretArn <- from postgres
 //                   redisUrlSecretArn  <- from secrets
-//                   webOrigin          <- cdn appUrl when entry is on, else a placeholder
-//                   trustProxyHops     <- 2 when entry is on (CloudFront + ALB), else 0
+//                   webOrigin          <- appUrl when entry is on (CloudFront's or our own domain),
+//                                         else a placeholder
+//                   trustProxyHops     <- 2 with CloudFront + ALB, 1 with the ALB alone, 0 with
+//                                         entry off (entry/mode.ts)
 //                   serviceConnect     <- OPTIONAL, only when entry is on: WEB_INTERNAL_URL and the
 //                                         revalidate-secret ARN (Step 11h, compute/service-connect.ts)
 // CREATES:          ECS task definition minitickets-dev-api (one new revision per change)
@@ -114,14 +116,16 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           { name: "DB_HOST", value: inputs.dbHost },
           { name: "DB_PORT", value: pulumi.interpolate`${inputs.dbPort}` },
           { name: "DB_NAME", value: "minitickets" },
-          // The public https address of the app (CloudFront, Step 11g), or a placeholder when the
-          // entry layer is off (index.ts decides). Today only CORS reads it, and behind CloudFront
-          // the page and /trpc share one origin, so the browser never asks a CORS question.
+          // The public https address of the app (CloudFront, Step 11g, or https://<domainName>
+          // without CloudFront, Step 11i), or a placeholder when the entry layer is off (index.ts
+          // decides). Today only CORS reads it, and the page and /trpc share one origin, so the
+          // browser never asks a CORS question.
           // Step 13 adds a CSRF check that compares each request's Origin header with this value.
           { name: "WEB_ORIGIN", value: inputs.webOrigin },
           // How many proxies stand between the internet and the api (index.ts decides): 2 with
-          // entry on (CloudFront, then the ALB), 0 without. With 2 the api reads the real visitor
-          // IP from X-Forwarded-For (apps/api/src/app.ts, docs/19-infra-cloudfront.md).
+          // CloudFront, then the ALB; 1 with the ALB alone (Step 11i); 0 with entry off. The api
+          // then reads the real visitor IP from X-Forwarded-For (apps/api/src/app.ts,
+          // docs/19-infra-cloudfront.md). Never more than really exist: entry/mode.ts says why.
           { name: "TRUST_PROXY_HOPS", value: String(inputs.trustProxyHops) },
           // Where the api calls the web server's revalidate hook (Service Connect name, Step 11h).
           // Only with entry on: there is no web service otherwise, and the api then runs with the
