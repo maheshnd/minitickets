@@ -9,7 +9,6 @@ config:
   minitickets:entryEnabled: "false"
   minitickets:apiImageTag: 8510e1f
   minitickets:webImageTag: 8510e1f
-  minitickets:githubOwner: maheshnd
-  minitickets:githubRepo: minitickets
   minitickets:cdnEnabled: "false"
   minitickets:domainName: minitickets.theversehub.in
+  minitickets:githubSubjectPrefix: repo:maheshnd@63289193/minitickets@1412723955

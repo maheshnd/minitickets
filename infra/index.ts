@@ -108,13 +108,13 @@ const registry = createRegistry();
 
 // 8b. CI/CD (GitHub OIDC + publish role). Needs: the two repo ARNs (registry), because the role
 //     may push to exactly those, and which GitHub repo may use it (config). Always on: IAM is free.
-//     require() stops with a clear error if either is missing: a wrong or empty value would
-//     trust the wrong repo (or none). Set them with:
-//       pulumi config set githubOwner <owner>   (e.g. maheshnd)
-//       pulumi config set githubRepo  <repo>    (e.g. minitickets)
+//     require() stops with a clear error if it is missing: a wrong or empty value would
+//     trust the wrong repo (or none). The prefix holds the owner and repo names AND their IDs
+//     (GitHub's immutable subject format, see cicd.ts step 3). Find and set it with:
+//       gh api repos/<owner>/<repo>/actions/oidc/customization/sub   (-> "sub_claim_prefix")
+//       pulumi config set githubSubjectPrefix <sub_claim_prefix>
 const cicd = createCicd({
-  githubOwner: config.require("githubOwner"),
-  githubRepo: config.require("githubRepo"),
+  githubSubjectPrefix: config.require("githubSubjectPrefix"),
   apiRepoArn: registry.apiRepoArn,
   webRepoArn: registry.webRepoArn,
 });

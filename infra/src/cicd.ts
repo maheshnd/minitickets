@@ -1,5 +1,5 @@
 // LAYER: cicd
-// NEEDS (inputs):   githubOwner, githubRepo <- from Pulumi config (which GitHub repo may publish)
+// NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish)
 //                   apiRepoArn, webRepoArn  <- from registry (the ONLY repos it may push to)
 // CREATES:          1 IAM OIDC provider (trust GitHub's login tokens),
 //                   1 role "minitickets-dev-gh-publish" + its inline permission policy
@@ -35,8 +35,7 @@ const prefix = "minitickets-dev";
 const githubOidcHost = "token.actions.githubusercontent.com";
 
 export interface CicdInputs {
-  githubOwner: string;
-  githubRepo: string;
+  githubSubjectPrefix: string;
   apiRepoArn: pulumi.Input<string>;
   webRepoArn: pulumi.Input<string>;
 }
@@ -62,10 +61,20 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   });
 
   // 3. The "sub" (subject) value we accept: this one repo, and only its main branch.
-  //    GitHub writes it into every token, e.g. repo:maheshnd/minitickets:ref:refs/heads/main.
+  //    GitHub writes it into every token. Our repo uses GitHub's IMMUTABLE subject format,
+  //    which adds the numeric IDs of the owner and the repo after their names:
+  //      old (names only): repo:maheshnd/minitickets:ref:refs/heads/main
+  //      ours (immutable): repo:maheshnd@63289193/minitickets@1412723955:ref:refs/heads/main
+  //    WHY IDs: names can change hands. If this repo were renamed or deleted, someone could
+  //      create a NEW repo with the same name; with names only, its tokens would match this
+  //      trust policy. The IDs never change and are never reused, so a renamed or re-created
+  //      repo with the same name gets a different "sub" and cannot match.
+  //    The part before ":ref:..." is the "subject prefix" (Pulumi config githubSubjectPrefix).
+  //    Find it with:  gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  //      -> "sub_claim_prefix": "repo:maheshnd@63289193/minitickets@1412723955"
   //    (cd.yml has no `environment:`; with one, GitHub would write "...:environment:<name>"
   //    instead and this role would refuse the job.)
-  const allowedSubject = `repo:${inputs.githubOwner}/${inputs.githubRepo}:ref:refs/heads/main`;
+  const allowedSubject = `${inputs.githubSubjectPrefix}:ref:refs/heads/main`;
 
   // ---------- Publish role ----------
   // TRUST POLICY (who can use it):
@@ -81,7 +90,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //    Two conditions, BOTH must match (StringEquals with two keys = AND):
   //    4a. aud = sts.amazonaws.com: the token was made for AWS. A token GitHub made for some
   //        other service (a different audience) cannot be replayed here.
-  //    4b. sub = repo:<owner>/<repo>:ref:refs/heads/main: the job runs in OUR repo, on main.
+  //    4b. sub = <subject prefix>:ref:refs/heads/main: the job runs in OUR repo, on main.
   //        WHY it matters most: the OIDC provider trusts GitHub as a whole. Every repo on
   //        GitHub, anyone's, gets tokens from the same issuer. Without "sub", ANY GitHub repo
   //        could assume this role and push to our registry. With it, only main of our repo
