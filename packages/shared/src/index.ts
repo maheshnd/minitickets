@@ -16,3 +16,4 @@ export {
   type MyTicket,
 } from "./schemas/bookings";
 export { RevalidateSecretSchema } from "./schemas/revalidate";
+export { BookingConfirmedMessage } from "./schemas/jobs";

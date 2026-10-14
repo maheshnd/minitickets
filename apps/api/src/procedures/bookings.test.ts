@@ -18,6 +18,12 @@ vi.mock("../queries/bookings", () => ({
 const invalidateEventLists = vi.fn();
 vi.mock("../services/events", () => ({ invalidateEventLists: () => invalidateEventLists() }));
 
+// Step S1a: the booking service also reads the user (queries/users) and publishes to the jobs queue
+// (queues/jobs). Both are stubs here: the queue is "off", so no message is built. What the service
+// does with them is checked in services/bookings.test.ts.
+vi.mock("../queries/users", () => ({ findById: vi.fn() }));
+vi.mock("../queues/jobs", () => ({ jobsEnabled: false, publishBookingConfirmed: vi.fn() }));
+
 // trpc/init.ts imports the users service (for adminProcedure's role lookup), which would open a real
 // database pool. Booking never asks for a role, so a stub is enough.
 vi.mock("../services/users", () => ({ getRole: vi.fn() }));

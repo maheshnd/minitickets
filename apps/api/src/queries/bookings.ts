@@ -51,11 +51,15 @@ function isPgConstraintError(err: unknown, code: string, constraint: string): bo
 type BookingRow = typeof bookings.$inferSelect;
 
 // What createBookingTx did:
-// - "created":  a new booking, seats taken, committed;
+// - "created":  a new booking, seats taken, committed. It also carries the event's title, venue and
+//   start time, which the transaction had already read (step 1): the confirmation message needs
+//   them (services/bookings.ts), and this saves a second query;
 // - "existing": this user already has a booking with this key (made by an earlier copy of the same
 //   request, or by a different request that reused the key). NOTHING was written this time.
 //   The service compares it with the request: same event + quantity = a replay, else a 409.
-export type CreateBookingResult = { kind: "created"; booking: BookingRow } | { kind: "existing"; booking: BookingRow };
+export type CreateBookingResult =
+  | { kind: "created"; booking: BookingRow; event: { title: string; venue: string; startsAt: Date } }
+  | { kind: "existing"; booking: BookingRow };
 
 // The booking this user made with this key, if any. Served by the unique index of the constraint
 // above (user_id, idempotency_key): one index lookup. `executor` is the transaction when called
@@ -122,7 +126,7 @@ export async function createBookingTx(
       //    on-sale it is the bottleneck (then: split the seats over several rows, or queue requests).
       //    Each waiting booking also keeps one pool connection busy (the pool has 10, db/client.ts).
       const [event] = await tx
-        .select({ startsAt: events.startsAt, seatsLeft: events.seatsLeft })
+        .select({ title: events.title, venue: events.venue, startsAt: events.startsAt, seatsLeft: events.seatsLeft })
         .from(events)
         .where(eq(events.id, eventId))
         .for("update");
@@ -160,7 +164,7 @@ export async function createBookingTx(
       //    If another transaction has (or is just inserting) a booking with this user + key, this
       //    INSERT fails with 23505 (see "WHY A DUPLICATE IS HARMLESS" above) and step 6 takes over.
       const [created] = await tx.insert(bookings).values({ eventId, userId, quantity, idempotencyKey }).returning();
-      return { kind: "created", booking: created };
+      return { kind: "created", booking: created, event: { title: event.title, venue: event.venue, startsAt: event.startsAt } };
     });
     return booking;
   } catch (err) {

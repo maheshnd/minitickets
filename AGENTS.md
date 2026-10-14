@@ -33,14 +33,15 @@ optional CloudFront. CI/CD: GitHub Actions, AWS access through OIDC (no stored k
 ```
 apps/web         Next.js. UI only. app/ = routing only; features/<feature>/{components,hooks}
 apps/api         Fastify + tRPC. All server logic.
+apps/worker      Background worker: reads the jobs queue (same handler locally and on Lambda)
 packages/shared  Zod schemas + inferred types used by both apps. No other code.
 infra/           Pulumi. index.ts only imports layer files from src/.
 docs/            One file per step (docs/NN-*.md) + the handbook (docs/handbook/).
 ```
 
 - API layers: `procedures/<feature>.ts` → `services/<feature>.ts` → `queries/<feature>.ts` → Postgres
-  / Redis. Each layer calls only the layer below. Procedures validate and call a service (no logic);
-  services hold business logic (no HTTP, no SQL); queries are the ONLY code that touches a data store.
+  / Redis, or `queues/<feature>.ts` → the message queue (SQS; ElasticMQ locally). Each layer calls only the layer below. Procedures validate and call a service (no logic);
+  services hold business logic (no HTTP, no SQL); queries are the ONLY code that touches a data store; queues are the ONLY code that touches the message queue (only services call either).
 - No file suffixes like `.router` or `.service`: the folder names the layer.
 - Web components never call tRPC directly; they use a hook from their feature.
 - Web imports only `type AppRouter` from `@minitickets/api/router`, never runtime code.

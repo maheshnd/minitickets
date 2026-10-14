@@ -23,6 +23,11 @@ if (!env.WEB_INTERNAL_URL) {
   app.log.warn("WEB_INTERNAL_URL and REVALIDATE_SECRET are not set: the web revalidate hook is off (new events reach /events within 30 s)");
 }
 
+// 2c. Same for the jobs queue (config/env.ts): without JOBS_QUEUE_URL no confirmation messages are sent.
+if (!env.JOBS_QUEUE_URL) {
+  app.log.warn("JOBS_QUEUE_URL is not set: publishing to the jobs queue is off (no booking confirmation emails)");
+}
+
 // @concept: graceful-shutdown
 // 3. Graceful shutdown: on Ctrl+C (SIGINT) or `kill` (SIGTERM), finish cleanly instead of dying mid-request.
 let shuttingDown = false;

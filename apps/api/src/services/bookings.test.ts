@@ -17,6 +17,22 @@ vi.mock("../queries/bookings", () => ({
   listByUser: (userId: string) => listByUser(userId),
 }));
 
+// 1b. Step S1a: the user lookup and the jobs queue are fakes too, in the same call list.
+const findUserById = vi.fn();
+vi.mock("../queries/users", () => ({ findById: (id: string) => findUserById(id) }));
+
+const publishBookingConfirmed = vi.fn();
+let jobsEnabled = true;
+vi.mock("../queues/jobs", () => ({
+  get jobsEnabled() {
+    return jobsEnabled;
+  },
+  publishBookingConfirmed: (message: unknown) => {
+    calls.push("publishBookingConfirmed");
+    return publishBookingConfirmed(message);
+  },
+}));
+
 const invalidateEventLists = vi.fn();
 vi.mock("./events", () => ({
   invalidateEventLists: (log: unknown) => {
@@ -27,7 +43,7 @@ vi.mock("./events", () => ({
 
 const { bookTicket, myTickets } = await import("./bookings");
 
-const log = { error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 const EVENT_ID = "00000000-0000-4000-8000-000000000004";
 const OTHER_EVENT_ID = "00000000-0000-4000-8000-000000000005";
 const KEY = "5f0c6a3e-2b7d-4c1e-9a8f-0d3b6e4c2a11";
@@ -40,6 +56,8 @@ const savedRow = {
   createdAt: new Date("2026-10-14T10:00:00Z"),
   idempotencyKey: KEY,
 };
+// The event details the transaction hands back with a NEW booking (queries/bookings.ts).
+const savedEvent = { title: "Indie Rock Showcase", venue: "The Foundry", startsAt: new Date("2026-11-28T19:00:00Z") };
 // What bookTicket answered for savedRow the first time: a replay must answer exactly this.
 const firstAnswer = {
   id: savedRow.id,
@@ -51,7 +69,12 @@ const firstAnswer = {
 
 beforeEach(() => {
   calls.length = 0;
-  createBookingTx.mockReset().mockResolvedValue({ kind: "created", booking: savedRow });
+  createBookingTx.mockReset().mockResolvedValue({ kind: "created", booking: savedRow, event: savedEvent });
+  findUserById.mockReset().mockResolvedValue({ id: "u1", email: "ada@example.com" });
+  publishBookingConfirmed.mockReset().mockResolvedValue(undefined);
+  jobsEnabled = true;
+  log.error.mockReset();
+  log.info.mockReset();
   listByUser.mockReset();
   invalidateEventLists.mockReset().mockResolvedValue(undefined);
 });
@@ -63,7 +86,7 @@ describe("bookTicket", () => {
     // 2. The user comes from the caller (the session), the rest (key included) from the input.
     expect(createBookingTx).toHaveBeenCalledWith(EVENT_ID, "u1", 2, KEY);
     // 3. Write first, then invalidate: the other order could refill the cache with the old seats.
-    expect(calls).toEqual(["createBookingTx", "invalidateEventLists"]);
+    expect(calls).toEqual(["createBookingTx", "invalidateEventLists", "publishBookingConfirmed"]);
     expect(invalidateEventLists).toHaveBeenCalledWith(log);
     // 4. No userId and no key in the answer; the date is ISO text.
     expect(booking).toEqual(firstAnswer);
@@ -109,6 +132,71 @@ describe("bookTicket with a repeated idempotency key", () => {
     await expect(result).rejects.toBeInstanceOf(ConflictError);
     await expect(result).rejects.toThrow("This idempotency key was already used for a different booking");
     expect(calls).toEqual(["createBookingTx"]);
+  });
+});
+
+// 6. Step S1a: the confirmation message.
+describe("bookTicket and the confirmation message", () => {
+  it("a NEW booking: publishes ONE message, AFTER the transaction, with everything the email needs", async () => {
+    await bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log);
+
+    // After the commit (createBookingTx is first in the list), never before.
+    expect(calls[0]).toBe("createBookingTx");
+    expect(calls).toContain("publishBookingConfirmed");
+    expect(publishBookingConfirmed).toHaveBeenCalledTimes(1);
+    expect(publishBookingConfirmed.mock.calls[0][0]).toMatchObject({
+      type: "booking.confirmed",
+      version: 1,
+      bookingId: savedRow.id,
+      userEmail: "ada@example.com",
+      eventTitle: "Indie Rock Showcase",
+      eventVenue: "The Foundry",
+      eventStartsAt: "2026-11-28T19:00:00.000Z",
+      quantity: 2,
+    });
+    // The log line names the ids, never the address.
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining("messageId="));
+    expect(JSON.stringify(log.info.mock.calls)).not.toContain("ada@example.com");
+  });
+
+  it("a replay (same key again): NO message", async () => {
+    createBookingTx.mockResolvedValue({ kind: "existing", booking: savedRow });
+
+    await bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log);
+
+    expect(publishBookingConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("a failed booking (409): NO message", async () => {
+    createBookingTx.mockRejectedValue(new ConflictError("Not enough seats left"));
+    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 1, idempotencyKey: KEY }, log)).rejects.toThrow();
+    expect(publishBookingConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("the queue is down: the booking still succeeds, the error is logged WITHOUT the email address", async () => {
+    publishBookingConfirmed.mockRejectedValue(new Error("queue unreachable"));
+
+    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log)).resolves.toEqual(firstAnswer);
+
+    expect(log.error).toHaveBeenCalledTimes(1);
+    expect(log.error.mock.calls[0][0]).toMatchObject({ bookingId: savedRow.id });
+    expect(JSON.stringify(log.error.mock.calls)).not.toContain("ada@example.com");
+  });
+
+  it("the user lookup fails: the booking still succeeds and nothing is published", async () => {
+    findUserById.mockRejectedValue(new Error("db hiccup"));
+
+    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log)).resolves.toEqual(firstAnswer);
+    expect(publishBookingConfirmed).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishing is off (no JOBS_QUEUE_URL): no lookup, no message, booking works", async () => {
+    jobsEnabled = false;
+
+    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log)).resolves.toEqual(firstAnswer);
+    expect(findUserById).not.toHaveBeenCalled();
+    expect(publishBookingConfirmed).not.toHaveBeenCalled();
   });
 });
 

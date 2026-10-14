@@ -1,6 +1,10 @@
 import type { BookTicketInput, Booking, MyTicket } from "@minitickets/shared";
+import { randomUUID } from "node:crypto";
 import { ConflictError } from "../errors";
 import * as bookings from "../queries/bookings";
+import * as users from "../queries/users";
+// The jobs queue (queues/ = the layer for message queues, like queries/ for databases).
+import * as jobs from "../queues/jobs";
 // The events service owns the events caches, so we reuse its invalidation instead of touching
 // Redis from here (a service never talks to a data store itself).
 import { invalidateEventLists, type Log } from "./events";
@@ -59,8 +63,56 @@ export async function bookTicket(userId: string, input: BookTicketInput, log: Lo
   //    re-checks under the lock anyway), or cache the seat counts apart from the list.
   await invalidateEventLists(log);
 
-  // 4. Pick the public fields by hand (no userId, no idempotency key: the client has its key).
+  // 4. Tell the background worker to send the confirmation email. Only here: a NEW booking got this
+  //    far; a replay returned in step 2 and sends nothing, so a retry never means a second email.
+  //    We do not wait for the email, only for the queue to accept the message (a few ms).
+  await publishConfirmation(userId, input.quantity, result, log);
+
+  // 5. Pick the public fields by hand (no userId, no idempotency key: the client has its key).
   return toPublicBooking(result.booking);
+}
+
+// Put a "booking confirmed" message on the jobs queue. NEVER throws: the booking is already
+// committed, and a slow or broken queue must not turn it into an error the user sees.
+//
+// HONEST LIMIT (a known gap): the commit and the publish are two separate steps with nothing
+// joining them. If the publish fails, or the process crashes right after the commit, the booking
+// exists and its message does not: no email, and nobody notices. The fix is the OUTBOX PATTERN:
+// write the message into an `outbox` table in the SAME transaction as the booking, and let a
+// relay publish it from there (so it is committed or rolled back together with the booking). It is
+// on the roadmap as a later step; today we accept the gap and log an error.
+async function publishConfirmation(
+  userId: string,
+  quantity: number,
+  created: Extract<bookings.CreateBookingResult, { kind: "created" }>,
+  log: Log,
+): Promise<void> {
+  // 1. Publishing is off when JOBS_QUEUE_URL is not set (startup warning in server.ts).
+  if (!jobs.jobsEnabled) return;
+  try {
+    // 2. The email address lives on the user, not on the booking: one lookup by primary key.
+    const user = await users.findById(userId);
+    if (!user) throw new Error("user not found");
+    // 3. Build the message with everything the email needs (see packages/shared/src/schemas/jobs.ts).
+    const message = {
+      type: "booking.confirmed" as const,
+      version: 1 as const,
+      messageId: randomUUID(),
+      bookingId: created.booking.id,
+      userEmail: user.email,
+      eventTitle: created.event.title,
+      eventVenue: created.event.venue,
+      eventStartsAt: created.event.startsAt.toISOString(),
+      quantity,
+      occurredAt: new Date().toISOString(),
+    };
+    await jobs.publishBookingConfirmed(message);
+    // 4. Log ids only, never the message: it holds an email address (personal data).
+    log.info(`published booking.confirmed messageId=${message.messageId} bookingId=${message.bookingId}`);
+  } catch (err) {
+    // 5. Log the error without the address: the booking id is enough to find the booking.
+    log.error({ err, bookingId: created.booking.id }, "could not publish booking.confirmed; the booking succeeded but no email will be sent");
+  }
 }
 
 // The logged-in user's bookings ("My tickets"), newest first, each with its event's details.

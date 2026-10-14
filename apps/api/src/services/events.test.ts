@@ -86,7 +86,7 @@ let listUpcomingEvents: typeof import("./events").listUpcomingEvents;
 let createEvent: typeof import("./events").createEvent;
 
 const now = new Date("2026-10-12T00:00:00Z");
-const log = { error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 
 // What the service should produce from the fake rows above (and what Redis would hold).
 const publicList = [

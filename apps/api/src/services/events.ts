@@ -95,6 +95,7 @@ type CachedUpcoming = z.infer<typeof CachedUpcoming>;
 export type Log = {
   error: (obj: object, msg: string) => void;
   warn: (obj: object, msg: string) => void;
+  info: (msg: string) => void;
   debug: (msg: string) => void;
 };
 

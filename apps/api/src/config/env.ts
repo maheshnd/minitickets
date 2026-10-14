@@ -40,6 +40,16 @@ const EnvSchema = z.object({
   // whole API from starting there, for a feature that only makes lists fresher.
   WEB_INTERNAL_URL: z.url({ protocol: /^https?$/ }).optional(),
   REVALIDATE_SECRET: RevalidateSecretSchema.optional(),
+  // The jobs queue (queues/jobs.ts). OPTIONAL: without JOBS_QUEUE_URL publishing is turned off (a
+  // warning at startup), so tests and setups without a queue still work.
+  // JOBS_QUEUE_URL: the queue's URL (local: the ElasticMQ container, on AWS: the SQS queue's URL).
+  JOBS_QUEUE_URL: z.url({ protocol: /^https?$/ }).optional(),
+  // SQS_ENDPOINT: LOCAL ONLY. Points the AWS SDK at the ElasticMQ container instead of real SQS.
+  // Leave it unset on AWS: the SDK then finds SQS by itself.
+  SQS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  // The AWS region the SDK signs requests for (any value works for ElasticMQ). us-east-1 is the
+  // region of our AWS setup (infra/Pulumi.dev.yaml).
+  AWS_REGION: z.string().min(1).default("us-east-1"),
 })
   // A soft TTL at or above the hard TTL would mean "never stale": Redis would delete the list
   // while it still counts as fresh. Almost surely a typo, so we stop at startup.

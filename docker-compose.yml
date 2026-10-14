@@ -54,6 +54,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # A local message queue that speaks the Amazon SQS API. Because the API is the same, the exact
+  # same AWS SDK code runs against this container locally and against real SQS on AWS: only the
+  # endpoint changes (SQS_ENDPOINT, see apps/api/.env.example). Started by `pnpm db:up`.
+  # The queue "minitickets-jobs" is declared in docker/elasticmq.conf.
+  queue:
+    # 1. Pinned version (the native image starts in well under a second).
+    image: softwaremill/elasticmq-native:1.6.11
+    restart: unless-stopped
+    # 2. 9324 is the SQS API. The settings file creates the queue at startup.
+    ports:
+      - "9324:9324"
+    volumes:
+      - ./docker/elasticmq.conf:/opt/elasticmq.conf:ro
+    # 3. No healthcheck: the image has no shell tools to run one. "Running" is enough for
+    #    `up --wait`, because the server is ready within a moment of starting.
+
   # ---- The app, in containers. Only started with `--profile app` (`pnpm app:up`). ----
 
   # @concept: migrations

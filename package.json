@@ -4,6 +4,7 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "worker:dev": "pnpm --filter @minitickets/worker dev",
     "typecheck": "pnpm -r typecheck && tsc -p scripts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",

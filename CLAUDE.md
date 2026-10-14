@@ -13,19 +13,23 @@ documented in `docs/NN-*.md`.
 ```
 apps/web         Next.js (App Router, src/, Tailwind). UI only.
 apps/api         Fastify 5 + tRPC v11. All server logic.
+apps/worker      Background worker: reads the jobs queue (same handler locally and on Lambda).
 packages/shared  Zod schemas + inferred types used by both apps. No other code.
 infra/           Pulumi (TypeScript) AWS infrastructure. index.ts only imports layer files from src/.
 docs/            One file per step, in plain English.
 ```
 
 - **api:** `server.ts` (listen) → `app.ts` (build Fastify) → `trpc/` (tRPC setup) → layer folders:
-  `procedures/<feature>.ts` → `services/<feature>.ts` → `queries/<feature>.ts`.
+  `procedures/<feature>.ts` → `services/<feature>.ts` → `queries/<feature>.ts` (data stores) or
+  `queues/<feature>.ts` (message queues).
   No suffixes like `.router` or `.service`; the folder says the layer.
 
-  procedures -> services -> queries -> data store (Postgres / Redis). Each layer only calls the layer below.
+  procedures -> services -> queries / queues -> Postgres / Redis / the message queue. Each layer only calls the layer below.
   - **Procedures:** validate input + call a service, no logic.
   - **Services:** business logic, no HTTP or SQL.
   - **Queries:** the only code that touches ANY data store (Postgres or Redis).
+  - **Queues:** the only code that touches a message queue (SQS locally via ElasticMQ). Like queries,
+    no business logic; only services call it.
 - **web:** `app/` is routing only. Feature code lives in `features/<feature>/{components,hooks}`.
   Components never call tRPC directly; they use a hook from their feature.
 - **Types across apps:** web imports only `type AppRouter` from `@minitickets/api/router`, never runtime code.
