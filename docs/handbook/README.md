@@ -30,6 +30,7 @@ flowchart LR
 | [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) | The spec this handbook is built from | fixed |
 | [infra-story.md](infra-story.md) | The AWS resources, in the order a request meets them; deploy, security and cost stories | written |
 | [app-story.md](app-story.md) | Our code, in the order a request travels through it; monorepo, validation, tests, Docker, CI; the app security story | written |
+| [cicd-story.md](cicd-story.md) | CI/CD for someone who has never seen GitHub Actions, bash or Pulumi: from `git push` to the new version on AWS, chapter by chapter, then how to read `ci.yml` and `cd.yml` line by line | written |
 | `concepts/<slug>.md` | One card per concept | AWS / infra cards (Phase 2) and app cards (Phase 3) written; planned and explain-only Phase 5 |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in the handbook, commit by commit, and why | written, one entry per handbook commit |
 | `decisions/NNNN-<title>.md` | Architecture Decision Records (why we chose X over Y) | Phase 4 |
@@ -53,9 +54,10 @@ Files that are not written yet are shown without a link and with their phase.
 1. [00-big-picture.md](00-big-picture.md)
 2. [aws-foundations.md](aws-foundations.md)
 3. [infra-story.md](infra-story.md), then [app-story.md](app-story.md)
-4. `decisions/` (Phase 4)
-5. `system-design.md` (Phase 4)
-6. Skim the [concept map](concept-map.md) for anything you skipped.
+4. [cicd-story.md](cicd-story.md): how a push becomes a running version on AWS
+5. `decisions/` (Phase 4)
+6. `system-design.md` (Phase 4)
+7. Skim the [concept map](concept-map.md) for anything you skipped.
 
 **1 hour before an interview**
 

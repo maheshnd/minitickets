@@ -1,5 +1,10 @@
-# CD: publish the api and web images to ECR (Step 12a), then deploy them to AWS after a human
-# approves (Step 12b).
+# CD ("continuous deployment"): takes code that CI approved and puts it live on AWS.
+#   Job publish (Step 12a): build the api and web IMAGES (packed, ready-to-run copies of the app)
+#     and store them in ECR (Amazon's private image storage).
+#   Job deploy (Step 12b): after a human clicks "Approve", run those images on AWS.
+#
+# Beginner's guide, with every word explained: docs/handbook/cicd-story.md.
+# The "# CHAPTER N" lines below match the chapters of that guide.
 #
 # FLOW (read this first):
 #
@@ -14,40 +19,43 @@
 #                        ▼                              (rollback / redeploy)
 #   ┌─ JOB deploy (GitHub environment "dev") ───────────────────────────────────────────┐
 #   │ ⏸ waits until YOU click "Approve" in the Actions tab                               │
-#   │ 1. OIDC ──▶ deploy role (1-2 h credentials); pulumi login                          │
+#   │ 1. log in to AWS as the deploy role (OIDC: no stored password, keys last 2 h)      │
 #   │ 2. <tag> in both ECR repos?   no ──▶ fail (nothing changed)                        │
 #   │ 3. committed Pulumi.dev.yaml says computeEnabled false?                            │
 #   │      yes ──▶ pulumi up (this is how "everything off/on" works), summary, END       │
 #   │ 4. PHASE A  pulumi up --config migrationImageTag=<tag>                             │
-#   │      services keep the CURRENT tag (SSM); anything missing is created (DB, ...)    │
-#   │ 5. migration task with the NEW image ── exit ≠ 0 ──▶ fail; running app untouched   │
+#   │      app keeps the CURRENT version (SSM); anything missing is created (DB, ...)    │
+#   │ 5. migration task with the NEW image ── fails? ──▶ stop; running app untouched     │
 #   │ 6. PHASE B  SSM image-tag = <tag>; ECR tag deployed-<tag>; pulumi up ──▶ roll      │
-#   │ 7. wait until api + web are stable, and really run the new revision               │
-#   │      (first time web exists: restart the api once, so Service Connect sees "web")  │
+#   │ 7. wait until api + web are stable, and really run the new version                 │
+#   │      (first time web exists: restart the api once, so it can find "web")           │
 #   │ 8. smoke test: GET / and /trpc/events.list ── fail ──▶ print ECS events, fail      │
 #   │ 9. job summary: tag, migration, URL, how to roll back                              │
 #   └────────────────────────────────────────────────────────────────────────────────────┘
 #
-# Build once, promote: the image built by publish is the ONLY build of this commit. deploy runs
-# THAT image (same tag, same digest); it never builds.
-# Two sources of truth: WHAT exists = the committed infra/Pulumi.dev.yaml (the switches);
-# WHICH image runs = SSM /minitickets/dev/image-tag (written in phase B).
+# Build once, then promote: publish builds each commit's images ONCE. deploy runs THOSE exact
+# images (same tag, same content); it never builds anything itself.
+# Two places decide what runs on AWS:
+#   WHAT exists         = the switches in the committed infra/Pulumi.dev.yaml;
+#   WHICH version runs  = SSM /minitickets/dev/image-tag (one small note stored in AWS, written in
+#                         phase B).
 #
-# Explained in docs/handbook/PENDING.md (Steps 12a, 12b) until the next handbook catch-up.
+# Step docs: docs/handbook/PENDING.md (Steps 12a, 12b) until the next handbook catch-up.
 name: CD
 
+# CHAPTERS 1-2 (push, then CI) happen in ci.yml. This block says when CD starts: after CI.
 on:
   # 1. Start after the "CI" workflow (the `name:` in ci.yml) has finished on main.
   #    WHY workflow_run and not `push`: CD only ever ships code CI approved. A plain `push`
   #    trigger would start CD at the same time as CI, before anyone knows if the code works.
-  #    `completed` fires for failed runs too, so both jobs below also check the result.
-  #    NOTE: GitHub reads this file from the default branch (main), so changes to cd.yml only
+  #    `completed` also fires when CI FAILED, so both jobs below check CI's result first.
+  #    NOTE: GitHub always reads this file from the main branch, so changes to cd.yml only
   #    take effect once they are on main.
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  # 2. A "Run workflow" button in the Actions tab, for manual runs.
+  # 2. A "Run workflow" button in the Actions tab, for manual runs. (CHAPTER 11: rollback uses it.)
   #    image_tag EMPTY: build main's newest commit WITHOUT waiting for CI (use it only for a commit
   #      whose CI run is green), then deploy it.
   #    image_tag SET (e.g. 1a2b3c4): skip publish and deploy that EXISTING image: a rollback to an
@@ -66,34 +74,37 @@ on:
         required: false
         default: ""
 
-# 3. Permissions of the jobs' GITHUB_TOKEN. Everything not listed is "none".
-#    id-token: write -> lets a job ask GitHub for an OIDC token (an ID card that says "I am
-#      a job of repo X on branch main", or "... in environment dev"). AWS swaps it for temporary
-#      credentials (steps 12, 24). Without it there is no token, and the AWS login fails. It does
-#      NOT allow writing to the repo; the name only means "may create (write) an ID token".
-#    contents: read -> lets actions/checkout read the code. Nothing here writes to the repo.
+# 3. What the run's GitHub key (GITHUB_TOKEN, given to every run) may do. Not listed = not allowed.
+#    id-token: write -> the job may ask GitHub for an OIDC token: a short-lived, signed ID card that
+#      says "I am a job of repo X on branch main" (or "... in environment dev"). AWS swaps it for
+#      temporary keys (steps 12, 28). Without it there is no ID card, and the AWS login fails. It
+#      does NOT allow writing to the repo; "write" only means "may create an ID card".
+#    contents: read -> lets actions/checkout download the code. Nothing here writes to the repo.
 permissions:
   id-token: write
   contents: read
 
 env:
-  # 4. Same region as the Pulumi stack (infra/Pulumi.dev.yaml, aws:region).
+  # 4. The AWS region (the area of AWS data centres we use). Same as the Pulumi stack
+  #    (infra/Pulumi.dev.yaml, aws:region).
   AWS_REGION: us-east-1
   # 5. The two ECR repositories (infra/src/registry.ts). The publish role may push ONLY here.
   API_REPO_NAME: minitickets-dev-api
   WEB_REPO_NAME: minitickets-dev-web
-  # 6. The SSM parameter that holds the deployed image tag (infra/src/release.ts). The deploy role
-  #    may write ONLY this one.
+  # 6. The SSM parameter (a named value stored in AWS) that says which image tag is deployed
+  #    (infra/src/release.ts). The deploy role may write ONLY this one.
   IMAGE_TAG_PARAMETER: /minitickets/dev/image-tag
 
 jobs:
+  # CHAPTER 3: publish = build the api and web images ONCE and store them in ECR.
   publish:
     # 7. Run only when it is safe to ship:
     #    - a manual run (workflow_dispatch) from main WITHOUT image_tag, OR
     #    - CI finished with "success" AND that CI run was started by a PUSH.
-    #    WHY event == 'push': `branches: [main]` above filters on the BRANCH NAME of the CI run.
-    #      A pull request from a fork whose branch happens to be called "main" would match it
-    #      too, and we would build a stranger's code. Only pushes come from our own repo.
+    #    WHY event == 'push': `branches: [main]` above only checks the BRANCH NAME of the CI run.
+    #      A pull request from a fork (someone else's copy of our repo) whose branch happens to be
+    #      called "main" would match too, and we would build a stranger's code. Only pushes come
+    #      from our own repo.
     #    WHY image_tag == '': a manual run WITH a tag deploys an image that already exists, so
     #      there is nothing to build (the deploy job still runs, see 19).
     #    (The AWS role refuses anything but main of our repo anyway; this check makes the run
@@ -104,22 +115,21 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
 
-    # 7b. At most one publish per commit at a time; a second one WAITS (not cancelled).
+    # 7b. At most one publish per commit at a time; a second one WAITS (it is not cancelled).
     #    WHY: two runs for the same commit (e.g. a re-run while the first is still busy) could both
-    #    see "tag missing" and both push; the slower one would fail on the immutable tag. Queued,
-    #    the second one sees the tag and skips. Different commits still run side by side.
-    #    (Was on the whole workflow until Step 12a. On the job now, so a rollback run is never
-    #    stuck behind a publish of the same commit; the deploy job has its own group, see 20.)
+    #    see "tag missing" and both push; the slower one would fail, because ECR accepts each tag
+    #    only once. Waiting, the second one sees the tag and skips. Different commits still run side
+    #    by side. (The deploy job has its own group, see 21, so a rollback never waits for this.)
     concurrency:
       group: cd-publish-${{ github.event.workflow_run.head_sha || github.sha }}
       cancel-in-progress: false
 
-    # 8. A native ARM64 GitHub runner.
-    #    WHY: the ECS tasks run on ARM64, and an image only runs on the CPU it was built for.
-    #    On this runner Docker builds ARM natively, at full speed.
-    #    The alternative is ubuntu-latest (x86) + docker/setup-qemu-action, which EMULATES an
-    #    ARM CPU in software: it works, but every instruction is translated, so `pnpm install`
-    #    and `next build` get several times slower (minutes instead of seconds per stage).
+    # 8. A GitHub computer (runner) with an ARM64 processor.
+    #    WHY: our containers on AWS run on ARM64, and an image only runs on the processor type it
+    #    was built for. On this runner Docker builds ARM natively, at full speed.
+    #    The alternative is ubuntu-latest (x86) + docker/setup-qemu-action, which SIMULATES an
+    #    ARM processor in software: it works, but `pnpm install` and `next build` get several times
+    #    slower (minutes instead of seconds per stage).
     #    ARM runners are free for PUBLIC repos (this one is). If the repo turns private, check
     #    GitHub's current runner pricing, or switch to ubuntu-latest + setup-qemu-action.
     runs-on: ubuntu-24.04-arm
@@ -142,7 +152,7 @@ jobs:
             exit 1
           fi
 
-      # 10. Check out the EXACT commit CI tested.
+      # 10. Check out (download) the EXACT commit CI tested.
       #     WHAT: workflow_run.head_sha is the commit the CI run tested. For a manual run there
       #       is no CI run, so it falls back to github.sha (the newest commit on main).
       #     WHY: by the time CD starts, someone may have pushed again. Checking out "main" would
@@ -161,16 +171,18 @@ jobs:
         run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       # 12. Log in to AWS with OIDC: no stored access keys.
-      #     WHAT: the action asks GitHub for the OIDC token (allowed by `id-token: write`) and
-      #       calls sts:AssumeRoleWithWebIdentity. AWS checks the token's signature and the
-      #       role's trust conditions (aud = sts.amazonaws.com, sub = repo:<owner>/<repo>:ref:
-      #       refs/heads/main; see infra/src/cicd.ts) and returns credentials valid for 1 hour.
-      #     WHY a repo VARIABLE (vars.), not a SECRET: a role ARN is just an address, not a
-      #       password. Knowing it does not let anyone use it (the trust conditions decide
-      #       that). Variables are visible in logs, which makes debugging easier; secrets
-      #       are for things that grant access on their own.
-      #     role-session-name: shows up in AWS CloudTrail, so each AWS call can be traced back
-      #       to one GitHub run.
+      #     WHAT: the action asks GitHub for the OIDC token (the signed ID card, allowed by
+      #       `id-token: write`) and shows it to AWS STS (the AWS service that hands out temporary
+      #       keys). AWS checks that GitHub really signed it, and the role's trust conditions: the
+      #       card is made for AWS (aud = sts.amazonaws.com) and comes from main of our repo
+      #       (sub = repo:<owner>/<repo>:ref:refs/heads/main; see infra/src/cicd.ts). Then it returns
+      #       keys that work for 1 hour.
+      #     WHY a repo VARIABLE (vars.), not a SECRET: a role ARN (Amazon Resource Name, the full
+      #       address of something in AWS) is just an address, not a password. Knowing it does not
+      #       let anyone use it (the trust conditions decide that). Variables are visible in logs,
+      #       which makes debugging easier; secrets are for things that grant access on their own.
+      #     role-session-name: a label that shows up in AWS CloudTrail (AWS's log of who did what),
+      #       so each AWS call can be traced back to one GitHub run.
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -178,23 +190,24 @@ jobs:
           role-session-name: gh-publish-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 13. docker login to our ECR registry.
-      #     WHAT: calls ecr:GetAuthorizationToken (12-hour password) and runs `docker login`.
-      #     WHY: ECR repositories are private. Gives `registry`, e.g.
-      #       123456789012.dkr.ecr.us-east-1.amazonaws.com.
+      # 13. Log Docker in to our ECR registry.
+      #     WHAT: gets a 12-hour password from AWS (ecr:GetAuthorizationToken) and runs `docker login`.
+      #     WHY: ECR repositories are private. Also gives `registry`, the address of our image
+      #       storage, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com.
       - name: Log in to ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       # 14. Set up Buildx, Docker's modern builder.
-      #     WHY: the default builder cannot use the GitHub Actions cache (step 16); Buildx can.
-      #     It also gives the `imagetools` command used in step 15.
+      #     WHY: the default builder cannot use the GitHub Actions cache (storage that GitHub keeps
+      #     between runs, step 16); Buildx can. It also gives the `imagetools` command used in step 15.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       # 15. Does each image already exist in ECR with this tag?
-      #     WHAT: `imagetools inspect` reads the image's manifest (ecr:BatchGetImage).
-      #       found      -> <service>_exists=true and its digest (that image is skipped)
+      #     WHAT: `imagetools inspect` reads the image's manifest (its table of contents) from ECR.
+      #       found      -> <service>_exists=true and its digest (a fingerprint of the content);
+      #                     that image is skipped
       #       not found  -> <service>_exists=false (that image is built and pushed)
       #       any other error (e.g. not allowed) -> stop here; better than guessing.
       #     WHY: tags are immutable. Re-running a run, or a manual run for a commit that was
@@ -226,12 +239,13 @@ jobs:
 
       # 16. Build the api image for linux/arm64 and push it (only if step 15 did not find it).
       #     push: true = upload to ECR right after the build.
-      #     provenance: false = no extra "attestation" manifest, so each tag is one plain ARM64
-      #       image (the same as scripts/push-images.sh).
-      #     cache-from / cache-to (GitHub Actions cache): reuse unchanged layers (like the pnpm
-      #       install) from the previous run. mode=max also stores the build stages' layers.
+      #     provenance: false = no extra "attestation" (a signed note about how the image was
+      #       built), so each tag is one plain ARM64 image (the same as scripts/push-images.sh).
+      #     cache-from / cache-to (GitHub Actions cache): reuse unchanged layers (the saved result
+      #       of each Dockerfile step, like the pnpm install) from the previous run. mode=max also
+      #       stores the layers of the build stages that are not part of the final image.
       #       scope "api-arm64": CI's docker job builds x86 images with scope "api"; a separate
-      #       name stops the two CPU types from overwriting each other's cache.
+      #       name stops the two processor types from overwriting each other's cache.
       - name: Build and push api
         id: build_api
         if: steps.check.outputs.api_exists == 'false'
@@ -247,7 +261,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api-arm64
 
       # 17. The same for web. No NEXT_PUBLIC_API_URL build-arg: empty means "call /trpc on the
-      #     same origin as the page" (see apps/web/Dockerfile step 6), so one image fits every
+      #     same address as the page" (see apps/web/Dockerfile step 6), so one image fits every
       #     environment. That is what makes "build once, promote" possible for web.
       - name: Build and push web
         id: build_web
@@ -265,8 +279,8 @@ jobs:
 
       # 18. Write what was published to the job summary (the run's page in the Actions tab).
       #     WHAT: for each image: the tag, the digest, and whether it was pushed now or skipped.
-      #     WHY: the tag is a name; the digest (sha256 of the content) is the exact content.
-      #       The digest comes from the build (pushed now) or from step 15 (already in ECR).
+      #     WHY: the tag is a name; the digest (sha256 fingerprint of the content) is the exact
+      #       content. The digest comes from the build (pushed now) or from step 15 (already in ECR).
       - name: Write job summary
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -289,14 +303,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
 
+  # JOB deploy (CHAPTERS 4-10): wait for a human's approval, then put the published images live.
   deploy:
     needs: publish
 
     # 19. When to deploy.
     #     needs.publish.result 'success' OR 'skipped':
-    #       By default GitHub SKIPS a job whose `needs` job was skipped, and a rollback run SKIPS
+    #       By default GitHub SKIPS a job when a job it `needs` was skipped. A rollback run SKIPS
     #       publish on purpose (image_tag given, see 7). `!cancelled()` switches that default off,
-    #       so we must then say ourselves which results are fine. 'failure' and 'cancelled' are
+    #       so we must then list ourselves which results are fine. 'failure' and 'cancelled' are
     #       not in the list: NEVER deploy after a failed publish.
     #     `!cancelled()`, not `always()`: always() would even run this job after someone pressed
     #       "Cancel workflow"; !cancelled() runs it in every case EXCEPT that one.
@@ -309,11 +324,13 @@ jobs:
        (github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push'))
 
+    # CHAPTER 4: wait until a human clicks "Approve".
     # 20. The GitHub environment "dev" (Settings -> Environments).
     #     WHAT it gives: (a) the job WAITS until a required reviewer (you) clicks "Approve";
-    #       (b) GitHub's OIDC token then says "sub = ...:environment:dev", and ONLY that subject may
-    #       use the deploy role (infra/src/cicd.ts step 8). So no approval = no AWS credentials.
-    #     For workflow_run there are no inputs, so the default "dev" applies.
+    #       (b) the job's OIDC ID card then says "sub = ...:environment:dev" ("sub" = the "who am I"
+    #       line), and ONLY that card may use the deploy role (infra/src/cicd.ts step 8).
+    #       So no approval = no AWS keys.
+    #     A workflow_run start has no inputs, so the default "dev" applies.
     environment: ${{ inputs.environment || 'dev' }}
 
     # 21. One deploy per environment at a time; NEVER cancel a running one.
@@ -322,20 +339,22 @@ jobs:
     #       than a half-finished one. A newer deploy waits for the running one, then starts.
     #     GitHub keeps at most ONE waiting run per group: if a third one arrives, the older WAITING
     #       one is cancelled (never the running one). Fine: the newest commit is the one we want.
-    #     Also safe without this: Pulumi Cloud LOCKS the stack during an update. A second
-    #       `pulumi up` (from CD, or from your laptop during a CD deploy) fails at once with
-    #       "the stack is currently locked", without changing anything.
+    #     A second safety net: Pulumi Cloud (where Pulumi keeps its records) LOCKS the stack during
+    #       an update. A second `pulumi up` (from CD, or from your laptop during a CD deploy) fails at
+    #       once with "the stack is currently locked", without changing anything.
     concurrency:
       group: cd-deploy-${{ inputs.environment || 'dev' }}
       cancel-in-progress: false
 
     # 22. A normal x86 runner is fine: nothing is built here (the images exist already).
-    #     110 minutes: turning everything on can take RDS 10-15 min + CloudFront 15-25 min, plus the
-    #     migration and two waits. The deploy role's credentials last 2 hours (cicd.ts step 9).
+    #     110 minutes: turning everything on can take RDS (the database) 10-15 min + CloudFront (the
+    #     servers close to visitors) 15-25 min, plus the migration and two waits. The deploy role's
+    #     keys last 2 hours (cicd.ts step 9).
     runs-on: ubuntu-24.04
     timeout-minutes: 110
 
     steps:
+      # CHAPTER 5: safety checks. Check the setup, the tag and the current state. Nothing in AWS changes yet.
       # 23. Fail early, with clear messages, if the one-time setup was not done (PENDING.md, Step 12b).
       #     The secret's VALUE never reaches this script: GitHub only tells us whether it is empty.
       - name: Check setup
@@ -354,9 +373,10 @@ jobs:
 
       # 24. Which tag to deploy, and check that it looks like a git SHA.
       #     image_tag (rollback / redeploy) if given, else the tag publish just pushed.
-      #     WHY through `env:` and never ${{ }} inside `run:`: a ${{ }} is pasted into the script
-      #       BEFORE bash runs, so a "tag" like `x"; rm -rf ~; "` would become code (script
-      #       injection). From an env var it stays text, and the regex below refuses it anyway.
+      #     WHY through `env:` and never ${{ }} inside `run:`: GitHub pastes a ${{ }} into the script
+      #       as text BEFORE bash runs it, so a "tag" like `x"; rm -rf ~; "` would become code
+      #       (script injection). From an env var it stays text, and the pattern check below (a
+      #       regex) refuses it anyway.
       - name: Choose the image tag
         id: tag
         env:
@@ -378,9 +398,10 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # 26. Node + pnpm, and the infra package's dependencies (the Pulumi program is TypeScript).
-      #     ORDER MATTERS: this installs third-party code (and runs its install scripts) BEFORE the
-      #     job holds any AWS credentials or Pulumi token (27-28), so that code cannot steal them.
+      # 26. Node + pnpm, and the infra package's libraries (the Pulumi program is TypeScript).
+      #     ORDER MATTERS: installing libraries runs other people's code (their install scripts).
+      #     It happens BEFORE the job holds any AWS keys or Pulumi token (28-29), so that code has
+      #     nothing to steal.
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -397,8 +418,9 @@ jobs:
           echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
 
       # 28. Log in to AWS with OIDC, as the DEPLOY role (not the publish role).
-      #     The trust policy accepts only "sub = <repo>:environment:dev" (infra/src/cicd.ts step 8),
-      #     which GitHub writes only for this job, and only after the approval (20).
+      #     The role's trust policy (its "who may use me" rule) accepts only
+      #     "sub = <repo>:environment:dev" (infra/src/cicd.ts step 8). GitHub writes that only for
+      #     this job, and only after the approval (20).
       #     role-duration-seconds 7200: 2 hours, the role's maximum (see 22).
       - name: Configure AWS credentials (OIDC, deploy role)
         uses: aws-actions/configure-aws-credentials@v4
@@ -408,7 +430,8 @@ jobs:
           role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
 
-      # 29. Log in to Pulumi Cloud (where the stack's state and lock live) and pick the dev stack.
+      # 29. Log in to Pulumi Cloud (where Pulumi keeps its records of what it built, and its lock)
+      #     and pick the dev stack (our one copy of the infrastructure).
       #     The token is given to THIS step only; `pulumi login` stores it for the later steps.
       - name: Pulumi login
         working-directory: infra
@@ -419,9 +442,9 @@ jobs:
           pulumi stack select dev
 
       # 30. Does <tag> exist in BOTH repositories? Fail early, before anything changes.
-      #     WHY: a rollback to a tag that was never published (typo) or already expired (ECR
-      #     lifecycle, infra/src/registry.ts) would otherwise fail much later, as tasks that
-      #     cannot pull their image.
+      #     WHY: a rollback to a tag that was never published (typo), or that ECR already deleted
+      #     (ECR deletes old images automatically: lifecycle rules in infra/src/registry.ts), would
+      #     otherwise fail much later, as containers that cannot download their image.
       - name: Check the image exists in ECR
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -439,7 +462,7 @@ jobs:
       #       the same default as infra/index.ts).
       #     current_tag: SSM /minitickets/dev/image-tag, the version running now ("none" = never
       #       deployed). Empty if that image is no longer in ECR (then phase A cannot keep it, 33).
-      #     web_existed: did the web service exist BEFORE this run? (Step 11h restart, 37.)
+      #     web_existed: did the web service exist BEFORE this run? (Needed for the restart in 37.)
       #     Also REFUSES committed image-tag overrides: apiImageTag / webImageTag in the committed
       #       file would silently keep the services on that tag (infra/index.ts 9b), and
       #       migrationImageTag must only ever come from the command line (33).
@@ -482,6 +505,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "computeEnabled=$COMPUTE entryEnabled=$ENTRY current tag='$CURRENT' web existed=$WEB_EXISTED"
 
+      # CHAPTER 5, side path: the containers are switched off. Only apply the committed switches.
       # 32. computeEnabled is false in the committed config: nothing to deploy an image TO.
       #     Run a plain `pulumi up` so AWS matches the committed file. THIS is how "everything off"
       #     works (and "data on only"): change the switches, commit, push, approve. No migration, no
@@ -493,11 +517,13 @@ jobs:
         working-directory: infra
         run: pulumi up --yes --non-interactive
 
+      # CHAPTER 6: phase A = prepare everything except the new app version.
       # 33. PHASE A: everything EXCEPT the new app version.
-      #     WHAT: `pulumi up --config migrationImageTag=<new>`: the migration task definition gets the
-      #       NEW image; the services keep the CURRENT tag from SSM, so they do not roll. Anything
-      #       missing is created here too (database, cluster, ALB, ... after an "everything on" commit),
-      #       and infrastructure changes from this commit are applied, BEFORE the new app version.
+      #     WHAT: `pulumi up --config migrationImageTag=<new>`: the migration task definition (the
+      #       recipe ECS uses to start the migration container) gets the NEW image; the services keep
+      #       the CURRENT tag from SSM, so they do not change. Anything missing is created here too
+      #       (database, cluster, load balancer, ... after an "everything on" commit), and this
+      #       commit's infrastructure changes are applied, BEFORE the new app version.
       #     FIRST DEPLOY (SSM still "none", or the current image is gone): there is no current version
       #       to keep, so the new tag is written to SSM first and the services start with it right away.
       #       Their first seconds may hit a database without tables (the migration runs next). That is
@@ -519,6 +545,7 @@ jobs:
           fi
           pulumi up --yes --non-interactive --config migrationImageTag="$TAG"
 
+      # CHAPTER 7: migrate = update the database with the NEW code, while the OLD app keeps running.
       # 34. Migrate: run the NEW image's migrations as a one-off ECS task and wait for it.
       #     scripts/run-migrations.sh is the SAME script you run by hand (`pnpm infra:migrate`): it
       #     starts the migration task definition, waits, prints its logs, and exits with the
@@ -529,11 +556,12 @@ jobs:
         if: steps.state.outputs.compute_enabled == 'true'
         run: bash scripts/run-migrations.sh
 
+      # CHAPTER 8: phase B = switch the app to the new version.
       # 35. PHASE B, part 1: record the new version.
       #     a. SSM image-tag = <tag>: from now on EVERY `pulumi up` (CD or local) runs this tag.
       #     b. ECR: add the tag "deployed-<tag>" to both images. It is a second NAME for the SAME
-      #        image (same digest), so the ECR lifecycle keeps it longer (last 10 deployed, see
-      #        infra/src/registry.ts): these are the rollback targets.
+      #        image (same digest), so ECR's automatic clean-up keeps it longer (the last 10 deployed,
+      #        see infra/src/registry.ts): these are the rollback targets.
       #        The repositories are IMMUTABLE, so an existing deployed- tag cannot be written again:
       #        skip it if it exists (a redeploy, or a rollback to a version deployed before).
       #        HOW: read the image's manifest (its table of contents) and put it again under the new
@@ -566,8 +594,8 @@ jobs:
           done
 
       # 36. PHASE B, part 2: `pulumi up` again. It reads the NEW tag from SSM, so the api and web task
-      #     definitions get a new revision with the new image, and ECS starts rolling the services
-      #     (new tasks first; old ones stop once the new ones are healthy).
+      #     definitions get a new revision (a new version of the recipe) with the new image, and ECS
+      #     starts a rolling update (new containers first; old ones stop once the new ones are healthy).
       #     Same --config as phase A, so the migration task definition stays on the new tag too.
       #     Nothing else should change here: phase A already applied every other change.
       - name: "Phase B: pulumi up (services roll to the new tag)"
@@ -578,15 +606,19 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: pulumi up --yes --non-interactive --config migrationImageTag="$TAG"
 
+      # CHAPTER 9: verify = is the new version really running, and does it answer?
       # 37. Wait until the services are stable, and check they REALLY run the new revision.
-      #     a. `aws ecs wait services-stable`: polls every 15 s, up to 10 minutes, until each service
-      #        has exactly its desired number of tasks, all from one revision.
-      #     b. Step 11h: if the web service did not exist before this run (first deploy, or entry just
-      #        turned on), the api's tasks started BEFORE the Service Connect name "web" existed and
-      #        cannot call the revalidate hook. One forced redeploy of the api fixes it; wait again.
-      #     c. "Stable" is not "deployed": if the new tasks keep failing, ECS's circuit breaker ROLLS
-      #        BACK to the previous revision, and that is stable too. So compare each service's
-      #        revision with the one Pulumi just registered; different = rolled back = fail.
+      #     a. `aws ecs wait services-stable`: asks every 15 s, up to 10 minutes, until each service
+      #        has exactly the number of containers it wants, all from one revision.
+      #     b. If the web service did not exist before this run (first deploy, or entry just turned
+      #        on), the api's containers started BEFORE the internal name "web" existed. (Service
+      #        Connect, Step 11h, is our services' internal phone book; a container only learns the
+      #        names that existed when it started.) So the api cannot call web's revalidate hook (the
+      #        "refresh your cached pages" call). One forced restart of the api fixes it; wait again.
+      #     c. "Stable" is not "deployed": if the new containers keep failing, ECS's circuit breaker
+      #        (an automatic "this is not working, go back" switch) ROLLS BACK to the previous
+      #        revision, and that is stable too. So compare each service's revision with the one
+      #        Pulumi just registered; different = rolled back = fail.
       - name: Wait for the services to be stable
         id: wait
         if: steps.state.outputs.compute_enabled == 'true'
@@ -625,13 +657,15 @@ jobs:
           if [ "$ENTRY" = "true" ]; then check_revision "$WEB_SERVICE" webTaskDefinitionArn; fi
 
       # 38. Smoke test: is the app really answering, from the outside, through the front door?
-      #     GET /                   -> 200: the web app renders (and reaches the api through Service Connect)
-      #     GET /trpc/events.list   -> 200: the api answers, with Postgres + Valkey behind it
-      #     Up to 12 tries, 10 s apart: a fresh ALB target needs a few health checks first.
-      #     WITHOUT CloudFront (cdnEnabled false) appUrl is OUR domain, whose CNAME you set by hand
-      #       (it changes with every new ALB). So curl connects to the ALB directly with --connect-to,
-      #       but still asks for our domain (same TLS certificate check, same Host header). That tests
-      #       the deployed app even before DNS points at the new ALB; the summary says if it does.
+      #     GET /                   -> 200 (OK): the web app renders (and reaches the api inside AWS)
+      #     GET /trpc/events.list   -> 200 (OK): the api answers, with Postgres + Valkey behind it
+      #     Up to 12 tries, 10 s apart: a new container must pass a few health checks first.
+      #     WITHOUT CloudFront (cdnEnabled false), appUrl is OUR domain. Its DNS record (a CNAME:
+      #       "this name is an alias for that one") is set by hand, and the load balancer's (ALB's)
+      #       name changes whenever a new ALB is created. So curl connects to the ALB directly with
+      #       --connect-to, but still asks for our domain: the HTTPS certificate check and the request
+      #       are exactly what a visitor sends. That tests the deployed app even before DNS points at
+      #       the new ALB; the summary says whether it does.
       #     With entry off there is no public URL: skipped (the summary says so).
       #     NOTE: if you limit allowedCidrs to your own IP, GitHub's runner cannot reach the ALB and
       #       this step fails. Then remove this check or allow the runner (not built).
@@ -667,9 +701,10 @@ jobs:
             done
           done
 
+      # CHAPTER 10: report = say what happened (and, after a failure, why).
       # 39. Only when something above FAILED (and compute is on): print the latest ECS service events.
-      #     WHY: they say WHY tasks do not start or stay healthy ("CannotPullContainerError", "failed
-      #     health checks", "circuit breaker triggered", ...), right in this log.
+      #     WHY: they say WHY containers do not start or stay healthy ("CannotPullContainerError",
+      #     "failed health checks", "circuit breaker triggered", ...), right in this log.
       - name: Print the latest ECS service events
         if: failure() && steps.state.outputs.compute_enabled == 'true'
         working-directory: infra

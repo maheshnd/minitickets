@@ -25,9 +25,27 @@ flowchart LR
 
 ---
 
-## 2026-10-12 · feat(events): cache-aside for events.list in Redis, with graceful degradation
+## 2026-10-14 · docs(cicd): beginner's CI/CD story + plain-English chapter comments in cd.yml
 
 Commit: filled in by the next handbook commit
+
+Why: `cd.yml` (Steps 12a, 12b) is hard to follow for someone who has never seen GitHub Actions, bash
+or Pulumi. This adds one beginner's guide to the whole pipeline, with real snippets from `ci.yml` and
+`cd.yml`. Comments and docs only, no behaviour change. The previous entry's placeholder was replaced
+with its real hash. `pnpm docs:history --since cc89b49` lists the files below (PENDING.md also shows
+up there, from the feature steps since then; it is not changed by this commit).
+
+- `cicd-story.md`: new page. Part 1 the story (characters table, chapters 1-11 from push to rollback,
+  each with what / why / if it fails; diagrams of the whole flow, phase A/B and failures); Part 2 the
+  workflow syntax (triggers, jobs, steps, runners, uses/run, with/env, expressions and script
+  injection, if, needs, outputs, secrets vs vars, permissions, concurrency, environment,
+  workflow_run vs workflow_dispatch); Part 3 the bash we use; Part 4 the AWS and Pulumi commands;
+  Part 5 four line-by-line walk-throughs; Part 6 FAQ; Part 7 interview.
+- `README.md`: "The files" table and the "First full read" path link the new page.
+
+## 2026-10-12 · feat(events): cache-aside for events.list in Redis, with graceful degradation
+
+Commit: cc89b49
 
 Why: Feature 1, step 4 puts Redis in front of the `events.list` query. The handbook must explain
 cache-aside, TTL with jitter, versioned keys, staleness (and why booking is not affected) and what happens
