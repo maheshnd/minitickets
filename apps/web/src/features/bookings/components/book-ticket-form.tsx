@@ -3,7 +3,7 @@
 import { MAX_TICKETS_PER_BOOKING } from "@minitickets/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 // Who is logged in is the auth feature's job, and the event is the events feature's: we reuse
 // their hooks instead of writing second ones.
@@ -28,6 +28,10 @@ export function BookTicketForm({ eventId }: { eventId: string }) {
   const [booked, setBooked] = useState(0);
   // The message under the button when booking failed ("" = nothing to show).
   const [formError, setFormError] = useState("");
+  // The idempotency key of the booking the visitor is trying to make, and the quantity it was made
+  // for (null = no booking under way). A ref, not state: changing it must not re-render anything,
+  // and it must survive the re-renders a pending request causes. See keyFor in step 5.
+  const intent = useRef<{ quantity: number; key: string } | null>(null);
 
   // 2. EventDetails already shows "Loading..." or the error; the form has nothing to offer then.
   if (!event.data) return null;
@@ -45,34 +49,58 @@ export function BookTicketForm({ eventId }: { eventId: string }) {
   //    (?next=, checked by getSafeNext in the login form). Same URL shape the proxy builds.
   const loginHref = `/login?${new URLSearchParams({ next: `/events/${eventId}` })}`;
 
+  // 5. THE RULE: ONE KEY PER INTENT. An intent is "book N tickets of this event", from the first
+  //    click until it has worked. Every request for that intent sends the SAME key: React Query's
+  //    own retries (they resend the same input), and a second click after an error message (the
+  //    first try may have booked, only its answer was lost). The API books once per key and answers
+  //    every repeat with that one booking.
+  //    A NEW key when the intent is new:
+  //    - after a successful booking (onSuccess clears it): booking again is a second, wanted booking;
+  //    - when the quantity changes (by the visitor, or lowered because fewer seats are left): "book
+  //      2" and "book 1" are different bookings. Reusing the key would get a 409 ("already used for
+  //      a different booking") if the first one did go through.
+  //    Leaving the page (or reloading) forgets the ref, so a later visit starts a new intent.
+  //    crypto.randomUUID(): a random UUID (122 random bits) from the browser; collisions never happen
+  //    in practice, and the key is unique per user anyway. It needs a secure context: HTTPS or
+  //    localhost (both true for us).
+  function keyFor(quantity: number): string {
+    if (intent.current?.quantity !== quantity) intent.current = { quantity, key: crypto.randomUUID() };
+    return intent.current.key;
+  }
+
   function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
-    // 5. Stop the browser's own full-page submit.
+    // 6. Stop the browser's own full-page submit.
     formEvent.preventDefault();
 
-    // 6. Logged out: go and log in first. (The API would answer 401 anyway; this saves the trip.)
+    // 7. Logged out: go and log in first. (The API would answer 401 anyway; this saves the trip.)
     if (!me.data) {
       router.push(loginHref);
       return;
     }
 
-    // 7. Send it. The API takes the user from the session cookie, never from this form.
+    // 8. Send it, with this intent's key. The API takes the user from the session cookie, never
+    //    from this form. A network error or 5xx is retried up to 2 times by the hook (same key);
+    //    onError below runs only when the last try failed too.
     setBooked(0);
     setFormError("");
     bookTicket.mutate(
-      { eventId, quantity: chosen },
+      { eventId, quantity: chosen, idempotencyKey: keyFor(chosen) },
       {
         onSuccess: (booking) => {
+          // 8a. Done: this intent is over, the next click is a new booking with a new key.
+          intent.current = null;
           setBooked(booking.quantity);
           setQuantity(1);
         },
         onError: (error) => {
           const status = error.data?.httpStatus;
-          // 7a. The session ran out while the page was open (the header still said "logged in").
+          // 8b. The session ran out while the page was open (the header still said "logged in").
           if (status === 401) {
             router.push(loginHref);
             return;
           }
-          // 7b. The API's own words for 400 / 404 / 409, e.g. "Not enough seats left".
+          // 8c. The API's own words for 400 / 404 / 409, e.g. "Not enough seats left".
+          //     The key is KEPT: clicking again for the same quantity repeats the same intent.
           setFormError(
             status !== undefined && SHOW_API_MESSAGE.includes(status) ? error.message : "Something went wrong. Please try again.",
           );
@@ -105,8 +133,9 @@ export function BookTicketForm({ eventId }: { eventId: string }) {
           ))}
         </select>
       </div>
-      {/* 8. Disabled while the request runs (a double click must not book twice; F2b adds an
-             idempotency key for retries), while we don't know yet who is logged in, and when sold out. */}
+      {/* 9. Disabled while the request runs (and its retries), while we don't know yet who is
+             logged in, and when sold out. Disabling stops most double clicks; the idempotency key
+             (step 5) makes the rest harmless. */}
       <Button type="submit" disabled={soldOut || bookTicket.isPending || me.isPending}>
         {bookTicket.isPending ? "Booking..." : "Book ticket"}
       </Button>

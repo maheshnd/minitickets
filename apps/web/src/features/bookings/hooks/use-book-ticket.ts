@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/lib/trpc/client";
+import { shouldRetryBooking } from "../lib/booking-retry";
 
 // Wraps the bookings.create mutation so components never call tRPC directly.
 export function useBookTicket(eventId: string) {
@@ -23,6 +24,10 @@ export function useBookTicket(eventId: string) {
 
   return useMutation(
     trpc.bookings.create.mutationOptions({
+      // Retries ON for this mutation only (all others: retry 0, see query-provider.tsx): up to 2 more
+      // tries on a network error or a 5xx, never on a 4xx. Safe ONLY because each retry sends the SAME
+      // input, so the SAME idempotency key, and the API never books one key twice (lib/booking-retry.ts).
+      retry: shouldRetryBooking,
       onSuccess: () =>
         Promise.all([invalidateSeats(), queryClient.invalidateQueries({ queryKey: trpc.bookings.mine.queryKey() })]),
       onError: (error) => {

@@ -260,7 +260,7 @@ SIGTERM is confirmed for normal deploys, not documented for Spot interruptions),
 
 ## 2026-10-12 · docs(handbook): app story + app cards + change tracking
 
-Commit: filled in by the next handbook commit
+Commit: 97f9cab
 
 Why: Phase 3 of [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) (the app story, plus cards and `@concept`
 anchors for every ✅ and 🟡 app concept); change tracking for the handbook (this file,

@@ -178,8 +178,12 @@ if unsure about an AWS fact, say so in the text.
 ## Handbook changelog rule
 
 Every commit that changes anything in `docs/handbook/` adds an entry at the TOP of
-`docs/handbook/CHANGELOG.md` (newest first). Exception: a feature step that only appends to
-`PENDING.md` (it is a to-do list, not a handbook page; the catch-up step's entry covers it).
+`docs/handbook/CHANGELOG.md` (newest first). Exceptions (no entry needed, to avoid noise), as long
+as the commit changes nothing else in `docs/handbook/`:
+- appending to `PENDING.md` (it is a to-do list, not a handbook page; the catch-up step's entry
+  covers it);
+- a step's status line(s) in `ROADMAP.md`;
+- a new prompt file in `docs/handbook/prompts/`.
 - date (YYYY-MM-DD) and the commit subject
 - each changed file, one line each: which sections were added or changed, and why
   (`pnpm docs:history --since <previous handbook commit>` lists the files and changed headings)

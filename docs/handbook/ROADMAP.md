@@ -35,8 +35,8 @@ flowchart LR
 
 ## Where things stand now
 
-- **F2a (book a ticket + "My tickets") is in progress**, local only: bookings table, a row-locked
-  booking transaction, the event page, `/tickets`, and a race demo (`pnpm demo:booking-race`).
+- **F2a is done** (committed). **F2b (idempotency key for booking) is built locally, not committed
+  yet:** `bookings.idempotency_key` + UNIQUE per user, booking retries on, `pnpm demo:idempotency`.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
@@ -65,9 +65,10 @@ flowchart LR
 
 The ticketing + serverless series. Each item links to its prompt once there is one.
 
-1. **F2a: book a ticket + "My tickets"** (in progress, [prompt](prompts/f2a.md)). A database
+1. **F2a: book a ticket + "My tickets"** (done, [prompt](prompts/f2a.md)). A database
    transaction with a row lock (`SELECT … FOR UPDATE`), so two people can't buy the same last seat.
-2. **F2b: idempotency key for booking.** A retried "Book ticket" request doesn't book twice.
+2. **F2b: idempotency key for booking** (built locally, awaiting review, [prompt](prompts/f2b.md)).
+   A retried "Book ticket" request doesn't book twice.
 3. **S1: booking confirmation email.** SQS + Lambda + SES, a dead-letter queue (DLQ: where messages
    go after too many failures), and idempotency in DynamoDB (handling the same message twice does
    no harm).

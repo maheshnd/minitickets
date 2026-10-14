@@ -21,6 +21,7 @@
 // No extra library: requests use Node's built-in fetch; Postgres is reached with the `pg` package
 // the API already depends on (see step 1).
 
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 
@@ -114,7 +115,8 @@ async function safeBookings(eventId: string, users: { email: string }[]) {
   const results = await Promise.all(
     sessions.map(async (sid) => {
       const sent = performance.now();
-      const result = await trpcMutation("bookings.create", { eventId, quantity: 1 }, sid);
+      // Each user's booking is its own intent, so its own idempotency key (step F2b).
+      const result = await trpcMutation("bookings.create", { eventId, quantity: 1, idempotencyKey: randomUUID() }, sid);
       return { status: result.status, message: result.message, ms: performance.now() - sent };
     }),
   );
@@ -141,7 +143,11 @@ async function unsafeBooking(client: PgClient, eventId: string, userId: string) 
       return "refused";
     }
     await client.query("UPDATE events SET seats_left = $2 WHERE id = $1", [eventId, seatsLeft - 1]);
-    await client.query("INSERT INTO bookings (event_id, user_id, quantity) VALUES ($1, $2, 1)", [eventId, userId]);
+    // gen_random_uuid(): every booking needs an idempotency key since step F2b; this one is never reused.
+    await client.query("INSERT INTO bookings (event_id, user_id, quantity, idempotency_key) VALUES ($1, $2, 1, gen_random_uuid())", [
+      eventId,
+      userId,
+    ]);
     await client.query("COMMIT");
     return "booked";
   } catch (err) {

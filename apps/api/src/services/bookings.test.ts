@@ -10,9 +10,9 @@ const calls: string[] = [];
 const createBookingTx = vi.fn();
 const listByUser = vi.fn();
 vi.mock("../queries/bookings", () => ({
-  createBookingTx: (eventId: string, userId: string, quantity: number) => {
+  createBookingTx: (eventId: string, userId: string, quantity: number, idempotencyKey: string) => {
     calls.push("createBookingTx");
-    return createBookingTx(eventId, userId, quantity);
+    return createBookingTx(eventId, userId, quantity, idempotencyKey);
   },
   listByUser: (userId: string) => listByUser(userId),
 }));
@@ -29,6 +29,8 @@ const { bookTicket, myTickets } = await import("./bookings");
 
 const log = { error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
 const EVENT_ID = "00000000-0000-4000-8000-000000000004";
+const OTHER_EVENT_ID = "00000000-0000-4000-8000-000000000005";
+const KEY = "5f0c6a3e-2b7d-4c1e-9a8f-0d3b6e4c2a11";
 const savedRow = {
   id: "00000000-0000-4000-8000-0000000000b1",
   eventId: EVENT_ID,
@@ -36,32 +38,35 @@ const savedRow = {
   quantity: 2,
   status: "confirmed" as const,
   createdAt: new Date("2026-10-14T10:00:00Z"),
+  idempotencyKey: KEY,
+};
+// What bookTicket answered for savedRow the first time: a replay must answer exactly this.
+const firstAnswer = {
+  id: savedRow.id,
+  eventId: EVENT_ID,
+  quantity: 2,
+  status: "confirmed",
+  createdAt: "2026-10-14T10:00:00.000Z",
 };
 
 beforeEach(() => {
   calls.length = 0;
-  createBookingTx.mockReset().mockResolvedValue(savedRow);
+  createBookingTx.mockReset().mockResolvedValue({ kind: "created", booking: savedRow });
   listByUser.mockReset();
   invalidateEventLists.mockReset().mockResolvedValue(undefined);
 });
 
 describe("bookTicket", () => {
   it("runs the transaction FIRST, then invalidates the events cache, and returns the public booking", async () => {
-    const booking = await bookTicket("u1", { eventId: EVENT_ID, quantity: 2 }, log);
+    const booking = await bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log);
 
-    // 2. The user comes from the caller (the session), the rest from the input.
-    expect(createBookingTx).toHaveBeenCalledWith(EVENT_ID, "u1", 2);
+    // 2. The user comes from the caller (the session), the rest (key included) from the input.
+    expect(createBookingTx).toHaveBeenCalledWith(EVENT_ID, "u1", 2, KEY);
     // 3. Write first, then invalidate: the other order could refill the cache with the old seats.
     expect(calls).toEqual(["createBookingTx", "invalidateEventLists"]);
     expect(invalidateEventLists).toHaveBeenCalledWith(log);
-    // 4. No userId in the answer; the date is ISO text.
-    expect(booking).toEqual({
-      id: savedRow.id,
-      eventId: EVENT_ID,
-      quantity: 2,
-      status: "confirmed",
-      createdAt: "2026-10-14T10:00:00.000Z",
-    });
+    // 4. No userId and no key in the answer; the date is ISO text.
+    expect(booking).toEqual(firstAnswer);
   });
 
   it.each([
@@ -70,7 +75,39 @@ describe("bookTicket", () => {
   ])("lets a %s pass through untouched, and invalidates nothing (nothing changed)", async (_name, error) => {
     createBookingTx.mockRejectedValue(error);
 
-    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 1 }, log)).rejects.toBe(error);
+    await expect(bookTicket("u1", { eventId: EVENT_ID, quantity: 1, idempotencyKey: KEY }, log)).rejects.toBe(error);
+    expect(calls).toEqual(["createBookingTx"]);
+  });
+});
+
+// 5. Step F2b: the transaction found a booking with this user + key ("existing") and wrote nothing.
+//    That it really wrote nothing (seats untouched, one row) is Postgres' job and is checked against
+//    a real database by `pnpm demo:idempotency` and e2e/booking-idempotency.spec.ts. Here we check
+//    what the service DOES with it.
+describe("bookTicket with a repeated idempotency key", () => {
+  it("same event + same quantity: returns the EXISTING booking, the same answer as the first time, and changes nothing", async () => {
+    const first = await bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log);
+    calls.length = 0;
+    createBookingTx.mockResolvedValue({ kind: "existing", booking: savedRow });
+
+    const replay = await bookTicket("u1", { eventId: EVENT_ID, quantity: 2, idempotencyKey: KEY }, log);
+
+    expect(replay).toEqual(first);
+    expect(replay.id).toBe(savedRow.id);
+    // No seats changed, so no cache is invalidated (an invalidation would be the sign of a write).
+    expect(calls).toEqual(["createBookingTx"]);
+  });
+
+  it.each([
+    ["a different quantity", { eventId: EVENT_ID, quantity: 3 }],
+    ["a different event", { eventId: OTHER_EVENT_ID, quantity: 2 }],
+  ])("%s: ConflictError (409), and nothing invalidated", async (_name, request) => {
+    createBookingTx.mockResolvedValue({ kind: "existing", booking: savedRow });
+
+    const result = bookTicket("u1", { ...request, idempotencyKey: KEY }, log);
+
+    await expect(result).rejects.toBeInstanceOf(ConflictError);
+    await expect(result).rejects.toThrow("This idempotency key was already used for a different booking");
     expect(calls).toEqual(["createBookingTx"]);
   });
 });

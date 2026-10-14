@@ -27,6 +27,8 @@ export function QueryProvider({ children }: { children: ReactNode }) {
           // Mutations never retry. If a signup succeeds on the server but the response is
           // lost on the way back, a retry would hit the unique email and return 409, and the
           // user would see a false "Email already registered" for their own new account.
+          // ONE exception: bookings.create retries (step F2b), because it sends an idempotency
+          // key that makes a repeat harmless (features/bookings/lib/booking-retry.ts).
           mutations: { retry: 0 },
         },
       }),

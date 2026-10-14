@@ -14,6 +14,11 @@ export const BookTicketInput = z.object({
     .int("Tickets must be a whole number")
     .min(1, "Book at least 1 ticket")
     .max(MAX_TICKETS_PER_BOOKING, `At most ${MAX_TICKETS_PER_BOOKING} tickets per booking`),
+  // The idempotency key (step F2b): a random UUID the browser makes ONCE per booking intent and sends
+  // again with every retry of that same booking. The API books at most once per (user, key) and
+  // answers a repeat with the first booking. Required: a booking without a key could not be retried
+  // safely. See createBookingTx in apps/api/src/queries/bookings.ts.
+  idempotencyKey: z.uuid("Invalid idempotency key"),
 });
 
 export type BookTicketInput = z.infer<typeof BookTicketInput>;

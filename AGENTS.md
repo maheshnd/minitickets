@@ -130,8 +130,10 @@ only; if unsure about an AWS fact, say so in the text.
 **Handbook catch-up:** only when the owner asks. Follow `CLAUDE.md` ("Workflow", "Docs rule",
 "Living handbook rule"), then clear `PENDING.md`.
 
-**Handbook changelog:** any change in `docs/handbook/` (except a PENDING.md-only append) adds an
-entry at the top of `docs/handbook/CHANGELOG.md`, as `CLAUDE.md` describes.
+**Handbook changelog:** any change in `docs/handbook/` adds an entry at the top of
+`docs/handbook/CHANGELOG.md`, as `CLAUDE.md` describes. No entry is needed (to avoid noise) when
+the only handbook changes are: a `PENDING.md` append, a step's status line(s) in `ROADMAP.md`, or a
+new prompt file in `docs/handbook/prompts/`.
 
 ## How to verify
 

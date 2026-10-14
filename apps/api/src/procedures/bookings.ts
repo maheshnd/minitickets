@@ -6,8 +6,8 @@ import { protectedProcedure, router } from "../trpc/init";
 export const bookingsRouter = router({
   // 1. protectedProcedure: 401 if not logged in. The user comes from the SESSION, never from the
   //    input, so nobody can book in someone else's name.
-  // 2. The same schema the booking form uses in the browser (eventId, 1-4 tickets); the server
-  //    never trusts that check.
+  // 2. The same schema the booking form uses in the browser (eventId, 1-4 tickets, idempotency
+  //    key); the server never trusts that check.
   // 3. A mutation (POST): it changes data, so it is never cached and never sent by a prefetch.
   create: protectedProcedure
     .input(BookTicketInput)
