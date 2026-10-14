@@ -40,11 +40,24 @@ docs/            Step-by-step explanations
 
 ## Docs
 
+- [docs/handbook/ROADMAP.md](docs/handbook/ROADMAP.md): the whole plan. What is built, where things
+  stand today, and what comes next, in order.
+- [AGENTS.md](AGENTS.md): instructions for coding agents other than Claude (for example OpenAI
+  Codex). It points to [CLAUDE.md](CLAUDE.md), whose rules apply to every agent, and spells out the
+  safety rules.
+
 1. [docs/01-setup.md](docs/01-setup.md): how a request travels from the input box to the API and back,
    and how the API's types reach the web app.
-- [docs/handbook/cicd-story.md](docs/handbook/cicd-story.md): the CI/CD story for beginners. What
-  happens between `git push` and the new version running on AWS, and how to read `ci.yml` and
-  `cd.yml` (GitHub Actions, bash and Pulumi explained from zero).
+- [docs/handbook/guides/infra-build-along.md](docs/handbook/guides/infra-build-along.md): our AWS
+  setup for beginners. We move the app from the laptop to AWS one piece at a time, told as one
+  growing city (VPC = the city, subnets = neighborhoods, internet gateway = the city gate…). Every
+  setting is traced from the code to the AWS console and the CLI.
+- [docs/handbook/guides/infra-explorer.html](docs/handbook/guides/infra-explorer.html): the
+  interactive city map that goes with that guide. Open it locally (double-click the file; GitHub
+  only shows its source).
+- [docs/handbook/guides/cicd-story.md](docs/handbook/guides/cicd-story.md): the CI/CD story for
+  beginners. What happens between `git push` and the new version running on AWS, and how to read
+  `ci.yml` and `cd.yml` (GitHub Actions, bash and Pulumi explained from zero).
 
 ## Notes
 

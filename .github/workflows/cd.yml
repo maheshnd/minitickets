@@ -3,7 +3,7 @@
 #     and store them in ECR (Amazon's private image storage).
 #   Job deploy (Step 12b): after a human clicks "Approve", run those images on AWS.
 #
-# Beginner's guide, with every word explained: docs/handbook/cicd-story.md.
+# Beginner's guide, with every word explained: docs/handbook/guides/cicd-story.md.
 # The "# CHAPTER N" lines below match the chapters of that guide.
 #
 # FLOW (read this first):

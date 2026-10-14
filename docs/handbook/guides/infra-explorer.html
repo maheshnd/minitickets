@@ -1,0 +1,1489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minitickets city map</title>
+<meta name="description" content="An interactive city map of the minitickets AWS setup. It grows chapter by chapter with the infra build-along guide.">
+<!--
+  HOW THIS FILE WORKS (for whoever updates it):
+  1. Everything on the map comes from ONE JSON block below: the script element with id "city-data".
+     chapters    -> the chapter stepper and the 3-line summaries
+     filters     -> the connection kinds you can show or hide
+     decor       -> drawings that are not clickable (zone labels, roads, the inner wall)
+     components  -> every piece of the city, built or planned, with its map shape
+     connections -> what joins two components, and WHAT ALLOWS IT (label; "short" = a shorter map label)
+  2. A component is "built" when its chapter's status is "written" and the reader has stepped to it.
+     Otherwise it is drawn as a pencil outline ("planned") and is not clickable.
+  3. To add a chapter: set its status to "written", fill in the details of its components (what, why,
+     settings, code, console, cli, debug, interview), add its connections, and add its 3-line summary.
+     Keep the text identical in meaning to docs/handbook/guides/infra-build-along.md.
+  4. pnpm docs:check reads this JSON: every code file and symbol must exist, every connection must
+     join two known components, and every written chapter's title must match a guide heading.
+  No network requests: no fonts, no libraries. Works by double-clicking the file.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #f5f0e6;
+    --paper-raised: #fbf8f1;
+    --ink: #26231e;
+    --ink-2: #554e43;
+    --pencil: #9a917f;
+    --pencil-text: #6b6456;
+    --rule: #d8cfbd;
+    --wall: #6b4f3a;
+    --road: #e6d6b0;
+    --road-edge: #c7b083;
+    --public: #f0e2c0;
+    --private: #dfe7de;
+    --hatch: #b7c5b5;
+    --district: #8d8573;
+    --marker: rgba(255, 210, 40, 0.5);
+    --route: #2a5b8e;
+    --select: #b33f28;
+    --focus: #1c5fc4;
+    --grid: rgba(70, 55, 30, 0.06);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #16181c;
+      --paper-raised: #1d2025;
+      --ink: #ece6d9;
+      --ink-2: #c0b8a8;
+      --pencil: #6f6b63;
+      --pencil-text: #a29b8e;
+      --rule: #34373d;
+      --wall: #c99c74;
+      --road: #3b3427;
+      --road-edge: #5e523a;
+      --public: #2b2619;
+      --private: #1b2622;
+      --hatch: #2e3c35;
+      --district: #8a8478;
+      --marker: rgba(240, 196, 40, 0.3);
+      --route: #8ab8e8;
+      --select: #f2906f;
+      --focus: #8fb8ff;
+      --grid: rgba(255, 255, 255, 0.035);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #16181c;
+    --paper-raised: #1d2025;
+    --ink: #ece6d9;
+    --ink-2: #c0b8a8;
+    --pencil: #6f6b63;
+    --pencil-text: #a29b8e;
+    --rule: #34373d;
+    --wall: #c99c74;
+    --road: #3b3427;
+    --road-edge: #5e523a;
+    --public: #2b2619;
+    --private: #1b2622;
+    --hatch: #2e3c35;
+    --district: #8a8478;
+    --marker: rgba(240, 196, 40, 0.3);
+    --route: #8ab8e8;
+    --select: #f2906f;
+    --focus: #8fb8ff;
+    --grid: rgba(255, 255, 255, 0.035);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  a { color: var(--route); }
+  code, pre { font-family: var(--mono); font-size: 0.86em; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* ---------- Header ---------- */
+  .top {
+    display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: flex-end; justify-content: space-between;
+    padding: 12px 24px 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand h1 {
+    font-family: var(--serif); font-weight: 600; font-size: 22px; line-height: 1.15; margin: 0;
+    letter-spacing: 0.005em;
+  }
+  .brand p { margin: 2px 0 0; color: var(--ink-2); font-size: 13.5px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .inline-label { font-size: 13px; color: var(--ink-2); margin-right: 2px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .toggle {
+    border: 1px solid var(--rule); background: transparent; border-radius: 3px;
+    padding: 2px 9px; font-size: 13px; cursor: pointer;
+  }
+  .toggle:disabled { color: var(--pencil-text); cursor: default; }
+  .toggle[aria-pressed="true"] { border-color: var(--ink); background: var(--paper-raised); box-shadow: inset 0 -2px 0 var(--route); }
+  .search { position: relative; }
+  .search input {
+    width: 230px; padding: 3px 8px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-raised);
+  }
+  .results {
+    position: absolute; z-index: 5; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px 0; list-style: none;
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 3px; max-height: 280px; overflow: auto;
+  }
+  .results[hidden] { display: none; }
+  .results button {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 4px 10px; cursor: pointer;
+    font-size: 13.5px;
+  }
+  .results button:hover, .results button:focus-visible { background: var(--paper); }
+  .results .muted { color: var(--pencil-text); }
+  .results .none { padding: 4px 10px; font-size: 13.5px; color: var(--pencil-text); }
+  .theme select { padding: 2px 6px; font-size: 13px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-raised); }
+  .notes { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--ink-2); }
+  .notes:empty { display: none; }
+
+  /* ---------- Chapter road (the stepper) ---------- */
+  .route {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+    padding: 0 0 8px;
+  }
+  .step-btn {
+    border: 1px solid var(--ink); background: transparent; border-radius: 3px; padding: 2px 12px; cursor: pointer;
+    font-size: 14px;
+  }
+  .step-btn:disabled { border-color: var(--rule); color: var(--pencil-text); cursor: default; }
+  .stops { position: relative; display: flex; justify-content: space-between; align-items: center; margin: 0; padding: 0 4px; list-style: none; }
+  .stops::before {
+    content: ""; position: absolute; left: 10px; right: 10px; top: 50%; height: 4px; margin-top: -2px;
+    background: var(--road); border-top: 1px solid var(--road-edge); border-bottom: 1px solid var(--road-edge);
+  }
+  .stop {
+    position: relative; width: 24px; height: 24px; border-radius: 50%; padding: 0; cursor: pointer;
+    border: 1.5px solid var(--ink); background: var(--paper); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .stop.done { background: var(--paper-raised); }
+  .stop[aria-current="step"] { background: var(--ink); color: var(--paper); }
+  .stop:disabled { border-style: dashed; border-color: var(--pencil); color: var(--pencil-text); cursor: default; }
+
+  /* ---------- Layout ---------- */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0; }
+  .mapwrap { padding: 10px 18px 16px 24px; min-width: 0; }
+  .summary { margin-bottom: 8px; }
+  .summary h2 { margin: 0 0 2px; font-family: var(--serif); font-weight: 600; font-size: 19px; line-height: 1.25; }
+  .summary h2 small { font-family: var(--sans); font-weight: 400; font-size: 13px; color: var(--ink-2); margin-right: 8px; }
+  .summary .guide-link { margin-left: 10px; font-family: var(--sans); font-weight: 400; font-size: 13px; }
+  .summary ul { margin: 0; padding-left: 1.1em; font-size: 14px; line-height: 1.45; }
+  .summary li::marker { color: var(--pencil); }
+  .map-frame { border: 1px solid var(--rule); background: var(--paper); overflow: auto; }
+  /* "Fit": the whole map fits on a laptop screen under the controls (never smaller than 560px tall).
+     Zoomed in: the map gets wider than its frame and the frame scrolls. */
+  svg#map { display: block; width: 100%; height: auto; max-height: max(540px, calc(100vh - 262px)); }
+  .map-frame.zoomed svg#map { max-height: none; }
+  .below-map { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; margin-top: 8px; }
+  .zoom { display: flex; gap: 4px; }
+  .zoom .toggle { min-width: 34px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+  .legend span.key { display: inline-block; width: 26px; height: 10px; margin-right: 6px; vertical-align: middle; }
+  .key-built { border: 1.5px solid var(--ink); background: var(--public); }
+  .key-new { background: var(--marker); border: 1.5px solid var(--ink); }
+  .key-planned { border: 1.5px dashed var(--pencil); }
+  .key-route { border-top: 2.5px solid var(--route); height: 0 !important; }
+
+  /* ---------- Side panel ---------- */
+  aside#panel {
+    border-left: 1px solid var(--rule); background: var(--paper-raised);
+    padding: 16px 20px 28px; overflow: auto; max-height: calc(100vh - 0px); position: sticky; top: 0; align-self: start;
+  }
+  aside#panel:focus { outline: none; }
+  .kicker { margin: 0 0 2px; font-size: 13px; color: var(--ink-2); }
+  aside h2 { font-family: var(--serif); font-weight: 600; font-size: 22px; line-height: 1.2; margin: 0 0 6px; }
+  aside h2:focus { outline: none; }
+  aside h2:focus-visible { outline: 2px solid var(--focus); }
+  .realname { margin: 0 0 12px; font-size: 14px; word-break: break-word; }
+  .realname code { display: inline-block; white-space: nowrap; margin: 0 4px 4px 0; background: var(--paper); border: 1px solid var(--rule); padding: 0 4px; border-radius: 2px; }
+  .ledger { margin: 0; }
+  .ledger dt { font-family: var(--serif); font-weight: 600; font-size: 15.5px; margin: 14px 0 3px; padding-top: 10px; border-top: 1px solid var(--rule); }
+  .ledger dd { margin: 0; font-size: 14.5px; }
+  .ledger ul { margin: 0; padding-left: 1.1em; }
+  .ledger li { margin: 2px 0; }
+  .ledger pre { margin: 0; padding: 8px 10px; background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; white-space: pre-wrap; word-break: break-word; }
+  .copy { margin-top: 6px; border: 1px solid var(--rule); background: transparent; border-radius: 3px; padding: 1px 10px; font-size: 13px; cursor: pointer; }
+  .linkish {
+    display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid var(--route); background: var(--paper);
+    padding: 5px 9px; margin: 6px 0; cursor: pointer; font-size: 14px; border-radius: 0 2px 2px 0;
+  }
+  .linkish:hover { background: var(--paper-raised); }
+  .linkish .allow { display: block; font-size: 13px; color: var(--ink-2); }
+  .linkish.node-link { border-left-color: var(--ink); }
+  .backlink { border: 0; background: transparent; padding: 0; margin: 0 0 10px; color: var(--route); text-decoration: underline; cursor: pointer; font-size: 13.5px; }
+  .tips { margin: 0; padding-left: 1.1em; font-size: 14px; color: var(--ink-2); }
+  .tips kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--paper); }
+
+  /* ---------- The map (SVG) ---------- */
+  #map text { font-family: var(--sans); fill: var(--ink); }
+  #map .t-title { font-family: var(--serif); font-weight: 600; font-size: 17px; }
+  #map .t-small { font-size: 13.5px; fill: var(--ink-2); }
+  #map .t-mono { font-family: var(--mono); font-size: 12.5px; fill: var(--ink-2); }
+  #map .t-zone { font-size: 13.5px; fill: var(--ink-2); font-style: italic; }
+  #map .t-frame { font-family: var(--serif); font-size: 17px; font-weight: 600; }
+  #map .t-box { font-size: 12.5px; fill: var(--ink-2); }
+  #map .grid-line { stroke: var(--grid); stroke-width: 1; }
+
+  /* decor */
+  #map .road { stroke: var(--road); stroke-linecap: butt; fill: none; }
+  #map .road-edge { stroke: var(--road-edge); fill: none; }
+  #map .inner-wall { stroke: var(--wall); stroke-width: 2; fill: url(#hatch-wall); }
+  #map .laptop-frame { fill: none; stroke: var(--ink-2); stroke-width: 1.2; }
+  #map .decor.planned .road { stroke: none; }
+  #map .decor.planned .road-edge { stroke: var(--pencil); stroke-dasharray: 6 5; stroke-width: 1.5px; }
+  #map .decor.planned .inner-wall { stroke: var(--pencil); stroke-dasharray: 5 4; fill: none; }
+  #map .decor.planned text { fill: var(--pencil-text); }
+  #map .compass path { fill: var(--ink-2); }
+  #map .compass text { font-size: 12px; fill: var(--ink-2); font-family: var(--serif); }
+
+  /* every node */
+  #map .node { cursor: default; }
+  #map .node.built { cursor: pointer; }
+  #map .node:focus { outline: none; }
+  #map .marker { fill: var(--marker); stroke: none; opacity: 0; }
+  #map .node.is-new .marker { opacity: 1; }
+  #map .ring { fill: none; stroke: none; stroke-width: 3; }
+  #map .node.built:hover .ring { stroke: var(--ink-2); stroke-dasharray: 2 3; }
+  #map .node:focus-visible .ring { stroke: var(--focus); stroke-dasharray: none; }
+  #map .node.selected .ring { stroke: var(--select); stroke-dasharray: none; }
+  #map .node.related .ring { stroke: var(--select); stroke-dasharray: 6 3; }
+  #map .node.match .ring { stroke: var(--focus); stroke-dasharray: none; stroke-width: 4; }
+  #map .node.dim { opacity: 0.35; }
+  #map .node.planned text { fill: var(--pencil-text); }
+  #map .node.planned .t-mono { fill: var(--pencil-text); }
+
+  /* building-like shapes */
+  #map .body { stroke: var(--ink); stroke-width: 1.4; fill: var(--paper-raised); }
+  #map .node.planned .body { stroke: var(--pencil); stroke-dasharray: 5 4; fill: transparent; }
+  #map .shape-hood.v-public.built .body { fill: var(--public); }
+  #map .shape-hood.v-private.built .body { fill: url(#hatch-private); }
+  #map .shape-hood .body { stroke-width: 1.6; }
+  #map .shape-frame .body, #map .shape-wall .body, #map .shape-district .body { fill: none; pointer-events: stroke; }
+  #map .shape-frame.built .body { stroke: var(--ink-2); stroke-width: 1.4; }
+  #map .shape-wall.built .body { stroke: var(--wall); stroke-width: 7; }
+  #map .shape-wall.built .body-inner { stroke: var(--paper); stroke-width: 2; fill: none; pointer-events: none; }
+  #map .shape-wall.planned .body-inner { display: none; }
+  #map .shape-district.built .body { stroke: var(--district); stroke-width: 1.4; stroke-dasharray: 9 5; }
+  #map .label-hit { fill: transparent; }
+  #map .node.built .label-hit { cursor: pointer; }
+  #map .shape-gate .tower { fill: var(--wall); stroke: var(--wall); }
+  #map .shape-gate .arch { fill: var(--paper); stroke: var(--wall); stroke-width: 2; }
+  #map .shape-gate.planned .tower { fill: none; stroke: var(--pencil); stroke-dasharray: 3 3; }
+  #map .shape-gate.planned .arch { fill: none; stroke: var(--pencil); stroke-dasharray: 3 3; }
+  #map .post { stroke: var(--ink); stroke-width: 2; }
+  #map .node.planned .post { stroke: var(--pencil); }
+  #map .shape-sign .body { fill: var(--paper-raised); stroke: var(--ink); stroke-width: 1.6; }
+  #map .shape-sign .t-sign { font-size: 13.5px; font-weight: 600; }
+  #map .shape-shield .body { fill: var(--paper-raised); }
+  #map .shape-pill .body { fill: var(--paper-raised); }
+  #map .shape-box .body { fill: var(--paper-raised); }
+
+  /* connections */
+  #map .edge { display: none; }
+  #map .edge.visible { display: inline; }
+  #map .edge-line { fill: none; stroke: var(--route); stroke-width: 2.5; stroke-linejoin: round; }
+  #map .edge-hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; pointer-events: stroke; }
+  #map .edge.selected .edge-line, #map .edge.related .edge-line { stroke: var(--select); stroke-width: 3.5; }
+  #map .edge.dim { opacity: 0.3; }
+  #map .edge-label { opacity: 0; pointer-events: none; }
+  #map .edge-label.show { opacity: 1; }
+  #map .edge-label text { font-size: 13.5px; fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    #map .marker, #map .edge-label, #map .node { transition: opacity 0.25s ease; }
+  }
+
+  /* ---------- Narrower screens ---------- */
+  @media (max-width: 1280px) {
+    .layout { grid-template-columns: minmax(0, 1fr) 320px; }
+    .search input { width: 180px; }
+  }
+  /* Below 1100px the map gets the full width and the details go under it. */
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    aside#panel { border-left: 0; border-top: 1px solid var(--rule); position: static; max-height: none; padding: 16px 24px 28px; }
+    svg#map { max-height: none; }
+  }
+  @media (max-width: 760px) {
+    .mapwrap { padding: 10px 16px; }
+    .top { padding-left: 16px; padding-right: 16px; }
+    aside#panel { padding-left: 16px; padding-right: 16px; }
+    .stop { width: 20px; height: 20px; font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>The minitickets city</h1>
+    <p>Our AWS setup as one map that grows chapter by chapter. It goes with
+      <a href="infra-build-along.md">the infra build-along guide</a>.</p>
+  </div>
+  <div class="tools">
+    <div class="filters" id="filters" role="group" aria-labelledby="filters-label">
+      <span class="inline-label" id="filters-label">Show</span>
+    </div>
+    <div class="search">
+      <label class="visually-hidden" for="search">Find a piece</label>
+      <input id="search" type="search" placeholder="Find, e.g. public-rt" autocomplete="off"
+        aria-describedby="search-help" aria-controls="results">
+      <span id="search-help" class="visually-hidden">Type a name, an AWS ID or a city word. Press Enter to open the first built match, or the down arrow to pick one.</span>
+      <ul class="results" id="results" hidden></ul>
+    </div>
+    <div class="theme">
+      <label class="visually-hidden" for="theme">Colours</label>
+      <select id="theme">
+        <option value="auto">Colours: like my system</option>
+        <option value="light">Colours: light</option>
+        <option value="dark">Colours: dark</option>
+      </select>
+    </div>
+  </div>
+  <p class="notes" id="notes" aria-live="polite"></p>
+</header>
+
+<div class="layout">
+  <main class="mapwrap">
+    <nav class="route" aria-label="Chapters">
+      <button class="step-btn" id="prev" type="button">← Back</button>
+      <ol class="stops" id="stops"></ol>
+      <button class="step-btn" id="next" type="button">Next →</button>
+    </nav>
+    <div class="summary" id="summary" aria-live="polite"></div>
+    <div class="map-frame" id="map-frame">
+      <svg id="map" viewBox="0 0 1200 900" role="group" aria-label="City map of the minitickets AWS setup. Built pieces can be reached with Tab and opened with Enter."></svg>
+    </div>
+    <div class="below-map">
+      <div class="zoom" role="group" aria-label="Zoom the map">
+        <button type="button" class="toggle" id="zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" class="toggle" id="zoom-fit">Fit</button>
+        <button type="button" class="toggle" id="zoom-in" aria-label="Zoom in">+</button>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="key key-built" aria-hidden="true"></span>Ink: built</li>
+        <li><span class="key key-new" aria-hidden="true"></span>Highlighter: new in this chapter</li>
+        <li><span class="key key-planned" aria-hidden="true"></span>Pencil: planned</li>
+        <li><span class="key key-route" aria-hidden="true"></span>Blue line: a connection (click it)</li>
+      </ul>
+    </div>
+  </main>
+  <aside id="panel" aria-label="Details" tabindex="-1"></aside>
+</div>
+
+<script type="application/json" id="city-data">
+{
+  "version": 1,
+  "guide": "infra-build-along.md",
+  "chapters": [
+    { "n": 0, "title": "The app on my laptop", "status": "written", "anchor": "chapter-0-the-app-on-my-laptop",
+      "summary": [
+        "Today the app lives in your own house: web, api, Postgres and Redis in Docker, plus a one-off migrate job.",
+        "Every laptop piece has a twin on AWS. The pencil outlines are the city we will build, chapter by chapter.",
+        "On AWS every connection must pass three checks: Reach (roads and guards), Allowed (badges), Password (keys)."
+      ] },
+    { "n": 1, "title": "AWS basics", "status": "written", "anchor": "chapter-1-aws-basics",
+      "summary": [
+        "We own land (the account) in a country (region us-east-1) with two districts (AZs us-east-1a and us-east-1b).",
+        "Pulumi, the city planner, builds from our code and keeps a record book (the state) in Pulumi Cloud.",
+        "Every building gets name plates (tags), and the treasurer (a $20 budget) emails us before the bill hurts."
+      ] },
+    { "n": 2, "title": "The network (VPC)", "status": "written", "anchor": "chapter-2-the-network-vpc",
+      "summary": [
+        "Our private city minitickets-dev-vpc (10.0.0.0/16): two neighborhoods on the main road, two behind walls.",
+        "One city gate (minitickets-dev-igw). The road sign public-rt sends 0.0.0.0/0 to it; private-rt only knows the city.",
+        "\"Public\" is only what the road sign says. No NAT gateway: it would cost more than everything else together."
+      ] },
+    { "n": 3, "title": "Security groups", "status": "planned" },
+    { "n": 4, "title": "Public IPs and network interfaces", "status": "planned" },
+    { "n": 5, "title": "The database and cache", "status": "planned" },
+    { "n": 6, "title": "Secrets", "status": "planned" },
+    { "n": 7, "title": "ECR", "status": "planned" },
+    { "n": 8, "title": "ECS", "status": "planned" },
+    { "n": 9, "title": "IAM roles", "status": "planned" },
+    { "n": 10, "title": "The ALB", "status": "planned" },
+    { "n": 11, "title": "Service Connect", "status": "planned" },
+    { "n": 12, "title": "CloudFront", "status": "planned" },
+    { "n": 13, "title": "CI/CD", "status": "planned" },
+    { "n": 14, "title": "Debugging playbook", "status": "planned" },
+    { "n": 15, "title": "The final poster", "status": "planned" }
+  ],
+  "filters": [
+    { "kind": "route", "label": "Network (routes)", "comesIn": "chapter 2" },
+    { "kind": "sg", "label": "Security groups", "comesIn": "chapter 3" },
+    { "kind": "iam", "label": "IAM", "comesIn": "chapter 9" },
+    { "kind": "secret", "label": "Secrets", "comesIn": "chapter 6" },
+    { "kind": "data", "label": "Data flow", "comesIn": "chapters 5 and 8" }
+  ],
+  "decor": [
+    { "kind": "text", "x": 16, "y": 22, "text": "Outside AWS", "cls": "t-zone" },
+    { "kind": "rect", "x": 16, "y": 30, "w": 332, "h": 88, "cls": "laptop-frame", "chapter": 0 },
+    { "kind": "text", "x": 26, "y": 49, "text": "My laptop (Docker, pnpm app:up)", "cls": "t-small", "chapter": 0 },
+    { "kind": "text", "x": 20, "y": 200, "text": "Account-wide", "cls": "t-zone", "chapter": 1 },
+    { "kind": "text", "x": 20, "y": 216, "text": "(global)", "cls": "t-zone", "chapter": 1 },
+    { "kind": "text", "x": 884, "y": 294, "text": "Outside the wall, same country", "cls": "t-zone", "chapter": 1 },
+    { "kind": "road", "chapter": 2, "width": 12, "points": [[451, 276], [451, 318]] },
+    { "kind": "road", "chapter": 2, "width": 12, "points": [[70, 318], [832, 318]] },
+    { "kind": "innerwall", "chapter": 2, "y": 566, "h": 12, "x1": 56, "x2": 846, "gaps": [[100, 120], [780, 800]] },
+    { "kind": "text", "x": 58, "y": 838, "text": "Made by AWS with every city:", "cls": "t-zone", "chapter": 2 },
+    { "kind": "compass", "x": 1166, "y": 76 }
+  ],
+  "components": [
+    {
+      "id": "laptop-web", "chapter": 0, "name": "web container (Next.js)", "type": "Docker container on the laptop",
+      "city": "In your own house: the web room",
+      "shape": { "kind": "box", "x": 26, "y": 58, "w": 58, "h": 50, "title": "web", "sub": ":3000" },
+      "what": "Builds the pages. Port 3000 inside the container; your browser opens localhost:3100 (pnpm app:up).",
+      "why": "It is the part visitors see. On AWS it becomes a worker, kept on shift by a manager.",
+      "settings": ["Port 3000 inside, published as localhost:3100", "Calls the api server to server at http://api:4000 (API_INTERNAL_URL)", "REVALIDATE_SECRET: the same value as the api's"],
+      "code": [{ "file": "docker-compose.yml", "symbol": "3100:3000" }, { "file": "apps/web/.env.example", "symbol": "API_INTERNAL_URL" }],
+      "console": "Docker Desktop → Containers → web → column Port(s)",
+      "cli": "docker compose ps web",
+      "debug": "The page loads but the events list fails: check that the api runs and that API_INTERNAL_URL points at it.",
+      "interview": "Locally the web server reaches the api by Docker's name \"api\"; on AWS Service Connect gives it the same name.",
+      "twin": "ECS service minitickets-dev-web and its task (chapter 8)"
+    },
+    {
+      "id": "laptop-api", "chapter": 0, "name": "api container (Fastify + tRPC)", "type": "Docker container on the laptop",
+      "city": "In your own house: the api room",
+      "shape": { "kind": "box", "x": 90, "y": 58, "w": 58, "h": 50, "title": "api", "sub": ":4000" },
+      "what": "Holds the rules and talks to Postgres and Redis. Port 4000 inside, localhost:4100 outside.",
+      "why": "All server logic lives here. On AWS it becomes a worker in a public neighborhood, guarded so only the reception desk can call it.",
+      "settings": ["Port 4000 inside, published as localhost:4100", "DATABASE_URL and REDIS_URL name the containers postgres and redis", "Checks every setting at start and stops if one is missing (EnvSchema)"],
+      "code": [{ "file": "apps/api/src/config/env.ts", "symbol": "EnvSchema" }, { "file": "docker-compose.yml", "symbol": "4100:4000" }],
+      "console": "Docker Desktop → Containers → api → Logs",
+      "cli": "docker compose logs api",
+      "debug": "\"Invalid environment variables\" at start: copy apps/api/.env.example to apps/api/.env and fill it in.",
+      "interview": "The api validates its environment with Zod at startup, so a missing setting on AWS is one clear log line, not a strange bug later.",
+      "twin": "ECS service minitickets-dev-api and its task (chapter 8)"
+    },
+    {
+      "id": "laptop-migrate", "chapter": 0, "name": "migrate container", "type": "Docker container on the laptop (runs once)",
+      "city": "In your own house: the builder who sets up the shelves once",
+      "shape": { "kind": "box", "x": 154, "y": 58, "w": 58, "h": 50, "title": "migrate", "sub": "once" },
+      "what": "Applies the SQL migrations, then exits. The api starts only after it succeeded.",
+      "why": "If every api copy ran migrations at startup, they would race each other.",
+      "settings": ["command: node dist/migrate.js", "restart \"no\": runs once and stays finished", "The api waits for it (service_completed_successfully)"],
+      "code": [{ "file": "docker-compose.yml", "symbol": "dist/migrate.js" }],
+      "console": "Docker Desktop → Containers → migrate (shown as exited: that is correct)",
+      "cli": "docker compose logs migrate",
+      "debug": "The api never starts: migrate failed. Read its logs first.",
+      "interview": "Migrations run as a separate one-off job before the new version starts, never inside the app's own startup.",
+      "twin": "The migration task minitickets-dev-migrate, run by CD (chapter 13)"
+    },
+    {
+      "id": "laptop-postgres", "chapter": 0, "name": "postgres container (Postgres 17.6)", "type": "Docker container on the laptop",
+      "city": "In your own house: the filing cabinet",
+      "shape": { "kind": "box", "x": 218, "y": 58, "w": 58, "h": 50, "title": "postgres", "sub": ":5432" },
+      "what": "Keeps users and events. The data lives in the Docker volume postgres_data, so it survives a restart.",
+      "why": "Our data must outlive every container. On AWS it moves behind the walls, where nobody outside can reach it.",
+      "settings": ["image postgres:17.6", "port 5432", "user and password from the root .env, inside DATABASE_URL"],
+      "code": [{ "file": "docker-compose.yml", "symbol": "postgres:17.6" }, { "file": "apps/api/src/config/database.ts", "symbol": "DatabaseEnvSchema" }],
+      "console": "Docker Desktop → Containers → postgres",
+      "cli": "docker compose exec postgres postgres --version",
+      "debug": "\"port is already allocated\": another Postgres already uses 5432 on your machine.",
+      "interview": "Locally Postgres is a container with a volume; on AWS it is RDS in private subnets, with an RDS-managed password in Secrets Manager.",
+      "twin": "RDS Postgres 17 minitickets-dev-db, behind the walls (chapter 5)"
+    },
+    {
+      "id": "laptop-redis", "chapter": 0, "name": "redis container (Redis 7.4.5)", "type": "Docker container on the laptop",
+      "city": "In your own house: the notepad by the door",
+      "shape": { "kind": "box", "x": 282, "y": 58, "w": 58, "h": 50, "title": "redis", "sub": ":6379" },
+      "what": "Keeps sessions and a 30-second events cache.",
+      "why": "Fast, short-lived data. On AWS it becomes Valkey, which speaks the same language.",
+      "settings": ["image redis:7.4.5", "port 6379 inside (REDIS_PORT can move the laptop side)", "maxmemory 256mb, evicts the least recently used keys"],
+      "code": [{ "file": "docker-compose.yml", "symbol": "redis:7.4.5" }],
+      "console": "Docker Desktop → Containers → redis",
+      "cli": "docker compose exec redis redis-cli ping",
+      "debug": "Logins fail and the api logs Redis errors: is the redis container healthy?",
+      "interview": "Sessions and the events cache live in Redis locally and in ElastiCache Valkey on AWS, over TLS (rediss://).",
+      "twin": "ElastiCache Valkey 8.2 minitickets-dev-valkey, behind the walls (chapter 5)"
+    },
+
+    {
+      "id": "account", "chapter": 1, "name": "Your AWS account", "type": "AWS account",
+      "city": "The deed to your land",
+      "shape": { "kind": "frame", "x": 8, "y": 128, "w": 1184, "h": 766, "label": "Your AWS account · the deed", "lx": 20, "ly": 151 },
+      "what": "Our private space in AWS. Everything we build is registered to it, and the bills go to it.",
+      "why": "Every AWS request is signed by someone in an account. It is the strongest wall AWS has between two setups.",
+      "settings": ["One account, dev only (there is no prod stack)", "Locally you act through the CLI profile ticketlite", "The 12-digit account ID is looked up by the code, never typed into it"],
+      "code": [{ "file": "infra/src/compute/iam.ts", "symbol": "getCallerIdentityOutput" }],
+      "console": "Top right: your account name → the menu shows the Account ID",
+      "cli": "aws sts get-caller-identity",
+      "debug": "\"Your session has expired. Please reauthenticate using 'aws login'\": run the login command it names. Wrong account? Check AWS_PROFILE.",
+      "interview": "One account for dev. In a real company: separate accounts for dev, staging, prod and security, because an account is the strongest boundary."
+    },
+    {
+      "id": "region", "chapter": 1, "name": "us-east-1 (N. Virginia)", "type": "AWS region",
+      "city": "The country",
+      "shape": { "kind": "frame", "x": 22, "y": 234, "w": 1156, "h": 650, "label": "Country · region us-east-1 (N. Virginia)", "lx": 34, "ly": 256 },
+      "what": "A geographic area of AWS data centres. Almost everything we build (the VPC, ECS, RDS, ECR, Secrets Manager) lives in this one region.",
+      "why": "Things built in one region are invisible from another. Picking one region keeps all our pieces close together.",
+      "settings": ["us-east-1, shown as N. Virginia in the console", "Set once in infra/Pulumi.dev.yaml (aws:region)", "Global services (IAM, Budgets, CloudFront) sit outside any region"],
+      "code": [{ "file": "infra/Pulumi.dev.yaml", "symbol": "aws:region" }],
+      "console": "Top bar → the region selector shows N. Virginia (us-east-1)",
+      "cli": "pulumi config get aws:region",
+      "debug": "The console shows no VPC or a CLI command says \"not found\": you are looking at the wrong country. Switch to us-east-1.",
+      "interview": "Resources are global, regional or zonal. We run everything regional in us-east-1, across two AZs."
+    },
+    {
+      "id": "az-a", "chapter": 1, "name": "us-east-1a", "awsId": "use1-az1", "type": "Availability zone",
+      "city": "District A, with its own power supply",
+      "shape": { "kind": "district", "x": 56, "y": 306, "w": 390, "h": 494, "label": "District us-east-1a · AZ ID use1-az1", "lx": 68, "ly": 791 },
+      "what": "One isolated group of data centres in us-east-1. Home of public-1 and private-1.",
+      "why": "If one district loses power, the other keeps going. The ALB and the RDS subnet group require at least two.",
+      "settings": ["Name us-east-1a: a label for OUR account (AWS shuffles names per account)", "AZ ID use1-az1: the same building in every account", "createNetwork takes the first two available AZs"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "getAvailabilityZonesOutput" }, { "file": "infra/src/network.ts", "symbol": "azNames" }],
+      "console": "VPC → Subnets → columns Availability Zone and Availability Zone ID",
+      "cli": "aws ec2 describe-availability-zones --output table",
+      "debug": "Comparing two accounts? Compare AZ IDs, never AZ names.",
+      "interview": "Two AZs is the cheapest shape the ALB and RDS accept. In dev only the shape is redundant: one copy of each stateful part."
+    },
+    {
+      "id": "az-b", "chapter": 1, "name": "us-east-1b", "awsId": "use1-az2", "type": "Availability zone",
+      "city": "District B, with its own power supply",
+      "shape": { "kind": "district", "x": 456, "y": 306, "w": 390, "h": 494, "label": "District us-east-1b · AZ ID use1-az2", "lx": 468, "ly": 791 },
+      "what": "The second isolated group of data centres we use. Home of public-2 and private-2.",
+      "why": "The second district is what lets the city survive a power cut in the first.",
+      "settings": ["Name us-east-1b (per account)", "AZ ID use1-az2 (the same in every account)", "createNetwork takes the first two available AZs"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "getAvailabilityZonesOutput" }, { "file": "infra/src/network.ts", "symbol": "azNames" }],
+      "console": "VPC → Subnets → columns Availability Zone and Availability Zone ID",
+      "cli": "aws ec2 describe-availability-zones --output table",
+      "debug": "Comparing two accounts? Compare AZ IDs, never AZ names.",
+      "interview": "Subnets are zonal: each lives in exactly one AZ. We put one public and one private subnet in each of the two."
+    },
+    {
+      "id": "tags", "chapter": 1, "name": "Tags: Project, Env, ManagedBy, Name", "type": "Tags (labels on resources)",
+      "city": "Name plates on every building",
+      "shape": { "kind": "plot", "x": 140, "y": 168, "w": 230, "h": 50, "title": "Name plates (tags)", "sub": "Project=minitickets · Env=dev" },
+      "what": "Labels on every resource: Project=minitickets, Env=dev, ManagedBy=pulumi, and Name, which the console shows as the title.",
+      "why": "To find our things, to split the bill by project, and to see which tool made a resource.",
+      "settings": ["commonTags: Project=minitickets, Env=dev, ManagedBy=pulumi", "tagsFor(name) adds Name=<the name>", "Route table associations carry no tags (AWS doesn't support them there)", "To split the bill by tag, activate it in Billing → Cost allocation tags"],
+      "code": [{ "file": "infra/src/tags.ts", "symbol": "commonTags" }, { "file": "infra/src/tags.ts", "symbol": "tagsFor" }],
+      "console": "Any resource → Tags tab. Resource Groups & Tag Editor → Tag Editor → region us-east-1, tag Project = minitickets → Search resources",
+      "cli": "aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=minitickets",
+      "debug": "Something unknown costs money? Its tags say whose it is. No tags at all: probably not made by our Pulumi code.",
+      "interview": "Every resource is named minitickets-dev-… and tagged by project, environment and tool, so ownership and cost are visible."
+    },
+    {
+      "id": "pulumi", "chapter": 1, "name": "Pulumi stack dev", "type": "Infrastructure as code (outside AWS)",
+      "city": "The city planner: a blueprint and a record book",
+      "shape": { "kind": "plot", "x": 728, "y": 40, "w": 196, "h": 58, "title": "Planner: Pulumi", "sub": "stack dev, Pulumi Cloud" },
+      "what": "Runs our TypeScript (infra/index.ts), compares it with its record book (the state, kept in Pulumi Cloud) and makes AWS match.",
+      "why": "Nobody builds by clicking: every change is code, previewed before it happens, and the city can be rebuilt from scratch.",
+      "settings": ["Stack dev; its settings are in infra/Pulumi.dev.yaml", "preview (read-only) → up (makes changes) → state → stack outputs", "State in Pulumi Cloud, locked during an update", "The on/off switches: dataEnabled, computeEnabled, entryEnabled, cdnEnabled"],
+      "code": [{ "file": "infra/index.ts", "symbol": "createNetwork" }, { "file": "infra/index.ts", "symbol": "dataEnabled" }, { "file": "infra/Pulumi.yaml", "symbol": "minitickets" }],
+      "console": "In infra/, run pulumi console → stack dev → Resources tab (and the Outputs on the overview page)",
+      "cli": "cd infra && pulumi preview\npulumi stack output",
+      "debug": "A change made by clicking in the AWS console is invisible to preview: Pulumi compares with its record book. pulumi refresh reads AWS first.",
+      "interview": "One function per layer, wired in index.ts; preview before every change; the state lives in Pulumi Cloud, which locks it during an update."
+    },
+    {
+      "id": "budget", "chapter": 1, "name": "minitickets-dev-monthly-cost", "type": "AWS Budgets cost budget (account-wide)",
+      "city": "The treasurer",
+      "shape": { "kind": "plot", "x": 630, "y": 166, "w": 170, "h": 52, "title": "Treasurer: budget", "sub": "$20 a month" },
+      "what": "A $20-a-month cost budget that emails us at 25%, 50% and 100% of real spend, and when AWS forecasts the month will pass 100%.",
+      "why": "Cloud bills grow quietly. This is our smoke alarm. It only warns; it never stops anything.",
+      "settings": ["limitAmount \"20\" USD, MONTHLY", "Alerts: 25, 50, 100% actual; 100% forecasted", "includeCredit false: AWS credits don't hide the real cost", "Email address from config alertEmail (stored encrypted)"],
+      "code": [{ "file": "infra/src/budget.ts", "symbol": "createBudget" }, { "file": "infra/src/budget.ts", "symbol": "limitAmount" }, { "file": "infra/src/budget.ts", "symbol": "includeCredit" }],
+      "console": "Billing and Cost Management → Budgets → minitickets-dev-monthly-cost (amount $20.00, and the Alerts section)",
+      "cli": "aws budgets describe-budget --account-id <account-id> --budget-name minitickets-dev-monthly-cost",
+      "debug": "Billing data is hours late. An alert email means: find what is on, then turn the switches off (commit, push, approve).",
+      "interview": "A $20 budget with 25/50/100% actual and a forecast alert, plus on/off switches for the hourly-billed layers."
+    },
+
+    {
+      "id": "internet", "chapter": 2, "name": "The internet", "type": "Outside world",
+      "city": "The world outside the city wall",
+      "shape": { "kind": "pill", "x": 366, "y": 42, "w": 170, "h": 56, "title": "The internet", "sub": "outside the city" },
+      "what": "Every address that is not in our VPC. In a route table, 0.0.0.0/0 means \"all of it\".",
+      "why": "Visitors come from here. Our workers also fetch images, secrets and send logs through it, to AWS's public endpoints.",
+      "settings": ["Reached only through the city gate (minitickets-dev-igw)", "Only from neighborhoods whose road sign has 0.0.0.0/0 → igw", "Only by things that have a public IP (chapter 4)"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "0.0.0.0/0" }],
+      "console": "Nothing to open: look at the route tables that point at the gate",
+      "cli": "aws ec2 describe-route-tables --filters Name=route.destination-cidr-block,Values=0.0.0.0/0",
+      "debug": "Something can't reach the internet: check the four conditions (route, public IP, security group, something listening).",
+      "interview": "0.0.0.0/0 is the default route: it matches everything no more specific route matches."
+    },
+    {
+      "id": "vpc", "chapter": 2, "name": "minitickets-dev-vpc", "awsId": "vpc-00b5d32f044694518", "type": "VPC (virtual private cloud)",
+      "city": "Your private gated city",
+      "shape": { "kind": "wall", "x": 40, "y": 270, "w": 820, "h": 600, "gateX": 451, "label": "minitickets-dev-vpc · 10.0.0.0/16", "lx": 58, "ly": 297 },
+      "what": "Our own private network in AWS: 65,536 addresses (10.0.0.0/16) that only we use.",
+      "why": "Every database, container and load balancer needs an address in a network. In a city of our own, nothing gets in unless we build a way.",
+      "settings": ["cidrBlock 10.0.0.0/16 (every address starting 10.0.)", "enableDnsSupport and enableDnsHostnames: true, so machines can look up names", "AWS made with it: a main route table, a default network ACL and a default security group"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "createNetwork" }, { "file": "infra/src/network.ts", "symbol": "10.0.0.0/16" }, { "file": "infra/index.ts", "symbol": "export const vpcId" }],
+      "console": "VPC → Your VPCs → minitickets-dev-vpc → Details (IPv4 CIDR, DNS resolution, DNS hostnames) and the Resource map tab",
+      "cli": "aws ec2 describe-vpcs --vpc-ids vpc-00b5d32f044694518",
+      "debug": "Not in the list? You are in the wrong region: switch to N. Virginia. The ID only changes if the network is deleted and built again.",
+      "interview": "A /16 VPC across two AZs. Everything else lives inside it, which is why security groups and target groups need its ID."
+    },
+    {
+      "id": "igw", "chapter": 2, "name": "minitickets-dev-igw", "awsId": "igw-038f7386d8ae5817d", "type": "Internet gateway",
+      "city": "The city gate",
+      "shape": { "kind": "gate", "x": 451, "y": 270 },
+      "what": "The only way between our VPC and the internet, in both directions. Attached to minitickets-dev-vpc.",
+      "why": "Without it the city is sealed. On its own it does nothing: a road sign must point at it.",
+      "settings": ["vpcId: vpc.id attaches it to our VPC", "Redundant and highly available: not inside one district", "Translates between a resource's private address and its public IP"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "internetGateway" }],
+      "console": "VPC → Internet gateways → minitickets-dev-igw → State: Attached, VPC ID",
+      "cli": "aws ec2 describe-internet-gateways --internet-gateway-ids igw-038f7386d8ae5817d",
+      "debug": "A public thing is unreachable: is the gate Attached, and does the subnet's route table point at it?",
+      "interview": "An internet gateway is a two-way door for things with public IPs; a NAT gateway is a one-way exit for private things."
+    },
+    {
+      "id": "public-1", "chapter": 2, "name": "minitickets-dev-public-1", "awsId": "subnet-09eb2bfebf3d03307", "type": "Subnet (public)",
+      "city": "A neighborhood on the main road",
+      "shape": { "kind": "hood", "variant": "public", "x": 70, "y": 356, "w": 362, "h": 192, "title": "public-1", "sub": "10.0.0.0/24 · on the main road" },
+      "what": "Addresses 10.0.0.0 to 10.0.0.255 in district us-east-1a. Its road sign, public-rt, leads to the city gate.",
+      "why": "The reception desk (ALB) must be reachable from the internet, and our workers need a way out without a NAT gateway. Both live here.",
+      "settings": ["cidrBlock 10.0.0.0/24: 256 addresses, 251 usable", "availabilityZone us-east-1a (use1-az1)", "mapPublicIpOnLaunch true: things started here get a public IP", "Associated with minitickets-dev-public-rt (public-rta-1)"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "publicCidrs" }, { "file": "infra/src/network.ts", "symbol": "mapPublicIpOnLaunch" }],
+      "console": "VPC → Subnets → minitickets-dev-public-1 → Details: IPv4 CIDR, Availability Zone, Route table, Auto-assign public IPv4 address: Yes",
+      "cli": "aws ec2 describe-subnets --subnet-ids subnet-09eb2bfebf3d03307",
+      "debug": "Behaves like a private subnet? Details → Route table must be minitickets-dev-public-rt, not the main route table.",
+      "interview": "It is public only because its route table sends 0.0.0.0/0 to the internet gateway. The name does nothing."
+    },
+    {
+      "id": "public-2", "chapter": 2, "name": "minitickets-dev-public-2", "awsId": "subnet-0b2945df0b7063ef2", "type": "Subnet (public)",
+      "city": "A neighborhood on the main road",
+      "shape": { "kind": "hood", "variant": "public", "x": 470, "y": 356, "w": 362, "h": 192, "title": "public-2", "sub": "10.0.1.0/24 · on the main road" },
+      "what": "Addresses 10.0.1.0 to 10.0.1.255 in district us-east-1b. Same road sign as public-1.",
+      "why": "The ALB needs subnets in two districts, and a worker can start in either one.",
+      "settings": ["cidrBlock 10.0.1.0/24", "availabilityZone us-east-1b (use1-az2)", "mapPublicIpOnLaunch true", "Associated with minitickets-dev-public-rt (public-rta-2)"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "publicCidrs" }, { "file": "infra/src/network.ts", "symbol": "mapPublicIpOnLaunch" }],
+      "console": "VPC → Subnets → minitickets-dev-public-2 → Details",
+      "cli": "aws ec2 describe-subnets --subnet-ids subnet-0b2945df0b7063ef2",
+      "debug": "Behaves differently from public-1? Compare Details → Route table and Auto-assign public IPv4 address.",
+      "interview": "One public subnet per AZ, so the load balancer and the tasks can survive the loss of one AZ."
+    },
+    {
+      "id": "private-1", "chapter": 2, "name": "minitickets-dev-private-1", "awsId": "subnet-01ae9d1d791cae36f", "type": "Subnet (private)",
+      "city": "A neighborhood behind walls",
+      "shape": { "kind": "hood", "variant": "private", "x": 70, "y": 612, "w": 362, "h": 168, "title": "private-1", "sub": "10.0.10.0/24 · behind the walls" },
+      "what": "Addresses 10.0.10.0 to 10.0.10.255 in district us-east-1a. Its road sign, private-rt, knows only the city.",
+      "why": "The database and the cache (chapter 5) live here: nobody outside should ever reach them.",
+      "settings": ["cidrBlock 10.0.10.0/24", "availabilityZone us-east-1a (use1-az1)", "mapPublicIpOnLaunch false: no public IPs", "Associated with minitickets-dev-private-rt (private-rta-1)"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "privateCidrs" }, { "file": "infra/src/network.ts", "symbol": "privateSubnets" }],
+      "console": "VPC → Subnets → minitickets-dev-private-1 → Details: Route table minitickets-dev-private-rt, Auto-assign public IPv4 address: No",
+      "cli": "aws ec2 describe-subnets --subnet-ids subnet-01ae9d1d791cae36f",
+      "debug": "Something here is reachable from the internet? Someone added 0.0.0.0/0 to private-rt. Remove it.",
+      "interview": "Private means: no route to the internet gateway and no public IPs. The data stores live here."
+    },
+    {
+      "id": "private-2", "chapter": 2, "name": "minitickets-dev-private-2", "awsId": "subnet-0bf45cd66fd3f3aa9", "type": "Subnet (private)",
+      "city": "A neighborhood behind walls",
+      "shape": { "kind": "hood", "variant": "private", "x": 470, "y": 612, "w": 362, "h": 168, "title": "private-2", "sub": "10.0.11.0/24 · behind the walls" },
+      "what": "Addresses 10.0.11.0 to 10.0.11.255 in district us-east-1b. Same road sign as private-1.",
+      "why": "RDS and ElastiCache ask for subnets in at least two districts, even for a single database.",
+      "settings": ["cidrBlock 10.0.11.0/24", "availabilityZone us-east-1b (use1-az2)", "mapPublicIpOnLaunch false", "Associated with minitickets-dev-private-rt (private-rta-2)"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "privateCidrs" }, { "file": "infra/src/network.ts", "symbol": "privateSubnets" }],
+      "console": "VPC → Subnets → minitickets-dev-private-2 → Details",
+      "cli": "aws ec2 describe-subnets --subnet-ids subnet-0bf45cd66fd3f3aa9",
+      "debug": "A subnet group refuses to be created with one subnet: it needs two districts.",
+      "interview": "Two private subnets in two AZs, because the RDS subnet group demands two AZs."
+    },
+    {
+      "id": "public-rt", "chapter": 2, "name": "minitickets-dev-public-rt", "awsId": "rtb-05e17b5e39f52b3e3", "type": "Route table",
+      "city": "The road sign on the main road",
+      "shape": { "kind": "sign", "px": 451, "py": 318, "x": 462, "y": 326, "w": 214, "h": 24, "text": "public-rt · 0.0.0.0/0 → gate" },
+      "what": "Two lines: 10.0.0.0/16 → local (stay inside the city) and 0.0.0.0/0 → igw (everything else: out through the gate).",
+      "why": "This one line, 0.0.0.0/0 → igw, is what makes public-1 and public-2 public.",
+      "settings": ["routes: 0.0.0.0/0 → minitickets-dev-igw", "10.0.0.0/16 → local, added by AWS", "Explicitly associated with public-1 and public-2", "The most specific matching line wins"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "publicRouteTable" }, { "file": "infra/src/network.ts", "symbol": "0.0.0.0/0" }],
+      "console": "VPC → Route tables → minitickets-dev-public-rt → Routes tab (0.0.0.0/0 → igw-…, Active) and Subnet associations tab (2 explicit)",
+      "cli": "aws ec2 describe-route-tables --route-table-ids rtb-05e17b5e39f52b3e3",
+      "debug": "A route with Status \"Blackhole\" points at a target that no longer exists (for example a deleted gateway).",
+      "interview": "A subnet is public because its route table has 0.0.0.0/0 to an internet gateway. Longest prefix match decides which line wins."
+    },
+    {
+      "id": "private-rt", "chapter": 2, "name": "minitickets-dev-private-rt", "awsId": "rtb-0a2e72b9a410ac899", "type": "Route table",
+      "city": "The road sign behind the walls",
+      "shape": { "kind": "sign", "px": 451, "py": 596, "x": 366, "y": 560, "w": 170, "h": 24, "text": "private-rt · local only" },
+      "what": "One line only: 10.0.0.0/16 → local. There is no road to the gate.",
+      "why": "This missing line is what makes private-1 and private-2 private.",
+      "settings": ["No routes of our own (the routes list is empty in the code)", "10.0.0.0/16 → local, added by AWS", "Explicitly associated with private-1 and private-2"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "privateRouteTable" }],
+      "console": "VPC → Route tables → minitickets-dev-private-rt → Routes tab (only 10.0.0.0/16 → local)",
+      "cli": "aws ec2 describe-route-tables --route-table-ids rtb-0a2e72b9a410ac899",
+      "debug": "Never add 0.0.0.0/0 → igw here: the private neighborhoods would get a road to the internet.",
+      "interview": "Private subnets only have the local route; without a NAT gateway they can't start connections out either."
+    },
+    {
+      "id": "main-rt", "chapter": 2, "name": "Main route table (no Name tag)", "awsId": "rtb-08af5439534fccda6", "type": "Route table, made by AWS",
+      "city": "The default road sign",
+      "shape": { "kind": "chip", "x": 262, "y": 814, "w": 196, "h": 42, "title": "Main route table", "sub": "no name · no subnet uses it" },
+      "what": "AWS made it together with the VPC. Any subnet without an association of its own uses it. Ours only has the local line, and no subnet uses it.",
+      "why": "We don't use it. It is on the map so you recognise the third route table in the console's Resource map.",
+      "settings": ["Main: Yes", "Only 10.0.0.0/16 → local", "Not managed by Pulumi, so it has no tags"],
+      "code": [{ "file": "infra/src/network.ts", "symbol": "default route table" }],
+      "console": "VPC → Route tables → the row with Main: Yes and no Name",
+      "cli": "aws ec2 describe-route-tables --filters Name=vpc-id,Values=vpc-00b5d32f044694518 Name=association.main,Values=true",
+      "debug": "Forgot an association? That subnet silently uses this table, not yours.",
+      "interview": "Every VPC has a main route table. We associate every subnet explicitly, so none falls back to it."
+    },
+    {
+      "id": "nacl", "chapter": 2, "name": "Default network ACL", "awsId": "acl-09a685b41658e7427", "type": "Network ACL, made by AWS",
+      "city": "A checkpoint at each neighborhood's edge, left open",
+      "shape": { "kind": "chip", "x": 472, "y": 814, "w": 214, "h": 42, "title": "Default network ACL", "sub": "allows all · all 4 subnets" },
+      "what": "A numbered allow/deny list checked at the edge of all four subnets. Ours allows all traffic in and out (rule 100); the last rule, *, denies anything else.",
+      "why": "We don't filter here: the guards (security groups, chapter 3) do. Know it exists when you debug Reach.",
+      "settings": ["Default: Yes, on all 4 subnets", "Inbound and outbound rule 100: all traffic, allow", "Stateless: a reply is checked again (unlike security groups)", "Not in our code: AWS makes it with every VPC"],
+      "code": [],
+      "console": "VPC → Network ACLs → the one with Default: Yes → Inbound rules, Outbound rules, Subnet associations",
+      "cli": "aws ec2 describe-network-acls --network-acl-ids acl-09a685b41658e7427",
+      "debug": "Blocked although the security groups allow it? Check nobody changed this list. It is stateless: replies need a rule too.",
+      "interview": "NACLs are stateless lists per subnet; security groups are stateful per resource. We keep the default open NACL and filter with security groups."
+    },
+
+    { "id": "visitors", "chapter": 10, "name": "Visitors' browsers", "type": "Outside world", "shape": { "kind": "plot", "x": 566, "y": 46, "w": 140, "h": 48, "title": "Visitors", "sub": "browsers · ch 10" } },
+    { "id": "github", "chapter": 13, "name": "GitHub Actions (CI/CD)", "type": "Outside AWS", "shape": { "kind": "plot", "x": 944, "y": 46, "w": 186, "h": 48, "title": "GitHub Actions", "sub": "CI/CD · ch 13" } },
+    { "id": "iam", "chapter": 9, "name": "IAM roles", "type": "IAM (global)", "city": "Staff badges", "shape": { "kind": "plot", "x": 812, "y": 166, "w": 166, "h": 52, "title": "Badges: IAM roles", "sub": "ch 9" } },
+    { "id": "cloudfront", "chapter": 12, "name": "minitickets-dev-cdn", "type": "CloudFront (global, off today)", "shape": { "kind": "plot", "x": 990, "y": 166, "w": 180, "h": 52, "title": "CloudFront", "sub": "off today · ch 12" } },
+    { "id": "alb", "chapter": 10, "name": "minitickets-dev (ALB)", "type": "Application Load Balancer", "city": "The reception desk", "shape": { "kind": "plot", "x": 112, "y": 402, "w": 680, "h": 30, "title": "Reception desk: ALB minitickets-dev, in both public neighborhoods", "sub": "" } },
+    { "id": "alb-sg", "chapter": 3, "name": "minitickets-dev-alb-sg", "type": "Security group", "city": "A guard", "shape": { "kind": "shield", "x": 92, "y": 404 } },
+    { "id": "web-tg", "chapter": 10, "name": "web target group", "type": "Target group", "city": "A department's on-duty staff list", "shape": { "kind": "chip", "x": 150, "y": 438, "w": 150, "h": 24, "title": "web staff list", "sub": "" } },
+    { "id": "api-tg", "chapter": 10, "name": "api target group", "type": "Target group", "city": "A department's on-duty staff list", "shape": { "kind": "chip", "x": 600, "y": 438, "w": 150, "h": 24, "title": "api staff list", "sub": "" } },
+    { "id": "web-task", "chapter": 8, "name": "web task", "type": "ECS task (runs in either public subnet)", "city": "A worker", "shape": { "kind": "plot", "x": 112, "y": 472, "w": 180, "h": 60, "title": "web worker (task)", "sub": "ch 8" } },
+    { "id": "web-sg", "chapter": 3, "name": "minitickets-dev-web-sg", "type": "Security group", "city": "A guard", "shape": { "kind": "shield", "x": 92, "y": 474 } },
+    { "id": "api-task", "chapter": 8, "name": "api task", "type": "ECS task (runs in either public subnet)", "city": "A worker", "shape": { "kind": "plot", "x": 512, "y": 472, "w": 180, "h": 60, "title": "api worker (task)", "sub": "ch 8" } },
+    { "id": "api-sg", "chapter": 3, "name": "minitickets-dev-api-sg", "type": "Security group", "city": "A guard", "shape": { "kind": "shield", "x": 492, "y": 474 } },
+    { "id": "eni", "chapter": 4, "name": "Network interfaces and public IPs", "type": "ENI", "shape": { "kind": "chip", "x": 698, "y": 480, "w": 128, "h": 44, "title": "ENIs, public IPs", "sub": "ch 4" } },
+    { "id": "rds", "chapter": 5, "name": "minitickets-dev-db", "type": "RDS Postgres 17", "shape": { "kind": "plot", "x": 112, "y": 664, "w": 222, "h": 66, "title": "Postgres (RDS)", "sub": "minitickets-dev-db · ch 5" } },
+    { "id": "db-sg", "chapter": 3, "name": "minitickets-dev-db-sg", "type": "Security group", "city": "A guard", "shape": { "kind": "shield", "x": 92, "y": 666 } },
+    { "id": "valkey", "chapter": 5, "name": "minitickets-dev-valkey", "type": "ElastiCache Valkey 8.2", "shape": { "kind": "plot", "x": 512, "y": 664, "w": 222, "h": 66, "title": "Valkey (ElastiCache)", "sub": "minitickets-dev-valkey · ch 5" } },
+    { "id": "redis-sg", "chapter": 3, "name": "minitickets-dev-redis-sg", "type": "Security group", "city": "A guard", "shape": { "kind": "shield", "x": 492, "y": 666 } },
+    { "id": "ecr", "chapter": 7, "name": "minitickets-dev-api, minitickets-dev-web", "type": "ECR repositories", "city": "The warehouse of packed apps", "shape": { "kind": "plot", "x": 884, "y": 306, "w": 282, "h": 50, "title": "Warehouse: ECR", "sub": "minitickets-dev-api, -web · ch 7" } },
+    { "id": "secrets", "chapter": 6, "name": "minitickets/dev/…", "type": "Secrets Manager", "city": "A locked key safe", "shape": { "kind": "plot", "x": 884, "y": 366, "w": 282, "h": 50, "title": "Key safe: Secrets Manager", "sub": "minitickets/dev/… · ch 6" } },
+    { "id": "ecs", "chapter": 8, "name": "minitickets-dev", "type": "ECS cluster and services", "city": "The managers' office", "shape": { "kind": "plot", "x": 884, "y": 426, "w": 282, "h": 50, "title": "Managers: ECS cluster", "sub": "minitickets-dev · ch 8" } },
+    { "id": "logs", "chapter": 8, "name": "/minitickets/dev/api, /minitickets/dev/web", "type": "CloudWatch log groups", "city": "The city's diary", "shape": { "kind": "plot", "x": 884, "y": 486, "w": 282, "h": 50, "title": "Diary: CloudWatch Logs", "sub": "/minitickets/dev/api, /web · ch 8" } },
+    { "id": "namespace", "chapter": 11, "name": "minitickets.internal", "type": "Service Connect namespace (Cloud Map)", "shape": { "kind": "plot", "x": 884, "y": 546, "w": 282, "h": 50, "title": "Service Connect namespace", "sub": "minitickets.internal · ch 11" } },
+    { "id": "cert", "chapter": 10, "name": "minitickets-dev-cert", "type": "ACM certificate", "shape": { "kind": "plot", "x": 884, "y": 606, "w": 282, "h": 50, "title": "Certificate (ACM)", "sub": "minitickets.theversehub.in · ch 10" } },
+    { "id": "ssm", "chapter": 13, "name": "/minitickets/dev/image-tag", "type": "SSM parameter", "shape": { "kind": "plot", "x": 884, "y": 666, "w": 282, "h": 50, "title": "SSM parameter", "sub": "/minitickets/dev/image-tag · ch 13" } }
+  ],
+  "connections": [
+    {
+      "id": "internet-igw", "chapter": 2, "kind": "route", "from": "internet", "to": "igw",
+      "label": "igw attached to minitickets-dev-vpc",
+      "why": "An attached internet gateway is the only door between the VPC and the internet. Nothing passes until a route table also points at it.",
+      "code": { "file": "infra/src/network.ts", "symbol": "internetGateway" },
+      "console": "VPC → Internet gateways → minitickets-dev-igw → State: Attached, VPC ID vpc-00b5d32f044694518",
+      "points": [[451, 98], [451, 262]], "labelAt": [459, 142, "start"]
+    },
+    {
+      "id": "publicrt-igw", "chapter": 2, "kind": "route", "from": "public-rt", "to": "igw",
+      "label": "route 0.0.0.0/0 → igw",
+      "why": "Everything not inside 10.0.0.0/16 leaves through the gate. This one line is what makes public-1 and public-2 public.",
+      "code": { "file": "infra/src/network.ts", "symbol": "0.0.0.0/0" },
+      "console": "VPC → Route tables → minitickets-dev-public-rt → Routes tab → 0.0.0.0/0, Target igw-038f7386d8ae5817d, Active",
+      "points": [[451, 318], [451, 282]], "labelAt": [459, 300, "start"]
+    },
+    {
+      "id": "public1-publicrt", "chapter": 2, "kind": "route", "from": "public-1", "to": "public-rt",
+      "label": "association minitickets-dev-public-rta-1", "short": "association public-rta-1",
+      "why": "Links the neighborhood to its road sign. Without it, public-1 would silently use the main route table and lose its road to the gate.",
+      "code": { "file": "infra/src/network.ts", "symbol": "public-rta-" },
+      "console": "VPC → Route tables → minitickets-dev-public-rt → Subnet associations → Explicit subnet associations",
+      "points": [[200, 356], [200, 318], [440, 318]], "labelAt": [208, 344, "start"]
+    },
+    {
+      "id": "public2-publicrt", "chapter": 2, "kind": "route", "from": "public-2", "to": "public-rt",
+      "label": "association minitickets-dev-public-rta-2", "short": "association public-rta-2",
+      "why": "Links public-2 to the same road sign as public-1.",
+      "code": { "file": "infra/src/network.ts", "symbol": "public-rta-" },
+      "console": "VPC → Route tables → minitickets-dev-public-rt → Subnet associations → Explicit subnet associations",
+      "points": [[700, 356], [700, 318], [462, 318]], "labelAt": [692, 344, "end"]
+    },
+    {
+      "id": "private1-privatert", "chapter": 2, "kind": "route", "from": "private-1", "to": "private-rt",
+      "label": "association minitickets-dev-private-rta-1", "short": "association private-rta-1",
+      "why": "Links private-1 to the sign that only knows the city. Without it, private-1 would use the main route table instead (today that would look the same, but nobody would have decided it).",
+      "code": { "file": "infra/src/network.ts", "symbol": "private-rta-" },
+      "console": "VPC → Route tables → minitickets-dev-private-rt → Subnet associations → Explicit subnet associations",
+      "points": [[200, 612], [200, 596], [444, 596]], "labelAt": [208, 592, "start"]
+    },
+    {
+      "id": "private2-privatert", "chapter": 2, "kind": "route", "from": "private-2", "to": "private-rt",
+      "label": "association minitickets-dev-private-rta-2", "short": "association private-rta-2",
+      "why": "Links private-2 to the same sign as private-1.",
+      "code": { "file": "infra/src/network.ts", "symbol": "private-rta-" },
+      "console": "VPC → Route tables → minitickets-dev-private-rt → Subnet associations → Explicit subnet associations",
+      "points": [[700, 612], [700, 596], [458, 596]], "labelAt": [692, 592, "end"]
+    },
+    {
+      "id": "local-a", "chapter": 2, "kind": "route", "from": "public-1", "to": "private-1",
+      "label": "route 10.0.0.0/16 → local (in every table)", "short": "route 10.0.0.0/16 → local",
+      "why": "Anything inside the city stays inside: every neighborhood can reach every other one, across both districts. Guards (chapter 3) decide who may actually come in.",
+      "code": { "file": "infra/src/network.ts", "symbol": "local" },
+      "console": "Any of our route tables → Routes tab → 10.0.0.0/16, Target local",
+      "points": [[110, 548], [110, 612]], "labelAt": [118, 561, "start"]
+    },
+    {
+      "id": "local-b", "chapter": 2, "kind": "route", "from": "public-2", "to": "private-2",
+      "label": "route 10.0.0.0/16 → local (in every table)", "short": "route 10.0.0.0/16 → local",
+      "why": "The same local line, seen in district B. It also joins neighborhoods across the two districts.",
+      "code": { "file": "infra/src/network.ts", "symbol": "local" },
+      "console": "Any of our route tables → Routes tab → 10.0.0.0/16, Target local",
+      "points": [[790, 548], [790, 612]], "labelAt": [782, 561, "end"]
+    }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  // 1. Read the data. Everything below draws from it; nothing about the city is hard-coded here.
+  const DATA = JSON.parse(document.getElementById("city-data").textContent);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("map");
+  const panel = document.getElementById("panel");
+  const byId = new Map(DATA.components.map((c) => [c.id, c]));
+  const edgeById = new Map(DATA.connections.map((e) => [e.id, e]));
+  const chapterByN = new Map(DATA.chapters.map((c) => [c.n, c]));
+  const written = DATA.chapters.filter((c) => c.status === "written").map((c) => c.n);
+  const lastWritten = Math.max.apply(null, written);
+  const filterKindOf = { route: "route", dns: "route", sg: "sg", iam: "iam", secret: "secret", data: "data" };
+
+  // 2. What the reader is looking at.
+  const state = { chapter: 0, sel: null, filters: new Set(["route"]), query: "", hoverEdge: null };
+
+  // 3. Small helpers.
+  function svgEl(tag, attrs, parent) {
+    const node = document.createElementNS(NS, tag);
+    for (const key in attrs) node.setAttribute(key, attrs[key]);
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+  function svgText(parent, x, y, str, cls, anchor) {
+    const t = svgEl("text", { x: x, y: y, class: cls || "" }, parent);
+    if (anchor) t.setAttribute("text-anchor", anchor);
+    t.textContent = str;
+    return t;
+  }
+  function h(tag, attrs, children) {
+    const node = document.createElement(tag);
+    for (const key in attrs || {}) {
+      if (key === "text") node.textContent = attrs[key];
+      else if (key === "onclick") node.addEventListener("click", attrs[key]);
+      else node.setAttribute(key, attrs[key]);
+    }
+    (children || []).forEach((child) => child && node.appendChild(typeof child === "string" ? document.createTextNode(child) : child));
+    return node;
+  }
+  function chapterTitle(n) {
+    const c = chapterByN.get(n);
+    return c ? c.title : "";
+  }
+  function isBuilt(item) {
+    if (item.chapter === undefined) return true;
+    const c = chapterByN.get(item.chapter);
+    return !!c && c.status === "written" && item.chapter <= state.chapter;
+  }
+  function isNew(item) {
+    return isBuilt(item) && item.chapter === state.chapter;
+  }
+  function pathD(points) {
+    return points.map((p, i) => (i ? "L" : "M") + p[0] + " " + p[1]).join(" ");
+  }
+
+  // 4. Map layers, back to front. Order = what is drawn on top of what.
+  const defs = svgEl("defs", {}, svg);
+  const hatchPrivate = svgEl("pattern", { id: "hatch-private", width: 8, height: 8, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+  svgEl("rect", { width: 8, height: 8, style: "fill: var(--private)" }, hatchPrivate);
+  svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 8, style: "stroke: var(--hatch); stroke-width: 2" }, hatchPrivate);
+  const hatchWall = svgEl("pattern", { id: "hatch-wall", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+  svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 6, style: "stroke: var(--wall); stroke-width: 1.5" }, hatchWall);
+
+  const layers = {};
+  ["grid", "frames", "hoods", "roads", "edges", "signs", "objects", "labels"].forEach((name) => {
+    layers[name] = svgEl("g", { class: "layer-" + name }, svg);
+  });
+
+  // 4a. A faint survey grid, like a printed city plan.
+  for (let x = 0; x <= 1200; x += 50) svgEl("line", { x1: x, y1: 0, x2: x, y2: 900, class: "grid-line" }, layers.grid);
+  for (let y = 0; y <= 900; y += 50) svgEl("line", { x1: 0, y1: y, x2: 1200, y2: y, class: "grid-line" }, layers.grid);
+
+  // 5. Decor: drawings that are not clickable. They follow the chapter too (pencil until built).
+  const decorEls = [];
+  DATA.decor.forEach((d) => {
+    const layer = d.kind === "road" || d.kind === "innerwall" ? layers.roads : layers.frames;
+    const g = svgEl("g", { class: "decor", "aria-hidden": "true" }, layer);
+    if (d.kind === "text") svgText(g, d.x, d.y, d.text, d.cls);
+    if (d.kind === "rect") svgEl("rect", { x: d.x, y: d.y, width: d.w, height: d.h, rx: 3, class: d.cls }, g);
+    if (d.kind === "road") {
+      svgEl("path", { d: pathD(d.points), class: "road-edge", "stroke-width": d.width + 2 }, g);
+      svgEl("path", { d: pathD(d.points), class: "road", "stroke-width": d.width }, g);
+    }
+    if (d.kind === "innerwall") {
+      let x = d.x1;
+      d.gaps.concat([[d.x2, d.x2]]).forEach((gap) => {
+        if (gap[0] > x) svgEl("rect", { x: x, y: d.y, width: gap[0] - x, height: d.h, class: "inner-wall" }, g);
+        x = gap[1];
+      });
+    }
+    if (d.kind === "compass") {
+      const c = svgEl("g", { class: "compass", transform: "translate(" + d.x + " " + d.y + ")" }, g);
+      svgEl("path", { d: "M0 -16 L6 6 L0 2 L-6 6 Z" }, c);
+      svgText(c, 0, -20, "N", "", "middle");
+    }
+    decorEls.push({ data: d, g: g });
+  });
+
+  // 6. Components. Each shape kind has its own small drawing. Every drawing gets:
+  //    - a "marker" (the highlighter stroke shown when the piece is new in this chapter),
+  //    - a "ring" (the outline shown on hover, focus, selection or search match).
+  const nodeEls = new Map();
+  const layerOfKind = { frame: "frames", wall: "frames", district: "frames", hood: "hoods", sign: "signs", gate: "signs" };
+
+  function boxWithText(g, s, opts) {
+    svgEl("rect", { x: s.x - 5, y: s.y - 5, width: s.w + 10, height: s.h + 10, rx: 4, class: "marker" }, g);
+    svgEl("rect", { x: s.x, y: s.y, width: s.w, height: s.h, rx: opts.rx || 2, class: "body" }, g);
+    svgEl("rect", { x: s.x - 3, y: s.y - 3, width: s.w + 6, height: s.h + 6, rx: (opts.rx || 2) + 2, class: "ring" }, g);
+    const single = !s.sub;
+    const cx = opts.center ? s.x + s.w / 2 : s.x + (opts.pad || 10);
+    const anchor = opts.center ? "middle" : null;
+    if (single) {
+      svgText(g, cx, s.y + s.h / 2 + 5, s.title, opts.titleCls || "t-small", anchor);
+    } else {
+      svgText(g, cx, s.y + (opts.titleY || 20), s.title, opts.titleCls || "t-title", anchor);
+      svgText(g, cx, s.y + (opts.subY || 37), s.sub, opts.subCls || "t-small", anchor);
+    }
+  }
+
+  function drawComponent(c) {
+    const s = c.shape;
+    const g = svgEl("g", { class: "node shape-" + s.kind + (s.variant ? " v-" + s.variant : ""), "data-id": c.id }, layers[layerOfKind[s.kind] || "objects"]);
+    const tip = svgEl("title", {}, g);
+    let labelText = null;
+
+    if (s.kind === "frame" || s.kind === "district" || s.kind === "wall") {
+      // Big outlines: only their edge and their label are clickable, so they never cover what is inside.
+      if (s.kind === "wall") {
+        const left = s.gateX - 22;
+        const right = s.gateX + 22;
+        const d = "M" + left + " " + s.y + " H" + s.x + " V" + (s.y + s.h) + " H" + (s.x + s.w) + " V" + s.y + " H" + right;
+        svgEl("path", { d: d, class: "body" }, g);
+        svgEl("path", { d: d, class: "body-inner" }, g);
+      } else {
+        svgEl("rect", { x: s.x, y: s.y, width: s.w, height: s.h, rx: s.kind === "frame" ? 6 : 3, class: "body" }, g);
+      }
+      const labelGroup = svgEl("g", { class: "label" }, g);
+      svgEl("rect", { class: "marker" }, labelGroup);
+      svgEl("rect", { class: "label-hit" }, labelGroup);
+      svgEl("rect", { class: "ring" }, labelGroup);
+      labelText = svgText(labelGroup, s.lx, s.ly, s.label, s.kind === "district" ? "t-small" : "t-frame");
+    } else if (s.kind === "hood") {
+      svgEl("rect", { x: s.x - 6, y: s.y - 6, width: s.w + 12, height: s.h + 12, rx: 4, class: "marker" }, g);
+      svgEl("rect", { x: s.x, y: s.y, width: s.w, height: s.h, rx: 2, class: "body" }, g);
+      svgEl("rect", { x: s.x - 3, y: s.y - 3, width: s.w + 6, height: s.h + 6, rx: 3, class: "ring" }, g);
+      svgText(g, s.x + 12, s.y + 22, s.title, "t-title");
+      svgText(g, s.x + 12, s.y + 39, s.sub, "t-small");
+    } else if (s.kind === "gate") {
+      svgEl("rect", { x: s.x - 34, y: s.y - 26, width: 68, height: 50, rx: 6, class: "marker" }, g);
+      svgEl("rect", { x: s.x - 22, y: s.y - 14, width: 10, height: 26, class: "tower" }, g);
+      svgEl("rect", { x: s.x + 12, y: s.y - 14, width: 10, height: 26, class: "tower" }, g);
+      svgEl("path", { d: "M" + (s.x - 12) + " " + (s.y + 8) + " V" + (s.y - 2) + " A12 12 0 0 1 " + (s.x + 12) + " " + (s.y - 2) + " V" + (s.y + 8), class: "arch" }, g);
+      svgEl("rect", { x: s.x - 27, y: s.y - 19, width: 54, height: 36, rx: 4, class: "ring" }, g);
+      svgText(g, s.x + 30, s.y - 13, "city gate · minitickets-dev-igw", "t-small");
+    } else if (s.kind === "sign") {
+      svgEl("rect", { x: s.x - 5, y: s.y - 5, width: s.w + 10, height: s.h + 10, rx: 4, class: "marker" }, g);
+      const postEndY = s.y > s.py ? s.y + s.h / 2 : s.y + s.h / 2;
+      svgEl("path", { d: "M" + s.px + " " + s.py + " V" + postEndY + " H" + s.x, class: "post", fill: "none" }, g);
+      svgEl("path", { d: "M" + s.x + " " + s.y + " H" + (s.x + s.w - 8) + " L" + (s.x + s.w) + " " + (s.y + s.h / 2) + " L" + (s.x + s.w - 8) + " " + (s.y + s.h) + " H" + s.x + " Z", class: "body" }, g);
+      svgEl("rect", { x: s.x - 3, y: s.y - 3, width: s.w + 6, height: s.h + 6, rx: 3, class: "ring" }, g);
+      svgText(g, s.x + 8, s.y + s.h / 2 + 4.5, s.text, "t-sign");
+    } else if (s.kind === "shield") {
+      svgEl("rect", { x: s.x - 4, y: s.y - 4, width: 26, height: 30, rx: 4, class: "marker" }, g);
+      svgEl("path", { d: "M" + s.x + " " + (s.y + 2) + " L" + (s.x + 9) + " " + s.y + " L" + (s.x + 18) + " " + (s.y + 2) + " V" + (s.y + 11) + " C" + (s.x + 18) + " " + (s.y + 17) + " " + (s.x + 9) + " " + (s.y + 22) + " " + (s.x + 9) + " " + (s.y + 22) + " C" + (s.x + 9) + " " + (s.y + 22) + " " + s.x + " " + (s.y + 17) + " " + s.x + " " + (s.y + 11) + " Z", class: "body" }, g);
+      svgEl("rect", { x: s.x - 3, y: s.y - 3, width: 24, height: 28, rx: 3, class: "ring" }, g);
+    } else if (s.kind === "pill") {
+      boxWithText(g, s, { rx: s.h / 2, center: true, titleY: 25, subY: 42 });
+    } else if (s.kind === "box") {
+      boxWithText(g, s, { center: true, titleCls: "t-box", titleY: 22, subY: 39, subCls: "t-mono" });
+    } else if (s.kind === "chip") {
+      boxWithText(g, s, { pad: 8, titleCls: "t-small", titleY: 17, subY: 33 });
+      if (s.sub) g.querySelector("text").setAttribute("style", "font-weight: 600");
+    } else {
+      boxWithText(g, s, { pad: 10 });
+    }
+
+    const entry = { data: c, g: g, tip: tip, labelText: labelText };
+    nodeEls.set(c.id, entry);
+
+    g.addEventListener("click", (event) => {
+      if (!isBuilt(c)) return;
+      event.stopPropagation();
+      select({ type: "node", id: c.id }, false);
+    });
+    g.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && isBuilt(c)) {
+        event.preventDefault();
+        select({ type: "node", id: c.id }, true);
+      }
+    });
+  }
+  DATA.components.forEach(drawComponent);
+
+  // 6b. Label boxes for frames, districts and the wall need the text's real size, so they are
+  //     measured once the text is on the page.
+  nodeEls.forEach((entry) => {
+    if (!entry.labelText) return;
+    const box = entry.labelText.getBBox();
+    const group = entry.labelText.parentNode;
+    const set = (cls, pad) => {
+      const r = group.querySelector("." + cls);
+      r.setAttribute("x", box.x - pad);
+      r.setAttribute("y", box.y - pad);
+      r.setAttribute("width", box.width + pad * 2);
+      r.setAttribute("height", box.height + pad * 2);
+      r.setAttribute("rx", 3);
+    };
+    set("marker", 4);
+    set("label-hit", 3);
+    set("ring", 3);
+  });
+
+  // 7. Connections: a visible line, a wide invisible line that is easy to click, and a label
+  //    (in the top layer, so no building hides it) that says what allows the connection.
+  const edgeEls = new Map();
+  DATA.connections.forEach((e) => {
+    const from = byId.get(e.from);
+    const to = byId.get(e.to);
+    // Lines are clicked with the mouse. Keyboard users reach the same connection through the
+    // buttons in the side panel, so the Tab order stays piece by piece.
+    const g = svgEl("g", { class: "edge kind-" + e.kind, "data-id": e.id, "aria-hidden": "true" }, layers.edges);
+    const tip = svgEl("title", {}, g);
+    tip.textContent = e.label;
+    svgEl("path", { d: pathD(e.points), class: "edge-hit" }, g);
+    svgEl("path", { d: pathD(e.points), class: "edge-line" }, g);
+    g.setAttribute("aria-label", "Connection from " + (from ? from.name : e.from) + " to " + (to ? to.name : e.to) + ": " + e.label);
+    const label = svgEl("g", { class: "edge-label", "aria-hidden": "true" }, layers.labels);
+    // "short" (optional) is the map label when the full one does not fit; the panel shows the full one.
+    svgText(label, e.labelAt[0], e.labelAt[1], e.short || e.label, "", e.labelAt[2] === "end" ? "end" : "start");
+    edgeEls.set(e.id, { data: e, g: g, label: label });
+
+    const showLabel = (on) => { state.hoverEdge = on ? e.id : null; updateEdgeLabels(); };
+    g.addEventListener("mouseenter", () => showLabel(true));
+    g.addEventListener("mouseleave", () => showLabel(false));
+    g.addEventListener("click", (event) => { event.stopPropagation(); select({ type: "edge", id: e.id }, false); });
+  });
+
+  // 8. Header controls: filters, chapter stops, search, theme.
+  const filtersBox = document.getElementById("filters");
+  DATA.filters.forEach((f) => {
+    const button = h("button", { type: "button", class: "toggle", "aria-pressed": String(state.filters.has(f.kind)), text: f.label });
+    button.addEventListener("click", () => {
+      if (state.filters.has(f.kind)) state.filters.delete(f.kind);
+      else state.filters.add(f.kind);
+      button.setAttribute("aria-pressed", String(state.filters.has(f.kind)));
+      update();
+    });
+    filtersBox.appendChild(button);
+  });
+
+  const stops = document.getElementById("stops");
+  const stopButtons = DATA.chapters.map((c) => {
+    const button = h("button", { type: "button", class: "stop", text: String(c.n) });
+    if (c.status !== "written") {
+      button.disabled = true;
+      button.title = "Chapter " + c.n + ": " + c.title + " (coming later)";
+      button.setAttribute("aria-label", "Chapter " + c.n + ", " + c.title + ", coming later");
+    } else {
+      button.title = "Chapter " + c.n + ": " + c.title;
+      button.setAttribute("aria-label", "Chapter " + c.n + ", " + c.title);
+      button.addEventListener("click", () => goTo(c.n));
+    }
+    stops.appendChild(h("li", {}, [button]));
+    return button;
+  });
+  document.getElementById("prev").addEventListener("click", () => step(-1));
+  document.getElementById("next").addEventListener("click", () => step(1));
+
+  const searchInput = document.getElementById("search");
+  const results = document.getElementById("results");
+  searchInput.addEventListener("input", () => { state.query = searchInput.value; update(); });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      const first = matches().nodes.find((c) => isBuilt(c));
+      if (first) select({ type: "node", id: first.id }, true);
+    } else if (event.key === "ArrowDown") {
+      const button = results.querySelector("button");
+      if (button) { event.preventDefault(); button.focus(); }
+    } else if (event.key === "Escape") {
+      searchInput.value = ""; state.query = ""; update();
+    }
+  });
+
+  const themeSelect = document.getElementById("theme");
+  function applyTheme(value) {
+    if (value === "light" || value === "dark") document.documentElement.setAttribute("data-theme", value);
+    else document.documentElement.removeAttribute("data-theme");
+  }
+  try {
+    const saved = localStorage.getItem("city-theme");
+    if (saved) { themeSelect.value = saved; applyTheme(saved); }
+  } catch (err) { /* storage can be blocked; the default is fine */ }
+  themeSelect.addEventListener("change", () => {
+    applyTheme(themeSelect.value);
+    try { localStorage.setItem("city-theme", themeSelect.value); } catch (err) { /* ignore */ }
+  });
+
+  // 8b. Zoom: 1 = fit; above 1 the map is wider than its frame and the frame scrolls.
+  const frame = document.getElementById("map-frame");
+  let zoom = 1;
+  function setZoom(value) {
+    zoom = Math.min(2.5, Math.max(1, value));
+    svg.style.width = zoom === 1 ? "" : zoom * 100 + "%";
+    frame.classList.toggle("zoomed", zoom > 1);
+    document.getElementById("zoom-out").disabled = zoom === 1;
+    document.getElementById("zoom-fit").disabled = zoom === 1;
+    document.getElementById("zoom-in").disabled = zoom === 2.5;
+  }
+  document.getElementById("zoom-in").addEventListener("click", () => setZoom(zoom + 0.5));
+  document.getElementById("zoom-out").addEventListener("click", () => setZoom(zoom - 0.5));
+  document.getElementById("zoom-fit").addEventListener("click", () => setZoom(1));
+  setZoom(1);
+
+  // 9. Global keys: left / right arrows step through the chapters, Escape closes the details.
+  document.addEventListener("keydown", (event) => {
+    const tag = (event.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "select" || tag === "textarea") return;
+    if (event.key === "ArrowRight") step(1);
+    if (event.key === "ArrowLeft") step(-1);
+    if (event.key === "Escape" && state.sel) {
+      const previous = state.sel;
+      select(null, false);
+      const entry = previous.type === "node" ? nodeEls.get(previous.id) : edgeEls.get(previous.id);
+      if (entry) entry.g.focus();
+    }
+  });
+  svg.addEventListener("click", () => { if (state.sel) select(null, false); });
+
+  // 10. Actions.
+  function step(delta) {
+    const index = written.indexOf(state.chapter);
+    const next = written[index + delta];
+    if (next !== undefined) goTo(next);
+  }
+  function goTo(n) {
+    state.chapter = n;
+    if (state.sel && !selectionBuilt(state.sel)) state.sel = null;
+    update();
+    renderPanel(false, false);
+    saveHash();
+  }
+  function selectionBuilt(sel) {
+    const item = sel.type === "node" ? byId.get(sel.id) : edgeById.get(sel.id);
+    return !!item && isBuilt(item);
+  }
+  function select(sel, fromKeyboard) {
+    state.sel = sel;
+    update();
+    renderPanel(fromKeyboard, !fromKeyboard);
+    saveHash();
+  }
+  function saveHash() {
+    const parts = ["chapter=" + state.chapter];
+    if (state.sel) parts.push((state.sel.type === "node" ? "piece=" : "connection=") + state.sel.id);
+    try { history.replaceState(null, "", "#" + parts.join("&")); } catch (err) { /* file:// in some browsers */ }
+  }
+  function readHash() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const n = Number(params.get("chapter"));
+    if (written.indexOf(n) !== -1) state.chapter = n;
+    const piece = params.get("piece");
+    const connection = params.get("connection");
+    if (piece && byId.has(piece) && isBuilt(byId.get(piece))) state.sel = { type: "node", id: piece };
+    if (connection && edgeById.has(connection) && isBuilt(edgeById.get(connection))) state.sel = { type: "edge", id: connection };
+  }
+
+  // 11. Search: by real name, AWS ID, city word, type or connection label.
+  function matches() {
+    const q = state.query.trim().toLowerCase();
+    if (!q) return { nodes: [], edges: [] };
+    const nodes = DATA.components.filter((c) =>
+      [c.id, c.name, c.awsId, c.city, c.type, c.shape.title, c.shape.text].filter(Boolean).join(" ").toLowerCase().indexOf(q) !== -1);
+    const edges = DATA.connections.filter((e) => e.label.toLowerCase().indexOf(q) !== -1 && isBuilt(e));
+    return { nodes: nodes, edges: edges };
+  }
+
+  // 12. Redraw the state of every piece (classes only; the drawing itself never changes).
+  function update() {
+    const found = matches();
+    const searching = state.query.trim() !== "";
+    const matchIds = new Set(found.nodes.map((c) => c.id));
+    const sel = state.sel;
+    const selEdge = sel && sel.type === "edge" ? edgeById.get(sel.id) : null;
+    const relatedNodes = new Set(selEdge ? [selEdge.from, selEdge.to] : []);
+
+    nodeEls.forEach((entry, id) => {
+      const c = entry.data;
+      const built = isBuilt(c);
+      const g = entry.g;
+      g.classList.toggle("built", built);
+      g.classList.toggle("planned", !built);
+      g.classList.toggle("is-new", isNew(c));
+      g.classList.toggle("selected", !!sel && sel.type === "node" && sel.id === id);
+      g.classList.toggle("related", relatedNodes.has(id));
+      g.classList.toggle("match", searching && matchIds.has(id));
+      g.classList.toggle("dim", searching && !matchIds.has(id));
+      const chapter = chapterByN.get(c.chapter);
+      if (built) {
+        g.setAttribute("tabindex", "0");
+        g.setAttribute("role", "button");
+        g.setAttribute("aria-label", (c.city ? c.city + ": " : "") + c.name + (isNew(c) ? ", new in this chapter" : ""));
+        g.setAttribute("aria-pressed", String(!!sel && sel.type === "node" && sel.id === id));
+        entry.tip.textContent = (c.city ? c.city + " · " : "") + c.name;
+      } else {
+        g.removeAttribute("tabindex");
+        g.removeAttribute("aria-pressed");
+        g.setAttribute("role", "img");
+        const when = chapter && chapter.status === "written" ? "Comes in chapter " + c.chapter : "Planned for chapter " + c.chapter + " (" + chapterTitle(c.chapter) + ")";
+        g.setAttribute("aria-label", c.name + ": " + when);
+        entry.tip.textContent = c.name + " · " + when;
+      }
+    });
+
+    decorEls.forEach((entry) => {
+      const built = isBuilt(entry.data);
+      entry.g.classList.toggle("planned", !built);
+    });
+
+    edgeEls.forEach((entry, id) => {
+      const e = entry.data;
+      const visible = isBuilt(e) && state.filters.has(filterKindOf[e.kind]);
+      entry.g.classList.toggle("visible", visible);
+      const selected = !!sel && sel.type === "edge" && sel.id === id;
+      const related = !!sel && sel.type === "node" && (e.from === sel.id || e.to === sel.id);
+      entry.g.classList.toggle("selected", selected);
+      entry.g.classList.toggle("related", related);
+      entry.g.classList.toggle("dim", searching && found.edges.indexOf(e) === -1);
+    });
+    updateEdgeLabels();
+
+    // Chapter stepper.
+    stopButtons.forEach((button, i) => {
+      const c = DATA.chapters[i];
+      if (c.n === state.chapter) button.setAttribute("aria-current", "step");
+      else button.removeAttribute("aria-current");
+      button.classList.toggle("done", c.status === "written" && c.n < state.chapter);
+    });
+    const index = written.indexOf(state.chapter);
+    document.getElementById("prev").disabled = index <= 0;
+    document.getElementById("next").disabled = index >= written.length - 1;
+    renderSummary();
+    renderNotes();
+    renderResults(found, searching);
+  }
+
+  function updateEdgeLabels() {
+    const sel = state.sel;
+    edgeEls.forEach((entry, id) => {
+      const e = entry.data;
+      const visible = entry.g.classList.contains("visible");
+      const show = visible && (state.hoverEdge === id ||
+        (!!sel && sel.type === "edge" && sel.id === id) ||
+        (!!sel && sel.type === "node" && (e.from === sel.id || e.to === sel.id)));
+      entry.label.classList.toggle("show", show);
+    });
+  }
+
+  function renderSummary() {
+    const c = chapterByN.get(state.chapter);
+    const box = document.getElementById("summary");
+    box.replaceChildren(
+      h("h2", {}, [
+        h("small", { text: "Chapter " + c.n + " of " + (DATA.chapters.length - 1) }),
+        c.title,
+        h("a", { class: "guide-link", href: DATA.guide + "#" + c.anchor, text: "Read it in the guide" })
+      ]),
+      h("ul", { "aria-label": "New in this chapter" }, (c.summary || []).map((line) => h("li", { text: line })))
+    );
+  }
+
+  function renderNotes() {
+    const notes = DATA.filters
+      .filter((f) => state.filters.has(f.kind) && !DATA.connections.some((e) => filterKindOf[e.kind] === f.kind))
+      .map((f) => f.label + ": coming in " + f.comesIn + ".");
+    const hidden = DATA.filters.filter((f) => !state.filters.has(f.kind) && DATA.connections.some((e) => filterKindOf[e.kind] === f.kind && isBuilt(e)));
+    if (hidden.length) notes.push(hidden.map((f) => f.label).join(", ") + " hidden.");
+    document.getElementById("notes").textContent = notes.join(" ");
+  }
+
+  function renderResults(found, searching) {
+    results.replaceChildren();
+    results.hidden = !searching;
+    if (!searching) return;
+    if (!found.nodes.length && !found.edges.length) {
+      results.appendChild(h("li", { class: "none", text: "Nothing on the map is called that." }));
+      return;
+    }
+    found.nodes.slice(0, 10).forEach((c) => {
+      const built = isBuilt(c);
+      const label = c.name;
+      const extra = built ? (c.city ? " · " + c.city : "") : " · planned, chapter " + c.chapter;
+      const button = h("button", { type: "button" }, [label, h("span", { class: "muted", text: extra })]);
+      if (built) button.addEventListener("click", () => select({ type: "node", id: c.id }, true));
+      else button.setAttribute("aria-disabled", "true");
+      results.appendChild(h("li", {}, [button]));
+    });
+    found.edges.slice(0, 5).forEach((e) => {
+      const button = h("button", { type: "button", text: "Connection: " + e.label });
+      button.addEventListener("click", () => select({ type: "edge", id: e.id }, true));
+      results.appendChild(h("li", {}, [button]));
+    });
+    results.querySelectorAll("button").forEach((button, i, all) => {
+      button.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" && all[i + 1]) { event.preventDefault(); all[i + 1].focus(); }
+        if (event.key === "ArrowUp") { event.preventDefault(); (all[i - 1] || searchInput).focus(); }
+        if (event.key === "Escape") searchInput.focus();
+      });
+    });
+  }
+
+  // 13. The side panel.
+  function codeList(refs) {
+    if (!refs || !refs.length) return h("p", { text: "Not in our code: AWS makes it with every VPC." });
+    return h("ul", {}, refs.map((ref) => h("li", {}, [h("code", { text: ref.file }), " → ", h("code", { text: ref.symbol })])));
+  }
+  function cliBlock(cli) {
+    const pre = h("pre", {}, [h("code", { text: cli })]);
+    const button = h("button", { type: "button", class: "copy", text: "Copy" });
+    button.addEventListener("click", () => {
+      const done = () => { button.textContent = "Copied"; setTimeout(() => { button.textContent = "Copy"; }, 1500); };
+      try {
+        navigator.clipboard.writeText(cli).then(done, () => selectText(pre));
+      } catch (err) { selectText(pre); }
+    });
+    return h("div", {}, [pre, button]);
+  }
+  function selectText(node) {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  function backLink() {
+    return h("button", { type: "button", class: "backlink", text: "← Back to the chapter overview", onclick: () => select(null, true) });
+  }
+  function entryRow(term, content) {
+    return [h("dt", { text: term }), h("dd", {}, [typeof content === "string" ? h("p", { text: content, style: "margin:0" }) : content])];
+  }
+
+  function renderPanel(moveFocus, bringIntoView) {
+    panel.replaceChildren();
+    const sel = state.sel;
+    if (!sel) renderOverview();
+    else if (sel.type === "node") renderComponent(byId.get(sel.id));
+    else renderConnection(edgeById.get(sel.id));
+    panel.scrollTop = 0;
+    // When the panel sits under the map (narrow screens), bring it into view after a click.
+    if (sel && bringIntoView && panel.getBoundingClientRect().top > window.innerHeight) {
+      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panel.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    }
+    if (moveFocus) {
+      const heading = panel.querySelector("h2");
+      if (heading) heading.focus();
+    }
+  }
+
+  function renderOverview() {
+    const c = chapterByN.get(state.chapter);
+    const fresh = DATA.components.filter((x) => x.chapter === c.n);
+    panel.appendChild(h("p", { class: "kicker", text: "Chapter " + c.n + " of " + (DATA.chapters.length - 1) }));
+    panel.appendChild(h("h2", { tabindex: "-1", text: "New in this chapter" }));
+    const list = h("div", {}, fresh.map((x) => h("button", { type: "button", class: "linkish node-link", onclick: () => select({ type: "node", id: x.id }, true) },
+      [x.city || x.name, h("span", { class: "allow", text: x.name })])));
+    panel.appendChild(list);
+    const freshEdges = DATA.connections.filter((e) => e.chapter === c.n);
+    if (freshEdges.length) {
+      panel.appendChild(h("p", { class: "kicker", style: "margin-top:14px", text: "New connections, and what allows each one" }));
+      freshEdges.forEach((e) => panel.appendChild(h("button", { type: "button", class: "linkish", onclick: () => select({ type: "edge", id: e.id }, true) },
+        [byId.get(e.from).shape.title + " → " + (byId.get(e.to).shape.title || byId.get(e.to).name), h("span", { class: "allow", text: e.label })])));
+    }
+    panel.appendChild(h("dl", { class: "ledger" }, entryRow("How to use the map", h("ul", { class: "tips" }, [
+      h("li", {}, ["Click a piece, or press ", h("kbd", { text: "Tab" }), " to reach it and ", h("kbd", { text: "Enter" }), " to open it."]),
+      h("li", {}, ["Click a blue line to see what allows that connection."]),
+      h("li", {}, [h("kbd", { text: "←" }), " ", h("kbd", { text: "→" }), " step through the chapters. ", h("kbd", { text: "Esc" }), " closes the details."]),
+      h("li", {}, ["Pencil outlines are planned. They become ink in their chapter."]),
+      h("li", {}, ["Every value here is from our code and our stack. IDs were read from the stack when the guide was written."])
+    ]))));
+  }
+
+  function renderComponent(c) {
+    panel.appendChild(backLink());
+    panel.appendChild(h("p", { class: "kicker", text: c.type + " · chapter " + c.chapter + (isNew(c) ? " · new" : "") }));
+    panel.appendChild(h("h2", { tabindex: "-1", text: c.city || c.name }));
+    const names = [h("code", { text: c.name })];
+    if (c.awsId) names.push(" ", h("code", { text: c.awsId }));
+    panel.appendChild(h("p", { class: "realname" }, names));
+
+    const rows = [];
+    rows.push.apply(rows, entryRow("What it is", c.what));
+    rows.push.apply(rows, entryRow("Why we need it", c.why));
+    rows.push.apply(rows, entryRow("Key settings", h("ul", {}, c.settings.map((s) => h("li", { text: s })))));
+    rows.push.apply(rows, entryRow("In our code", codeList(c.code)));
+    rows.push.apply(rows, entryRow("In the console", c.console));
+    rows.push.apply(rows, entryRow("From the CLI", cliBlock(c.cli)));
+    rows.push.apply(rows, entryRow("When it breaks", c.debug));
+    rows.push.apply(rows, entryRow("Say it in an interview", c.interview));
+    if (c.twin) rows.push.apply(rows, entryRow("On AWS it becomes", c.twin));
+
+    const links = DATA.connections.filter((e) => isBuilt(e) && (e.from === c.id || e.to === c.id));
+    const linkBox = links.length
+      ? h("div", {}, links.map((e) => {
+          const other = byId.get(e.from === c.id ? e.to : e.from);
+          return h("button", { type: "button", class: "linkish", onclick: () => select({ type: "edge", id: e.id }, true) },
+            [(e.from === c.id ? "→ " : "← ") + other.name, h("span", { class: "allow", text: "What allows it: " + e.label })]);
+        }))
+      : h("p", { style: "margin:0", text: c.chapter === 0 ? "None on AWS yet: this piece still lives on the laptop." : "None drawn yet. Its connections arrive in later chapters." });
+    rows.push.apply(rows, entryRow("Connections", linkBox));
+    panel.appendChild(h("dl", { class: "ledger" }, rows));
+  }
+
+  function renderConnection(e) {
+    const from = byId.get(e.from);
+    const to = byId.get(e.to);
+    panel.appendChild(backLink());
+    panel.appendChild(h("p", { class: "kicker", text: "Connection · " + e.kind + " · chapter " + e.chapter }));
+    panel.appendChild(h("h2", { tabindex: "-1", text: e.label }));
+    panel.appendChild(h("div", {}, [
+      h("button", { type: "button", class: "linkish node-link", onclick: () => select({ type: "node", id: from.id }, true) }, ["From: " + (from.city || from.name), h("span", { class: "allow", text: from.name })]),
+      h("button", { type: "button", class: "linkish node-link", onclick: () => select({ type: "node", id: to.id }, true) }, ["To: " + (to.city || to.name), h("span", { class: "allow", text: to.name })])
+    ]));
+    const rows = [];
+    rows.push.apply(rows, entryRow("What allows it", e.label));
+    rows.push.apply(rows, entryRow("Why", e.why));
+    rows.push.apply(rows, entryRow("In our code", codeList([e.code])));
+    rows.push.apply(rows, entryRow("In the console", e.console));
+    panel.appendChild(h("dl", { class: "ledger" }, rows));
+  }
+
+  // 14. Start.
+  readHash();
+  update();
+  renderPanel(false, false);
+})();
+</script>
+</body>
+</html>

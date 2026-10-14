@@ -153,6 +153,12 @@ system-design.md
   Each: current state (with links) -> bottlenecks -> design -> trade-offs
   -> what we'd measure.
 
+guides/<name>.md (and guides/infra-explorer.html)
+- Teaching guides: one topic from zero, in the order a newcomer needs it. Today:
+  guides/cicd-story.md (from git push to the new version on AWS) and guides/infra-build-along.md
+  + guides/infra-explorer.html (our AWS setup, built one piece at a time as a growing city map).
+- Same accuracy and writing rules as every other page; history line under the title.
+
 interview-drills.md
 - Question bank grouped by round (frontend, backend, security, AWS,
   DevOps, system design), each linking to its card. Mark which ones I can
@@ -205,8 +211,34 @@ STORY PLACEMENT RULES (enforced by docs:check)
 - New features go where a request meets them: in the chapter for that stop of the journey.
 - Things off the main path (background jobs, webhooks, queues) become a "side path" chapter right
   after the step where they branch, with a diagram of the branch point.
-- Never add a standalone story file.
+- Never add a standalone REQUEST-PATH story file: features go into app-story.md / infra-story.md
+  (and 00-big-picture.md).
+- Teaching GUIDES are allowed, but only under docs/handbook/guides/. A guide teaches one topic from
+  zero in its own order (build order, or push-to-production order), for a reader who does not know
+  the topic yet. Every guide is linked from README.md. Guides link to cards; cards keep linking to
+  the stories (a guide is not a "story chapter" for the placement check).
+- docs:check fails if: a "*-story.md" file other than app-story.md / infra-story.md sits in
+  docs/handbook/ (move it to guides/); a guide is not linked from README.md; a relative link in a
+  guide points to a file that does not exist; the explorer's code references point to a missing
+  file or a symbol that is not in that file; the explorer's chapter titles do not match the
+  guide's chapter headings.
 - docs:check fails if: a ✅ or 🟡 card is not linked from at least one story chapter (no orphan
   cards); a card's "Where it appears in the story" link points to a missing chapter or to a chapter
   that does not link back; a story links to a missing card; a ✅ AWS card is missing from the
   "Components" table in 00-big-picture.md.
+
+LIVING GUIDE RULE (infra guide + explorer; also in CLAUDE.md)
+- guides/infra-build-along.md (the guide) and guides/infra-explorer.html (the explorer, one
+  self-contained HTML file whose map is drawn from ONE JSON block inside it) teach our AWS setup as
+  one city that grows chapter by chapter.
+- Whenever a step adds or changes infrastructure (a service, an IAM role or permission, a security
+  group rule, a secret, a route, a DNS record, a CD step), update the guide AND the explorer in the
+  SAME step. This is the one exception to the "batch docs later" workflow. Update: the right
+  chapter; its city story; for IAM the WHO / WHAT / ATTACHED picture (trust policy, permission
+  policy, where it is attached), marking what is new and why only that permission; the
+  who-talks-to-whom chain; the Code -> Console -> CLI rows; "what breaks without it" as Reach /
+  Allowed / Password; the growing diagram; the "Map so far" diagram; the poster; and the explorer's
+  JSON (components, connections with what allows each one, the chapter summary).
+- Every chapter of the guide has the same 13 sections: Last time + the problem; In the city; The
+  picture; How it really works; Our code; How it connects; Code -> Console -> CLI; Console mission;
+  Follow one thing; When it breaks; The small details; Interview; Check yourself + cliffhanger.

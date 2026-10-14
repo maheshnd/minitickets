@@ -25,9 +25,58 @@ flowchart LR
 
 ---
 
-## 2026-10-14 · docs(cicd): beginner's CI/CD story + plain-English chapter comments in cd.yml
+## 2026-10-14 · docs: AGENTS.md for other coding agents + handbook roadmap
 
 Commit: filled in by the next handbook commit
+
+Why: the owner wants to continue with another coding agent (OpenAI Codex) under the same rules, and
+needs one page that shows the whole plan. `AGENTS.md` (repo root, outside the handbook) points to
+`CLAUDE.md` and writes the safety rules out, because other agents don't read
+`.claude/settings.json`. Docs only; no code, infra or behaviour change.
+
+- `ROADMAP.md`: new page. Done (by area, with where each step is explained), where things stand
+  now (CloudFront waiting, HTTPS on the ALB, manual Cloudflare CNAME, switches by commit, immutable
+  OIDC subjects), next in order (Explorer v2, S1a-S1d, S2a-S2b, S3, guide chapters, catch-up,
+  Feature 2), known small fixes for the catch-up.
+- `README.md`: "The files" lists `ROADMAP.md`.
+
+## 2026-10-14 · docs(guides): infra build-along (chapters 0-2) + interactive city explorer; guides/ folder
+
+Commit: filled in by the next handbook commit
+
+Why: the owner knows the app but not AWS, and finds the infra code too big and the reference pages
+dry. This starts a beginner's guide that moves the app from the laptop to AWS one piece at a time, as
+one growing "city" map, with every setting traced from the code to the console and the CLI, plus an
+interactive explorer of the same map. First round: chapters 0-2 (laptop, AWS basics, the VPC network).
+Teaching guides now live in `guides/` (the "no standalone story" rule is about request-path stories),
+and a living guide rule keeps the guide and explorer in step with every infra change. Docs, the
+`docs:check` script and one comment line in `cd.yml` only; no infra or app behaviour change. The
+previous entry's placeholder was replaced with its real hash. `pnpm docs:history --since 6ea9575`
+lists the files below.
+
+- `guides/infra-build-along.md`: new page. The city table; chapter 0 (the app on my laptop, the
+  laptop → AWS table, Reach / Allowed / Password), chapter 1 (account, region, AZs, tags and names,
+  Pulumi preview → up → state → outputs, the switches and their cost, the budget), chapter 2 (VPC,
+  CIDR, four subnets in two AZs, internet gateway, route tables and associations, what "public" really
+  means, why no NAT, default NACL and main route table); each with the same 13 parts; "Map so far"
+  with real console names and IDs; "Coming next" (chapters 3-15).
+- `guides/infra-explorer.html`: new page. One self-contained HTML file; the map is drawn from one
+  JSON block (chapters, filters, decor, components, connections). Chapter stepper, planned parts as
+  pencil outlines, details panel, connection filters, search, zoom, light and dark.
+- `guides/cicd-story.md`: moved from `cicd-story.md` (guides live in `guides/` now); relative links
+  fixed. Content unchanged.
+- `README.md`: "The files" lists the three guides; "First full read" and "AWS round" start with the
+  build-along; "Keeping it true" lists checks 7 and 8; new section "Guides: `guides/`".
+- `HANDBOOK_SPEC.md`: story placement rules (guides allowed under `guides/`, what docs:check enforces
+  for them); new LIVING GUIDE RULE; `guides/` in "Files and what each contains".
+- `glossary.md`: new words from the guide (association, AZ ID, auto-assign public IPv4, bit,
+  blackhole, cost allocation tag, Cost Explorer, default route / security group / VPC, Docker volume,
+  explorer, guide, IPv4, packet, public IP address, Pulumi Cloud, resource map, stack output, tag, Tag
+  Editor).
+
+## 2026-10-14 · docs(cicd): beginner's CI/CD story + plain-English chapter comments in cd.yml
+
+Commit: 6ea9575
 
 Why: `cd.yml` (Steps 12a, 12b) is hard to follow for someone who has never seen GitHub Actions, bash
 or Pulumi. This adds one beginner's guide to the whole pipeline, with real snippets from `ci.yml` and

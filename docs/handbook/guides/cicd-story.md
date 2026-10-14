@@ -1,11 +1,11 @@
 # The CI/CD story
 
-History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 **In one line:** what happens, step by step, between `git push` and the new version of MiniTickets
 answering on AWS, and how to read the two files that make it happen:
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
-[`.github/workflows/cd.yml`](../../.github/workflows/cd.yml).
+[`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) and
+[`.github/workflows/cd.yml`](../../../.github/workflows/cd.yml).
 
 **Who this page is for:** someone who has never seen GitHub Actions, bash or Pulumi. Every
 technical word is explained the first time it shows up. Every example is copied from our two files.
@@ -1436,7 +1436,7 @@ and deletes networks, databases, roles). It is only handed to a job a human appr
 
 If a bad library ever ran inside publish, the worst it could do is upload an image. That image
 would still need your approval to run. Giving each job only the power it needs is called
-**least privilege** ([card](concepts/least-privilege.md)).
+**least privilege** ([card](../concepts/least-privilege.md)).
 
 ### Why does deploy run when publish is skipped?
 
@@ -1473,7 +1473,7 @@ The new code expects the new database shape. Change the database first, then the
 migration, and for a minute during the rolling update, the OLD code runs against the NEW database
 shape. That is why migrations must be **backward compatible**: add things first, remove them only in
 a later deploy (expand, then contract). The same rule makes rollbacks safe. See the
-[migrations card](concepts/migrations.md).
+[migrations card](../concepts/migrations.md).
 
 ### Why can't we just use `latest`?
 
@@ -1485,7 +1485,7 @@ a later deploy (expand, then contract). The same rule makes rollbacks safe. See 
   be updated.
 
 A SHA names exactly one commit, forever. See the
-[immutable image tags card](concepts/immutable-image-tags.md).
+[immutable image tags card](../concepts/immutable-image-tags.md).
 
 ### What happens if I push during a deploy?
 
@@ -1583,13 +1583,13 @@ older tag."
 
 ## Where to read more
 
-- Cards: [CI pipeline](concepts/ci-pipeline.md), [immutable image tags](concepts/immutable-image-tags.md),
-  [ECR](concepts/ecr.md), [migrations](concepts/migrations.md),
-  [zero-downtime deploys](concepts/zero-downtime-deploys.md),
-  [circuit breaker](concepts/circuit-breaker.md), [least privilege](concepts/least-privilege.md),
-  [infrastructure as code](concepts/infrastructure-as-code.md), [cost switches](concepts/cost-switches.md),
-  [Service Connect](concepts/service-connect.md).
-- The code: [`cd.yml`](../../.github/workflows/cd.yml), [`ci.yml`](../../.github/workflows/ci.yml),
-  [`scripts/run-migrations.sh`](../../scripts/run-migrations.sh), `infra/src/cicd.ts` (the two
+- Cards: [CI pipeline](../concepts/ci-pipeline.md), [immutable image tags](../concepts/immutable-image-tags.md),
+  [ECR](../concepts/ecr.md), [migrations](../concepts/migrations.md),
+  [zero-downtime deploys](../concepts/zero-downtime-deploys.md),
+  [circuit breaker](../concepts/circuit-breaker.md), [least privilege](../concepts/least-privilege.md),
+  [infrastructure as code](../concepts/infrastructure-as-code.md), [cost switches](../concepts/cost-switches.md),
+  [Service Connect](../concepts/service-connect.md).
+- The code: [`cd.yml`](../../../.github/workflows/cd.yml), [`ci.yml`](../../../.github/workflows/ci.yml),
+  [`scripts/run-migrations.sh`](../../../scripts/run-migrations.sh), `infra/src/cicd.ts` (the two
   roles), `infra/src/release.ts` (the SSM tag), `infra/src/registry.ts` (ECR and its cleanup rules).
-- The AWS basics (roles, ARNs, trust policies): [aws-foundations.md](aws-foundations.md).
+- The AWS basics (roles, ARNs, trust policies): [aws-foundations.md](../aws-foundations.md).

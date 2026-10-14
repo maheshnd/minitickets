@@ -71,6 +71,8 @@ Docs are written in batches, not in every feature step.
 - Write code + tests + clear numbered inline comments (1., 2., 3. …: WHAT each part does and WHY).
 - Do NOT update the handbook (`docs/handbook/`), the step docs (`docs/NN-*.md`,
   `docs/00-architecture.md`), and do NOT add `@concept` anchors.
+  ONE exception: a step that adds or changes infrastructure updates the infra guide and the
+  explorer in the same step (see "Living guide rule" below).
 - Instead, append ONE entry to `docs/handbook/PENDING.md` (create it if missing). Max ~10 lines:
   step name, concepts covered, key files (path + function), real measured numbers, anything unsure.
 
@@ -131,11 +133,37 @@ In the catch-up step, for every pending feature or infra step:
 - New features go in the story **where a request meets them**, in the chapter for that stop.
 - Something off the main path (a background job, a webhook, a retry queue) becomes a **side path**
   chapter right after the step where it branches off, with a diagram of the branch point.
-- Never add a standalone story file. The stories are `app-story.md`, `infra-story.md` and
-  `00-big-picture.md`.
+- Never add a standalone REQUEST-PATH story file. The request-path stories are `app-story.md`,
+  `infra-story.md` and `00-big-picture.md`; new features go into them.
+- Teaching GUIDES are different: a guide teaches one topic from zero, in its own order (for example
+  the CI/CD story, or the infra build-along). Guides live ONLY in `docs/handbook/guides/`, and every
+  guide is linked from `docs/handbook/README.md`. `pnpm docs:check` enforces both.
 - `pnpm docs:check` fails if a ✅ or 🟡 card is linked from no story chapter, if a card's story link
   is broken or not mirrored by the chapter, or if a ✅ AWS card is missing from the "Components"
-  table in `00-big-picture.md`.
+  table in `00-big-picture.md`. For guides it fails if a `*-story.md` other than the two stories
+  sits in `docs/handbook/`, a guide is not linked from the handbook README, a guide's relative link
+  is broken, or the explorer names a code file / symbol that does not exist or a chapter title
+  that differs from the guide.
+
+## Living guide rule (infra guide + explorer)
+
+`docs/handbook/guides/infra-build-along.md` (the guide) and `docs/handbook/guides/infra-explorer.html`
+(the explorer) teach our AWS setup as one growing city map. They must never fall behind the code.
+
+Whenever a step adds or changes infrastructure (a service, an IAM role or permission, a security
+group rule, a secret, a route, a DNS record, a CD step), update the guide AND the explorer in the
+SAME step. This is the one exception to the "batch docs later" workflow above. Update:
+- the right chapter of the guide (or add one, in build order), and its city-story comparison
+  (only the city words from the guide's city table);
+- for IAM: the WHO / WHAT / ATTACHED picture (trust policy, permission policy, where it is
+  attached), marking what is new and why ONLY that permission is needed;
+- the who-talks-to-whom chain, and "what breaks without it" as Reach / Allowed / Password;
+- the Code -> Console -> CLI rows (file + function + exact value, console click path + field);
+- the growing Mermaid diagram (new part highlighted), the "Map so far" diagram and the poster;
+- the explorer's JSON data: the component(s), the connection(s) with what allows each one, and
+  the chapter's 3-line summary. Content must match the guide.
+Then: Mermaid validation (mermaid-cli) and `pnpm docs:check` pass. Real IDs, names and values only;
+if unsure about an AWS fact, say so in the text.
 
 ## Handbook changelog rule
 

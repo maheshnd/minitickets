@@ -22,6 +22,7 @@ flowchart LR
 | File | What it holds | Status |
 | ---- | ------------- | ------ |
 | [README.md](README.md) | This page: how to use the handbook | written |
+| [ROADMAP.md](ROADMAP.md) | The whole plan: what is built, where things stand now, what comes next in order, known small fixes | written, updated in each catch-up |
 | [concept-map.md](concept-map.md) | Every concept, grouped by area, with status and code location | written |
 | [00-big-picture.md](00-big-picture.md) | The whole system, the life of one request, the life of a login | written |
 | [aws-foundations.md](aws-foundations.md) | Regions, ARNs, Reach / Allowed / Password, IAM, roles, debugging | written |
@@ -30,7 +31,9 @@ flowchart LR
 | [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) | The spec this handbook is built from | fixed |
 | [infra-story.md](infra-story.md) | The AWS resources, in the order a request meets them; deploy, security and cost stories | written |
 | [app-story.md](app-story.md) | Our code, in the order a request travels through it; monorepo, validation, tests, Docker, CI; the app security story | written |
-| [cicd-story.md](cicd-story.md) | CI/CD for someone who has never seen GitHub Actions, bash or Pulumi: from `git push` to the new version on AWS, chapter by chapter, then how to read `ci.yml` and `cd.yml` line by line | written |
+| [guides/cicd-story.md](guides/cicd-story.md) | Guide. CI/CD for someone who has never seen GitHub Actions, bash or Pulumi: from `git push` to the new version on AWS, chapter by chapter, then how to read `ci.yml` and `cd.yml` line by line | written |
+| [guides/infra-build-along.md](guides/infra-build-along.md) | Guide. Our AWS setup for someone who knows the app but not AWS: we move the app from the laptop to AWS one piece at a time, as one growing city map. Every setting traced from the code to the AWS console and the CLI | chapters 0-2 written (laptop, AWS basics, the VPC network); the rest is listed under "Coming next" |
+| [guides/infra-explorer.html](guides/infra-explorer.html) | Guide. The interactive city map that goes with the build-along: step through the chapters, click any piece to see its settings, code, console path, CLI and debug tip. One file: download or open it locally and double-click it (GitHub only shows its source) | chapters 0-2 |
 | `concepts/<slug>.md` | One card per concept | AWS / infra cards (Phase 2) and app cards (Phase 3) written; planned and explain-only Phase 5 |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in the handbook, commit by commit, and why | written, one entry per handbook commit |
 | `decisions/NNNN-<title>.md` | Architecture Decision Records (why we chose X over Y) | Phase 4 |
@@ -52,12 +55,14 @@ Files that are not written yet are shown without a link and with their phase.
 **First full read (a few evenings)**
 
 1. [00-big-picture.md](00-big-picture.md)
-2. [aws-foundations.md](aws-foundations.md)
-3. [infra-story.md](infra-story.md), then [app-story.md](app-story.md)
-4. [cicd-story.md](cicd-story.md): how a push becomes a running version on AWS
-5. `decisions/` (Phase 4)
-6. `system-design.md` (Phase 4)
-7. Skim the [concept map](concept-map.md) for anything you skipped.
+2. New to AWS? First [guides/infra-build-along.md](guides/infra-build-along.md) with
+   [the explorer](guides/infra-explorer.html) open next to it: our AWS setup, one piece at a time.
+3. [aws-foundations.md](aws-foundations.md)
+4. [infra-story.md](infra-story.md), then [app-story.md](app-story.md)
+5. [guides/cicd-story.md](guides/cicd-story.md): how a push becomes a running version on AWS
+6. `decisions/` (Phase 4)
+7. `system-design.md` (Phase 4)
+8. Skim the [concept map](concept-map.md) for anything you skipped.
 
 **1 hour before an interview**
 
@@ -94,6 +99,8 @@ and [`fail-fast`](concepts/fail-fast.md).
 
 **AWS round**
 
+New to AWS: [guides/infra-build-along.md](guides/infra-build-along.md) first (each chapter ends
+with a 30-second answer and likely questions). Then:
 [aws-foundations.md](aws-foundations.md) (all of it) → [infra-story.md](infra-story.md) → the AWS
 Network, AWS Compute and AWS Data cards → the [cost story](infra-story.md#the-cost-story).
 
@@ -173,7 +180,24 @@ with a clear message when:
 3. a file holds an anchor that its card does not list;
 4. `concept-map.md` does not link to a card;
 5. any handbook file links to a card that does not exist;
-6. a handbook page is missing the history line under its title.
+6. a handbook page is missing the history line under its title;
+7. story placement is broken (an orphan ✅/🟡 card, a story link that is not mirrored, a ✅ AWS card
+   missing from the components table of [00-big-picture.md](00-big-picture.md));
+8. guides are out of place or out of date: a `*-story.md` other than the two stories sits in the
+   handbook root (guides belong in `guides/`), a guide is not linked from this README, a guide has a
+   broken relative link, or the [explorer](guides/infra-explorer.html) names a code file or symbol
+   that does not exist, or a chapter title that differs from the build-along guide.
+
+## Guides: `guides/`
+
+A **guide** teaches one topic from zero, in the order a newcomer needs it. The stories above follow
+a request; guides follow a learner. New features never go into a guide instead of a story: a guide
+links to the cards and stories, it does not replace them.
+
+| Guide | Order it follows |
+| ----- | ---------------- |
+| [guides/infra-build-along.md](guides/infra-build-along.md) + [guides/infra-explorer.html](guides/infra-explorer.html) | Build order: we move the app from the laptop to AWS one piece at a time. Kept up to date in the SAME step as every infra change (the living guide rule in `CLAUDE.md`). |
+| [guides/cicd-story.md](guides/cicd-story.md) | Push order: from `git push` to the new version answering on AWS. |
 
 ## Change history: `CHANGELOG.md` and `pnpm docs:history`
 

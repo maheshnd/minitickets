@@ -50,6 +50,7 @@ flowchart LR
   `arn:aws:iam::123456789012:role/minitickets-dev-api-task-role`.
 - **Assistive technology** – tools people use to read or operate a page, like screen readers
   (VoiceOver, NVDA) or keyboard-only navigation.
+- **Association (route table association)** – the link that says "this subnet uses that route table". Ours: four in `infra/src/network.ts` (`minitickets-dev-public-rta-1` …). AWS doesn't support tags on them.
 - **AssumeRole** – the STS call that "puts on" a role and returns temporary credentials.
 - **Async Server Component** – a Server Component written as an `async` function, so it can `await` data while it renders. Ours: `EventListWithServerData` in `apps/web/src/app/events/page.tsx`.
 - **Atomic** – happens completely or not at all, with nothing in between that others can see. A
@@ -62,6 +63,7 @@ flowchart LR
 - **Authentication (authN)** – proving who you are (login).
 - **Authorization (authZ)** – deciding what you may do once we know who you are.
 - **Auto scaling** – adding or removing copies (tasks, machines) automatically based on load. Not built.
+- **Auto-assign public IPv4 address** – the console's name for a subnet's `mapPublicIpOnLaunch` setting: things started there get a public IP. Ours: Yes in public-1 and public-2, No in private-1 and private-2.
 - **Availability zone (AZ)** – one isolated part of an AWS region, made of one or more data
   centres. We use two.
 - **AWS-managed key (KMS)** – a KMS key that AWS creates and controls for one service, like
@@ -71,12 +73,15 @@ flowchart LR
 - **awslogs driver** – the ECS setting that copies everything a container prints to CloudWatch Logs.
 - **awsvpc** – the ECS network mode that gives every task its own network card and IP address in
   our VPC. Fargate requires it.
+- **AZ ID** – the real, account-independent name of an availability zone, like `use1-az1`. AZ *names* like `us-east-1a` are mapped differently in each account. Ours: `us-east-1a` = `use1-az1`, `us-east-1b` = `use1-az2`.
 
 ## B
 
 - **Backoff (exponential)** – waiting longer after each failed retry (1 s, 2 s, 4 s…). TanStack
   Query's default delay is `min(1000 × 2^n, 30000)` ms.
 - **Baseline (measurement)** – the number you measure before changing something, so you can show the change helped. Ours: `events.list` about 1.8 ms typical on a laptop, no cache ([step 21](../21-events-list.md)).
+- **Bit** – one binary digit, 0 or 1. An IPv4 address is 32 bits.
+- **Blackhole (route status)** – a route whose target no longer exists (for example a deleted gateway). Traffic that matches it is dropped.
 - **Breakpoint (CSS)** – a screen width where the layout changes. Tailwind's `sm:` prefix applies
   from the small breakpoint up.
 - **B-tree index** – the default kind of database index: a sorted tree that makes lookups by a
@@ -186,7 +191,9 @@ flowchart LR
 - **Correlation ID** – one id passed along every service a request touches, so their logs can be joined.
 - **CORS (Cross-Origin Resource Sharing)** – browser rules that block a page from calling another
   origin unless that origin allows it.
+- **Cost allocation tag** – a tag that Billing is told to use, so costs can be grouped by it. It must be activated in Billing and Cost Management → Cost allocation tags, and counts only from then on.
 - **Cost Anomaly Detection** – an AWS feature that alerts on unusual spending. Not used by us.
+- **Cost Explorer** – the AWS Billing page that breaks the bill down by service, tag or day.
 - **CQRS** – using separate models for writing data and for reading it.
 - **CREATE INDEX CONCURRENTLY** – a way to build an index without blocking writes to the table. Slower, and it cannot run inside a transaction, so it does not fit in a drizzle migration. Plain `CREATE INDEX` blocks writes while it runs.
 - **Credential stuffing** – trying username/password pairs leaked from other sites. User enumeration
@@ -207,6 +214,9 @@ flowchart LR
 - **Dead-letter queue (DLQ)** – where messages go after failing too many times, so they can be
   inspected instead of lost.
 - **Default deny (implicit deny)** – IAM's starting answer: anything not allowed is denied.
+- **Default route** – `0.0.0.0/0`: the route for every address that no more specific route matches. Ours: `minitickets-dev-public-rt` sends it to the internet gateway.
+- **Default security group** – the security group AWS makes with every VPC, named `default`. Ours is unused: every resource wears one of our own groups.
+- **Default VPC** – a VPC AWS makes in each region of a new account (`172.31.0.0/16`). Not ours; we never use it.
 - **Defense in depth** – several independent protections, so one mistake does not expose everything.
 - **Dehydrate / hydrate (TanStack Query)** – turn the query cache into plain JSON on the server (dehydrate) and load it into the browser's cache (hydrate). Ours: `prefetchEvents` and `HydrationBoundary`.
 - **Dependabot** – GitHub's bot that opens pull requests to update vulnerable or old dependencies.
@@ -226,6 +236,7 @@ flowchart LR
   manager. Smaller and harder to attack; harder to debug.
 - **DNS** – the internet's phone book: turns a name like `example.com` into an IP address.
 - **Docker** – the tool that builds images and runs containers.
+- **Docker volume** – a folder Docker keeps outside a container, so the data survives the container. Ours: `postgres_data` and `redis_data` in `docker-compose.yml`.
 - **Drift** – the real cloud no longer matches what the IaC code and state expect, usually because
   someone changed it by hand.
 - **Drizzle** – the TypeScript ORM (database library) we use to define tables and write queries.
@@ -275,6 +286,7 @@ flowchart LR
   `EXPLAIN ANALYZE` also runs it and shows real timings. See [explain-analyze](concepts/explain-analyze.md).
 - **Explain-only (📖)** – a handbook status: not in our app and not planned; explained only.
 - **Explicit deny** – a `"Effect": "Deny"` statement. It beats every allow.
+- **Explorer (infra explorer)** – `docs/handbook/guides/infra-explorer.html`: the interactive city map of our AWS setup. It grows chapter by chapter with the infra build-along guide.
 
 ## F
 
@@ -317,6 +329,7 @@ flowchart LR
 - **GraphQL** – an API style where the client asks for exactly the fields it needs in one query.
 - **Graviton** – AWS's ARM64 processors. Usually cheaper than x86 for the same work.
 - **gRPC** – a fast binary RPC protocol over HTTP/2, mostly used between servers.
+- **Guide (handbook guide)** – a page in `docs/handbook/guides/` that teaches one topic from zero, in the order a learner needs it. Stories follow a request; guides follow a learner.
 
 ## H
 
@@ -367,6 +380,7 @@ flowchart LR
 - **Invalidate / clear (TanStack Query)** – invalidate marks cached answers stale and refetches the
   ones in use; clear deletes the whole cache. Login invalidates `auth.me`; logout clears everything.
 - **Invalid index** – an index left half-built when `CREATE INDEX CONCURRENTLY` fails. It costs writes but is never used. Find it with `pg_index.indisvalid`, drop it, and retry.
+- **IPv4** – the classic internet address format: four numbers from 0 to 255, like `10.0.0.5` (32 bits in all). Our VPC uses only IPv4.
 - **Isolation level** – how much concurrent database transactions may see of each other's changes.
 
 ## J
@@ -487,6 +501,7 @@ flowchart LR
 
 ## P
 
+- **Packet** – a small piece of network data on its way from one address to another. Route tables decide where each packet goes.
 - **Pagination** – returning a long list page by page: by offset ("skip 40") or by cursor ("after this id").
 - **Parameterized query** – SQL with placeholders (`$1`); the values travel separately, so they can never be read as SQL.
 - **Parse vs validate** – validating says yes or no; parsing also returns a cleaned, typed value (`"
@@ -533,10 +548,12 @@ flowchart LR
   CloudFront and the ALB are proxies.
 - **Proxy (Next.js `proxy.ts`)** – code that runs on the web server before a page renders (older
   Next.js called it "middleware"). Ours redirects to `/login` when there is no `sid` cookie.
+- **Public IP address** – an address that can be reached from the internet. Things started in our public subnets get one; AWS bills each one by the hour (see the cost story in `infra-story.md`).
 - **Public subnet** – a subnet whose route table sends `0.0.0.0/0` to the internet gateway.
 - **Pulumi** – our Infrastructure as Code tool. A **stack** is one copy of the infrastructure
   (ours: `dev`); **config** holds its settings (`Pulumi.dev.yaml`); **outputs** are values it
   prints for others to use (`pulumi stack output`).
+- **Pulumi Cloud** – Pulumi's hosted service that stores our stack's state, locks it during an update and shows its resources and outputs. `pulumi console` opens our stack there.
 - **Pulumi secret** – a value Pulumi keeps encrypted in its state and prints as `[secret]`.
 - **Pulumi state** – Pulumi's record of what it created; it compares it with the code to work out
   what to change.
@@ -575,6 +592,7 @@ flowchart LR
 - **Request smuggling** – an attack using malformed or ambiguous headers so that a proxy and the
   server behind it disagree on where one request ends.
 - **Resource (IAM)** – the thing an action acts on, named by its ARN.
+- **Resource map (VPC console)** – a tab on a VPC's page in the AWS console that draws its subnets, route tables and gateways, with lines between them.
 - **Resource-based policy** – a policy attached to a resource; it names who may use it. A role's
   trust policy is one.
 - **Reverse proxy** – a proxy on the server side that receives requests for one or more backends. CloudFront and the ALB are ours.
@@ -661,6 +679,7 @@ flowchart LR
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
 - **ssmmessages** – the AWS Systems Manager channels that ECS Exec uses.
 - **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Ours: `/events` since Step 22, with streaming ([card](concepts/csr-vs-ssr.md)).
+- **Stack output** – a value a Pulumi program exports, like `export const vpcId` in `infra/index.ts`. `pulumi stack output vpcId` prints it.
 - **Staleness (server cache)** – how old a cached answer may be. Ours: the events list is up to ~33 s old; booking will read the database, never the cache, so staleness cannot cause overselling.
 - **Stale (TanStack Query)** – a cached answer that may be out of date and will be refetched on the
   next trigger (mount, window focus). With `staleTime` 0 (the default), answers are stale at once.
@@ -689,6 +708,8 @@ flowchart LR
 
 - **t4g** – AWS's burstable Graviton machine family. Ours: `db.t4g.micro` (RDS) and
   `cache.t4g.micro` (Valkey).
+- **Tag** – a key=value label on an AWS resource. Ours: `Project=minitickets`, `Env=dev`, `ManagedBy=pulumi` and `Name` (`infra/src/tags.ts` → `tagsFor`).
+- **Tag Editor** – part of the console's Resource Groups & Tag Editor: finds resources across services by tag, for example `Project` = `minitickets`.
 - **Tailwind CSS** – a CSS framework of small utility classes like `p-4` and `text-sm`.
 - **TanStack Query** – the React library that fetches, caches and refetches server data in the browser.
 - **Target group** – the ALB's list of task IPs for one kind of request, plus a health check.

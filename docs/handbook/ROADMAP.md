@@ -1,0 +1,111 @@
+# Roadmap
+
+History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
+
+**In one line:** the whole plan for MiniTickets: what is built, where things stand today, and what
+comes next, in order.
+
+This page is updated in each handbook catch-up step, and whenever the owner changes the plan.
+Details of finished-but-not-yet-documented steps live in [PENDING.md](PENDING.md).
+
+```mermaid
+flowchart LR
+    done["Done<br/>app + auth, Feature 1 caching,<br/>Docker, CI, infra 11a-11i, CD"] --> now["Now<br/>ALB + HTTPS on our domain,<br/>CloudFront waiting"]
+    now --> s1["Serverless<br/>S1 queue + email<br/>S2 uploads, S3 schedule"]
+    s1 --> hb["Handbook<br/>catch-up"]
+    hb --> f2["Feature 2<br/>booking"]
+```
+
+## Done
+
+| Area | Steps | Where it is explained |
+| ---- | ----- | --------------------- |
+| App basics + auth | Steps 01-09: setup, error handling, landing page, signup form, database, signup API, login with a server-side session, logout, private dashboard | [docs/01](../01-setup.md) … [docs/09](../09-dashboard.md) |
+| CI | Step 10: lint, unit tests, e2e tests on GitHub Actions | [docs/10](../10-ci.md) |
+| Docker | Step 11: Dockerfiles for the api and the web app | [docs/11](../11-docker.md) |
+| Infra 11a-11g | 11a network (VPC, subnets, routes), 11b security groups + budget alert, 11c data (RDS, Valkey, secrets) + explicit layer dependencies, 11d ECR, 11e ECS cluster + api service, 11f ALB + web service + path routing, 11g CloudFront + HTTPS + origin protection; deploy day | [docs/12](../12-infra-network.md) … [docs/20](../20-deploy-day.md) |
+| Infra 11h | ECS Service Connect: web and api call each other inside AWS (`API_INTERNAL_URL`, `WEB_INTERNAL_URL`) | [PENDING.md](PENDING.md) |
+| Infra 11i | HTTPS on the ALB with our own domain (ACM, DNS validation) + the `cdnEnabled` switch | [PENDING.md](PENDING.md) |
+| Feature 1 caching, steps 1-4 | Events list baseline, server rendering with streaming, index on `events.starts_at`, Redis cache-aside | [docs/21](../21-events-list.md) … [docs/24](../24-events-cache.md) |
+| Feature 1 caching, steps 5-9b | 5 stampede protection, 6 invalidation + admin role, 7 stale-while-revalidate + stale-if-error, 8 filters + filter-aware keys, 9a Next.js data cache + on-demand revalidation, 9b HTTP cache headers + CloudFront page caching | [PENDING.md](PENDING.md) |
+| CD 12a | Publish arm64 images to ECR from GitHub Actions through OIDC | [PENDING.md](PENDING.md) |
+| CD 12b | Deploy through GitHub Actions with approval: two-phase deploy, migrate before deploy, rollback by tag | [PENDING.md](PENDING.md) |
+| Handbook phases 1-3 | Spec, skeleton, concept map, AWS foundations; infra story + AWS cards; app story + app cards | [README.md](README.md), [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md) |
+| Guides | The CI/CD story; the infra build-along, chapters 0-2 (laptop, AWS basics, the VPC network), and its interactive explorer | [guides/cicd-story.md](guides/cicd-story.md), [guides/infra-build-along.md](guides/infra-build-along.md), [guides/infra-explorer.html](guides/infra-explorer.html) |
+
+## Where things stand now
+
+- **CloudFront is waiting for AWS account verification.** Until AWS verifies the account,
+  `cdnEnabled` is `false` in `infra/Pulumi.dev.yaml`: visitors reach the ALB directly, without
+  CloudFront in front. Switch `cdnEnabled` only while `entryEnabled` is off (with the entry on, the
+  switch fails: two port-80 listeners).
+- **HTTPS ends at the ALB**, on our own domain `minitickets.theversehub.in`, with an ACM certificate
+  proven through a DNS record (`infra/src/certificate.ts`). The certificate stays on even when the
+  rest of the environment is off, so it is ready on deploy day.
+- **DNS is at Cloudflare, not Route 53, and the CNAME is set by hand.** Each deploy that creates a
+  new ALB gives it a new name, so after it the owner points the `minitickets` CNAME at the new ALB
+  (DNS only, not proxied). The name is in the CD summary and in `pulumi stack output appDnsRecord`.
+- **The environment is turned on and off by committing the switches.** Change `dataEnabled`,
+  `computeEnabled`, `entryEnabled` in `infra/Pulumi.dev.yaml`, commit, push, approve the CD deploy
+  job. Never `pulumi up` locally with uncommitted config: the next CD run would undo it. The
+  deployed image tag lives in SSM `/minitickets/dev/image-tag`, written only by CD.
+- **OIDC uses GitHub's immutable subjects.** The roles trust
+  `repo:maheshnd@63289193/minitickets@1412723955:…` (owner and repo name plus their IDs; config
+  `githubSubjectPrefix`, used in `infra/src/cicd.ts`). A new repo with the same name gets new IDs,
+  so it can't use our roles.
+- **Docs debt:** [PENDING.md](PENDING.md) holds 10 steps whose docs are not written yet (Feature 1
+  steps 5-9b, infra 11h and 11i, CD 12a and 12b).
+
+## Next, in order
+
+1. **Explorer v2.** The next version of [the explorer](guides/infra-explorer.html). The owner sets
+   its scope when the step starts.
+2. **Serverless S1: work off the request path** (a queue and a worker that send email).
+   - **S1a:** a local queue and a worker process.
+   - **S1b:** retries, a dead-letter queue (DLQ: where messages go after too many failures), and
+     idempotency (handling the same message twice does no harm).
+   - **S1c:** the same on AWS: SQS + Lambda + SES, deployed through CD.
+   - **S1d:** an alarm when messages land in the DLQ.
+3. **Serverless S2: file uploads.**
+   - **S2a:** upload straight from the browser to S3 with a presigned URL.
+   - **S2b:** a Lambda that resizes each uploaded image.
+4. **Serverless S3:** a Lambda that runs on a schedule.
+5. **Infra guide chapters 3 and up**, as infra lands. The living guide rule in `CLAUDE.md` already
+   says every infra step (S1c, S1d, S2, S3 included) updates the guide and the explorer in the same
+   step; the chapters for older infra (security groups to the final poster) are listed under
+   "Coming next" in [the guide](guides/infra-build-along.md#coming-next).
+6. **Handbook catch-up:** turn every PENDING.md entry into step docs, cards, story chapters, ADRs,
+   glossary words and a CHANGELOG entry; fix the small things below; clear PENDING.md.
+7. **Feature 2: booking.** Database transactions, row locks (so two people can't buy the same seat),
+   idempotency keys (a retried "buy" request doesn't buy twice), and the outbox pattern (save the
+   booking and its "send email" message in one transaction, publish the message afterwards).
+
+**Later, not scheduled yet:** handbook phase 4 (`system-design.md`; two ADRs exist already) and
+phase 5 (cards for planned and explain-only topics, `interview-drills.md`), see
+[HANDBOOK_SPEC.md](HANDBOOK_SPEC.md); HTTPS between CloudFront and the ALB once CloudFront is back
+(the plan is in the 11i entry of [PENDING.md](PENDING.md)).
+
+## Known small fixes
+
+For the next handbook catch-up. Each line was checked against the code.
+
+- [aws-foundations.md](aws-foundations.md), chapter 1, "4. Where in our code": says
+  `infra/Pulumi.dev.yaml` holds `aws:profile: ticketlite`. Removed in CD 12b; the profile now comes
+  from `AWS_PROFILE` in the terminal. The `--profile ticketlite` CLI examples are still fine.
+- [concepts/infrastructure-as-code.md](concepts/infrastructure-as-code.md): the same `aws:profile`
+  mention, in "4. Where in our code" and "11. Reach / Allowed / Password".
+- [glossary.md](glossary.md): **ACM** says "Not used by us yet" (used since 11i,
+  `infra/src/certificate.ts`); **API_INTERNAL_URL** says "not set on AWS yet" (set since 11h,
+  `infra/src/compute/web-task.ts`).
+- [README.md](README.md), "The living handbook rule": says docs are written in the same commit as
+  each step. Since then `CLAUDE.md` batches them: feature steps append to PENDING.md, a catch-up
+  step writes the docs.
+- `docs/20-deploy-day.md` sections 3.1, 3.3, 3.4, 3.7 (manual image tags, restart, migrate, turning
+  off) and `docs/17-infra-ecs-api.md` (the migration task now has its own task definition):
+  outdated since CD 12b; rewrite deploy day as "deploy through CD".
+
+## How this connects
+
+- **Uses:** [PENDING.md](PENDING.md) for the details of each finished step, the step docs in
+  [docs/](..), and the rules in the repo's `CLAUDE.md` and `AGENTS.md`.
+- **Gives:** one place for the owner, Claude and other coding agents to see what to build next.

@@ -17,6 +17,16 @@
 //        infra-story.md or 00-big-picture.md, and that chapter links back to the card;
 //      - a ✅ or 🟡 card is linked from at least one story chapter (no orphan cards);
 //      - a ✅ AWS card appears in the "components" table of 00-big-picture.md.
+//   8. Guides (docs/handbook/guides/: teaching guides, not request-path stories).
+//      - no "*-story.md" other than the stories sits in docs/handbook/ (guides go in guides/);
+//      - every guide file is linked from docs/handbook/README.md;
+//      - every relative link in a guide points to a file that exists;
+//      - every code path in a guide (`infra/src/network.ts`) exists, and in "`file` → `symbol`"
+//        pairs the symbol appears in that file;
+//      - the explorer (guides/infra-explorer.html): its JSON block parses, every code reference
+//        names an existing file that contains the symbol, every connection joins two known
+//        components, and every written chapter's title is a "## Chapter N: Title" heading in
+//        guides/infra-build-along.md.
 // It prints every problem it finds, then exits with code 1 if there was at least one.
 
 import { execFileSync } from "node:child_process";
@@ -176,6 +186,126 @@ function checkStoryPlacement(cardSlugs: string[]) {
   }
 }
 
+// 8. Guides. WHY a check: a guide quotes file paths, functions and chapter titles. When the code
+//    moves on, those quotes are the first thing to go stale, and a beginner can't tell.
+const GUIDES = path.join(HANDBOOK, "guides");
+const EXPLORER_FILE = "infra-explorer.html";
+const BUILD_ALONG_FILE = "infra-build-along.md";
+// A repo path in backticks, e.g. `infra/src/network.ts`. No "*" or "<…>": those are patterns.
+const CODE_PATH = /^(?:infra|apps|packages|scripts|\.github|docs)\/[\w./-]+$|^[\w.-]+\.(?:ya?ml|json)$/;
+
+// A path as a guide writes it: from the repo root, or a bare name like `Pulumi.dev.yaml` (infra/)
+// or `cd.yml` (.github/workflows/). Returns the full path, or undefined if there is no such file.
+function findCodeFile(quoted: string): string | undefined {
+  const candidates = quoted.includes("/") ? [quoted] : [quoted, `infra/${quoted}`, `.github/workflows/${quoted}`];
+  return candidates.map((candidate) => path.join(ROOT, candidate)).find((full) => existsSync(full));
+}
+
+function checkGuides() {
+  // 8a. Request-path stories live in the handbook root; any other "*-story.md" there is a guide.
+  for (const name of readdirSync(HANDBOOK)) {
+    if (name.endsWith("-story.md") && !STORY_FILES.includes(name)) {
+      problems.push(`docs/handbook/${name}: a story file that is not a request-path story. Move it to docs/handbook/guides/`);
+    }
+  }
+  if (!existsSync(GUIDES)) return;
+
+  // 8b. Every guide is linked from the handbook README, so a reader can find it.
+  const readme = readFileSync(path.join(HANDBOOK, "README.md"), "utf8");
+  const guideFiles = readdirSync(GUIDES).filter((name) => name.endsWith(".md") || name.endsWith(".html"));
+  for (const name of guideFiles) {
+    if (!readme.includes(`(guides/${name})`)) {
+      problems.push(`docs/handbook/README.md: no link to the guide guides/${name}`);
+    }
+  }
+
+  for (const name of guideFiles.filter((file) => file.endsWith(".md"))) {
+    const file = `docs/handbook/guides/${name}`;
+    const text = readFileSync(path.join(GUIDES, name), "utf8");
+
+    // 8c. Relative links resolve (web links like https://… are skipped).
+    for (const match of text.matchAll(/\]\(([^)#\s]+)(#[^)]*)?\)/g)) {
+      const target = match[1];
+      if (/^[a-z]+:/i.test(target)) continue;
+      if (!existsSync(path.join(GUIDES, target))) problems.push(`${file}: links to ${target}, but that file does not exist`);
+    }
+
+    // 8d. Code paths in backticks exist. Only whole paths count (`infra/src/network.ts`), and a bare
+    //     file name only for YAML / JSON files we name a lot (`Pulumi.dev.yaml` is looked up in infra/).
+    for (const match of text.matchAll(/`([^`\s]+)`/g)) {
+      const quoted = match[1];
+      if (!CODE_PATH.test(quoted) || quoted.includes("*")) continue;
+      // Local-only env files (apps/api/.env, apps/web/.env.local) are git-ignored copies of the
+      // committed .env.example files, so they never exist in CI.
+      if (/\/\.env(\.local)?$/.test(quoted)) continue;
+      // A bare "x.json" that is not one of our files is just a word (e.g. `foo.json` in an
+      // example is not a reference), so only full paths are reported.
+      if (!findCodeFile(quoted) && quoted.includes("/")) problems.push(`${file}: names \`${quoted}\`, but that file does not exist`);
+    }
+
+    // 8e. "`file` → `symbol`" pairs: the symbol is really in that file.
+    for (const match of text.matchAll(/`([\w./-]+\.[a-z]+)` → `([\w.:-]+)`/g)) {
+      const [, codeFile, symbol] = match;
+      const full = findCodeFile(codeFile);
+      if (!full) continue; // already reported by 8d
+      if (!readFileSync(full, "utf8").includes(symbol)) {
+        problems.push(`${file}: says \`${codeFile}\` → \`${symbol}\`, but "${symbol}" is not in that file`);
+      }
+    }
+  }
+
+  // 8f. The explorer's data.
+  const explorerPath = path.join(GUIDES, EXPLORER_FILE);
+  if (!existsSync(explorerPath)) return;
+  const explorerName = `docs/handbook/guides/${EXPLORER_FILE}`;
+  const html = readFileSync(explorerPath, "utf8");
+  const block = html.match(/<script type="application\/json" id="city-data">([\s\S]*?)<\/script>/);
+  if (!block) {
+    problems.push(`${explorerName}: no <script type="application/json" id="city-data"> block`);
+    return;
+  }
+  type Explorer = {
+    chapters: { n: number; title: string; status: string }[];
+    components: { id: string; code?: { file: string; symbol?: string }[] }[];
+    connections: { id: string; from: string; to: string }[];
+  };
+  let data: Explorer;
+  try {
+    data = JSON.parse(block[1]) as Explorer;
+  } catch (error) {
+    problems.push(`${explorerName}: the city-data JSON does not parse (${(error as Error).message})`);
+    return;
+  }
+
+  const ids = new Set<string>();
+  for (const component of data.components) {
+    if (ids.has(component.id)) problems.push(`${explorerName}: component id "${component.id}" is used twice`);
+    ids.add(component.id);
+    for (const ref of component.code ?? []) {
+      const full = path.join(ROOT, ref.file);
+      if (!existsSync(full)) {
+        problems.push(`${explorerName}: component "${component.id}" names ${ref.file}, but that file does not exist`);
+      } else if (ref.symbol && !readFileSync(full, "utf8").includes(ref.symbol)) {
+        problems.push(`${explorerName}: component "${component.id}" names ${ref.file} → ${ref.symbol}, but that symbol is not in the file`);
+      }
+    }
+  }
+  for (const connection of data.connections) {
+    for (const end of [connection.from, connection.to]) {
+      if (!ids.has(end)) problems.push(`${explorerName}: connection "${connection.id}" joins "${end}", which is not a component`);
+    }
+  }
+
+  const guidePath = path.join(GUIDES, BUILD_ALONG_FILE);
+  const guide = existsSync(guidePath) ? readFileSync(guidePath, "utf8") : "";
+  for (const chapter of data.chapters.filter((c) => c.status === "written")) {
+    const heading = `## Chapter ${chapter.n}: ${chapter.title}`;
+    if (!guide.split("\n").includes(heading)) {
+      problems.push(`${explorerName}: chapter ${chapter.n} "${chapter.title}" has no heading "${heading}" in guides/${BUILD_ALONG_FILE}`);
+    }
+  }
+}
+
 function main() {
   const anchors = findAnchors();
 
@@ -258,6 +388,9 @@ function main() {
 
   // Check 7: story placement.
   checkStoryPlacement(cardSlugs);
+
+  // Check 8: guides.
+  checkGuides();
 
   // Report.
   if (problems.length > 0) {
