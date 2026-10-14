@@ -27,7 +27,7 @@ async function getWithFakeSession(request: import("@playwright/test").APIRequest
 }
 
 test.describe("private pages are never stored", () => {
-  for (const path of ["/dashboard", "/admin/events/new"]) {
+  for (const path of ["/dashboard", "/admin/events/new", "/tickets"]) {
     test(`${path} sends private, no-store`, async ({ request }) => {
       const response = await getWithFakeSession(request, path);
       expect(response.status()).toBe(200);

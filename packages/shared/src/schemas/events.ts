@@ -16,6 +16,12 @@ export type Event = z.infer<typeof EventSchema>;
 // The output of events.list: an array of events.
 export const ListEventsOutput = z.array(EventSchema);
 
+// Input of events.byId (the event page, /events/<id>). The web page checks the id from the URL with
+// this first: a malformed id is a "not found" page without asking the API.
+export const GetEventInput = z.object({ id: z.uuid() });
+
+export type GetEventInput = z.infer<typeof GetEventInput>;
+
 // 1. A filter date: a day ("2026-11-20", what <input type="date"> gives) or a full UTC time
 //    ("2026-11-20T18:30:00.000Z"). The API works in WHOLE UTC DAYS: it rounds a time down to the
 //    start of its day, so both examples mean "from (or to) 20 November".

@@ -25,9 +25,26 @@ flowchart LR
 
 ---
 
-## 2026-10-14 · docs: AGENTS.md for other coding agents + handbook roadmap
+## 2026-10-14 · feat(bookings): book a ticket + My tickets, row-locked booking transaction, race demo
 
 Commit: filled in by the next handbook commit
+
+Why: Feature 2 starts, and the owner changed the plan: the ticketing + serverless series (F2a, F2b,
+S1-S4) comes next, with all handbook, guide and explorer writing batched until after it. Only the
+roadmap, the prompt files and PENDING.md change in the handbook during the series. The two entries
+below were committed together in 567e341; their placeholders now hold that hash.
+`pnpm docs:history --since 567e341` lists the files below.
+
+- `ROADMAP.md`: diagram redrawn (Feature 2 now, then serverless, then the guide + explorer batch);
+  "Where things stand now" gains F2a in progress and the series rule; "Next, in order" replaced by
+  the series (F2a … S4, then the guide + explorer v2 batch; optional later items); the handbook
+  catch-up moved to "Later, not scheduled yet"; intro says the status is updated every step.
+- `prompts/f2a.md`: new page, the F2a prompt word for word (prompts are kept one file per step).
+- `PENDING.md`: the F2a entry.
+
+## 2026-10-14 · docs: AGENTS.md for other coding agents + handbook roadmap
+
+Commit: 567e341
 
 Why: the owner wants to continue with another coding agent (OpenAI Codex) under the same rules, and
 needs one page that shows the whole plan. `AGENTS.md` (repo root, outside the handbook) points to
@@ -42,7 +59,7 @@ needs one page that shows the whole plan. `AGENTS.md` (repo root, outside the ha
 
 ## 2026-10-14 · docs(guides): infra build-along (chapters 0-2) + interactive city explorer; guides/ folder
 
-Commit: filled in by the next handbook commit
+Commit: 567e341
 
 Why: the owner knows the app but not AWS, and finds the infra code too big and the reference pages
 dry. This starts a beginner's guide that moves the app from the laptop to AWS one piece at a time, as

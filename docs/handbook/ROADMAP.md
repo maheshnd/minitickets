@@ -5,15 +5,15 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 **In one line:** the whole plan for MiniTickets: what is built, where things stand today, and what
 comes next, in order.
 
-This page is updated in each handbook catch-up step, and whenever the owner changes the plan.
+This page is updated in each handbook catch-up step, whenever the owner changes the plan, and
+(during the ticketing + serverless series) in every step: its status, in one or two lines.
 Details of finished-but-not-yet-documented steps live in [PENDING.md](PENDING.md).
 
 ```mermaid
 flowchart LR
-    done["Done<br/>app + auth, Feature 1 caching,<br/>Docker, CI, infra 11a-11i, CD"] --> now["Now<br/>ALB + HTTPS on our domain,<br/>CloudFront waiting"]
-    now --> s1["Serverless<br/>S1 queue + email<br/>S2 uploads, S3 schedule"]
-    s1 --> hb["Handbook<br/>catch-up"]
-    hb --> f2["Feature 2<br/>booking"]
+    done["Done<br/>app + auth, Feature 1 caching,<br/>Docker, CI, infra 11a-11i, CD"] --> f2["Now: Feature 2<br/>F2a book a ticket<br/>F2b idempotency key"]
+    f2 --> sls["Serverless<br/>S1 email, S2 QR ticket,<br/>S3 reminder, S4 check-in"]
+    sls --> batch["Guide + explorer v2<br/>one batch"]
 ```
 
 ## Done
@@ -35,6 +35,11 @@ flowchart LR
 
 ## Where things stand now
 
+- **F2a (book a ticket + "My tickets") is in progress**, local only: bookings table, a row-locked
+  booking transaction, the event page, `/tickets`, and a race demo (`pnpm demo:booking-race`).
+- **Ticketing + serverless series rule:** until the series is done, steps do not update the
+  handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
+  each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
 - **CloudFront is waiting for AWS account verification.** Until AWS verifies the account,
   `cdnEnabled` is `false` in `infra/Pulumi.dev.yaml`: visitors reach the ALB directly, without
   CloudFront in front. Switch `cdnEnabled` only while `entryEnabled` is off (with the entry on, the
@@ -53,34 +58,34 @@ flowchart LR
   `repo:maheshnd@63289193/minitickets@1412723955:…` (owner and repo name plus their IDs; config
   `githubSubjectPrefix`, used in `infra/src/cicd.ts`). A new repo with the same name gets new IDs,
   so it can't use our roles.
-- **Docs debt:** [PENDING.md](PENDING.md) holds 10 steps whose docs are not written yet (Feature 1
-  steps 5-9b, infra 11h and 11i, CD 12a and 12b).
+- **Docs debt:** [PENDING.md](PENDING.md) holds the steps whose docs are not written yet (Feature 1
+  steps 5-9b, infra 11h and 11i, CD 12a and 12b, and each step of the series as it is done).
 
 ## Next, in order
 
-1. **Explorer v2.** The next version of [the explorer](guides/infra-explorer.html). The owner sets
-   its scope when the step starts.
-2. **Serverless S1: work off the request path** (a queue and a worker that send email).
-   - **S1a:** a local queue and a worker process.
-   - **S1b:** retries, a dead-letter queue (DLQ: where messages go after too many failures), and
-     idempotency (handling the same message twice does no harm).
-   - **S1c:** the same on AWS: SQS + Lambda + SES, deployed through CD.
-   - **S1d:** an alarm when messages land in the DLQ.
-3. **Serverless S2: file uploads.**
-   - **S2a:** upload straight from the browser to S3 with a presigned URL.
-   - **S2b:** a Lambda that resizes each uploaded image.
-4. **Serverless S3:** a Lambda that runs on a schedule.
-5. **Infra guide chapters 3 and up**, as infra lands. The living guide rule in `CLAUDE.md` already
-   says every infra step (S1c, S1d, S2, S3 included) updates the guide and the explorer in the same
-   step; the chapters for older infra (security groups to the final poster) are listed under
-   "Coming next" in [the guide](guides/infra-build-along.md#coming-next).
-6. **Handbook catch-up:** turn every PENDING.md entry into step docs, cards, story chapters, ADRs,
-   glossary words and a CHANGELOG entry; fix the small things below; clear PENDING.md.
-7. **Feature 2: booking.** Database transactions, row locks (so two people can't buy the same seat),
-   idempotency keys (a retried "buy" request doesn't buy twice), and the outbox pattern (save the
-   booking and its "send email" message in one transaction, publish the message afterwards).
+The ticketing + serverless series. Each item links to its prompt once there is one.
 
-**Later, not scheduled yet:** handbook phase 4 (`system-design.md`; two ADRs exist already) and
+1. **F2a: book a ticket + "My tickets"** (in progress, [prompt](prompts/f2a.md)). A database
+   transaction with a row lock (`SELECT … FOR UPDATE`), so two people can't buy the same last seat.
+2. **F2b: idempotency key for booking.** A retried "Book ticket" request doesn't book twice.
+3. **S1: booking confirmation email.** SQS + Lambda + SES, a dead-letter queue (DLQ: where messages
+   go after too many failures), and idempotency in DynamoDB (handling the same message twice does
+   no harm).
+4. **S2: a ticket with a QR code**, through SNS fan-out (one message, several subscribers): a
+   Lambda draws the ticket, stores it in S3, and the user downloads it through a presigned URL.
+5. **S3: a reminder email the day before**, with EventBridge Scheduler.
+6. **S4: door check-in.** API Gateway + Lambda + a DynamoDB conditional write (a ticket can be
+   checked in only once).
+7. **Detailed infra guide + explorer v2, in one batch:** every concept, file and infra change the
+   series recorded in [PENDING.md](PENDING.md), plus the older chapters listed under "Coming next"
+   in [the guide](guides/infra-build-along.md#coming-next).
+
+**Optional, later:** a waitlist, cancelling a booking, uploading an event poster, a payment saga
+with Step Functions.
+
+**Later, not scheduled yet:** the handbook catch-up (turn every PENDING.md entry into step docs,
+cards, story chapters, ADRs, glossary words and a CHANGELOG entry; fix the small things below;
+clear PENDING.md; the owner decides when); handbook phase 4 (`system-design.md`; two ADRs exist already) and
 phase 5 (cards for planned and explain-only topics, `interview-drills.md`), see
 [HANDBOOK_SPEC.md](HANDBOOK_SPEC.md); HTTPS between CloudFront and the ALB once CloudFront is back
 (the plan is in the 11i entry of [PENDING.md](PENDING.md)).

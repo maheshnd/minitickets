@@ -16,7 +16,7 @@ purpose: it points to the sources of truth instead of copying them.
 
 ## What this is
 
-**minitickets** is a small ticketing app (events list, sign up, log in; bookings come next), built as
+**minitickets** is a small ticketing app (events list, sign up, log in, book tickets), built as
 a **learning project to prepare for senior / lead engineer interviews**. The owner must understand
 every file, so clarity beats cleverness. It is built in small numbered steps; each one is explained
 in plain English in `docs/`.
@@ -112,6 +112,14 @@ ask the owner.
 (`docs/NN-*.md`, `docs/00-architecture.md`) or add `@concept` anchors. Instead append ONE entry
 (about 10 lines) to `docs/handbook/PENDING.md`: step name, concepts, key files (path + function),
 real measured numbers, anything you are unsure about. Copy the shape of the entries already there.
+
+**TICKETING + SERVERLESS SERIES (F2a, F2b, S1-S4 in `docs/handbook/ROADMAP.md`):** do NOT update
+the handbook, the infra guide or the explorer, not even in an infra step (the living guide rule
+below is paused for the series). Record every concept, file and infra change (resources, IAM
+permissions, security group rules, secrets, CD steps, real names) in `PENDING.md` instead; a
+detailed guide + explorer update is done in one batch after the series. Still update the status in
+`ROADMAP.md` every step (one or two lines). Each step's prompt is saved in
+`docs/handbook/prompts/<step>.md`; `ROADMAP.md` links each "next" item to its prompt file.
 
 **LIVING GUIDE RULE (the one exception):** a step that adds or changes infrastructure (a service, an
 IAM role or permission, a security group rule, a secret, a route, a DNS record, a CD step) updates

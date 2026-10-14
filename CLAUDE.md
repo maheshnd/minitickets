@@ -76,6 +76,16 @@ Docs are written in batches, not in every feature step.
 - Instead, append ONE entry to `docs/handbook/PENDING.md` (create it if missing). Max ~10 lines:
   step name, concepts covered, key files (path + function), real measured numbers, anything unsure.
 
+**During the ticketing + serverless series** (F2a, F2b, S1-S4 in `docs/handbook/ROADMAP.md`):
+- Do NOT update the handbook, the infra guide or the explorer, not even in a step that adds or
+  changes infrastructure. This pauses the "Living guide rule" exception below for the series.
+- Record every concept, file and infra change in that step's `PENDING.md` entry instead (for infra:
+  every resource, IAM permission, security group rule, secret and CD step, with real names). A
+  detailed guide + explorer update is done in ONE batch after the series.
+- Still update `ROADMAP.md` every step: its status, in one or two lines.
+- Each step's prompt is saved in `docs/handbook/prompts/<step>.md` (one file each, e.g. `f2a.md`),
+  and `ROADMAP.md` links each "next" item to its prompt file once there is one.
+
 **In a "handbook catch-up" step** (its own step, when the owner asks for it):
 - Read `PENDING.md` and the git changes since the last catch-up.
 - Do everything the "Docs rule", "Living handbook rule" and "Handbook changelog rule" below ask
@@ -152,7 +162,7 @@ In the catch-up step, for every pending feature or infra step:
 
 Whenever a step adds or changes infrastructure (a service, an IAM role or permission, a security
 group rule, a secret, a route, a DNS record, a CD step), update the guide AND the explorer in the
-SAME step. This is the one exception to the "batch docs later" workflow above. Update:
+SAME step. (Paused during the ticketing + serverless series: see "Workflow" above.) This is the one exception to the "batch docs later" workflow above. Update:
 - the right chapter of the guide (or add one, in build order), and its city-story comparison
   (only the city words from the guide's city table);
 - for IAM: the WHO / WHAT / ATTACHED picture (trust policy, permission policy, where it is

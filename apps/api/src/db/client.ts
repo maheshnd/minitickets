@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { env } from "../config/env";
+import * as bookings from "./schema/bookings";
 import * as events from "./schema/events";
 import * as users from "./schema/users";
 
@@ -28,4 +29,4 @@ pool.on("error", (err) => {
 
 // @concept: drizzle-schema
 // 3. The Drizzle instance wraps the pool. Queries use `db`; shutdown closes `pool`.
-export const db = drizzle(pool, { schema: { ...users, ...events } });
+export const db = drizzle(pool, { schema: { ...users, ...events, ...bookings } });

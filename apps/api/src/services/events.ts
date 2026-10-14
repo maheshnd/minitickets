@@ -7,6 +7,7 @@ import {
   type ListEventsInput,
 } from "@minitickets/shared";
 import { env } from "../config/env";
+import { NotFoundError } from "../errors";
 import * as eventsCache from "../queries/events-cache";
 import * as events from "../queries/events";
 import * as webCache from "../queries/web-cache";
@@ -23,11 +24,12 @@ import { singleFlight } from "./single-flight";
 //    - HARD TTL (default 5 min): the key's expiry in Redis. Between soft and hard the list is STALE:
 //      it is still served, at once, while a background refresh replaces it ("stale-while-revalidate",
 //      step 12). Older than the hard TTL it is never served, not even when Postgres is down (step 12a).
-//    Staleness: creating an event makes the list correct at once (createEvent below). Other changes
-//    (e.g. `seatsLeft` going down, later) do not: a busy list is refreshed about every soft TTL, but
-//    a list nobody asked for in a while can be served ONCE at up to the hard TTL old, while it refreshes.
-//    That is fine for BROWSING. Booking will always check the database, never this cache,
-//    so a stale list can never cause overselling.
+//    Staleness: creating an event or booking a ticket makes the list correct at once
+//    (invalidateEventLists below). Other changes (e.g. a row edited by hand in psql) do not: a busy
+//    list is refreshed about every soft TTL, but a list nobody asked for in a while can be served
+//    ONCE at up to the hard TTL old, while it refreshes.
+//    That is fine for BROWSING. Booking always checks the database (a locked row, never this
+//    cache), so a stale list can never cause overselling.
 const SOFT_TTL_MS = env.EVENTS_CACHE_SOFT_TTL_MS;
 const HARD_TTL_MS = env.EVENTS_CACHE_HARD_TTL_MS;
 
@@ -435,15 +437,29 @@ export async function createEvent(input: CreateEventInput, log: Log): Promise<Pu
     seatsLeft: input.totalSeats,
   });
 
-  // 16. Invalidate the cached list, so the very next events.list shows the new event.
+  // 16. Invalidate the cached lists, so the very next events.list shows the new event.
   //     If the insert above failed, it threw and we never get here: nothing changed, so there is
   //     nothing to invalidate.
-  await invalidateUpcomingList(log);
-
-  // 17. Then the cache ABOVE ours: the web server's Next.js data cache (30 s). See revalidateWebCache.
-  revalidateWebCache(log);
+  await invalidateEventLists(log);
 
   return toPublicEvent(row);
+}
+
+// One event by id, for the event page. Straight from Postgres, no cache (see queries/events.ts,
+// findById): the page shows seats left next to the "Book ticket" button.
+export async function getEvent(id: string): Promise<PublicEvent> {
+  const row = await events.findById(id);
+  if (!row) throw new NotFoundError("Event not found");
+  return toPublicEvent(row);
+}
+
+// Invalidate every cached events list, after anything that changes them: a new event (createEvent
+// above) or seats taken by a booking (services/bookings.ts). Never throws: both steps only log.
+// 17. Our cache first (Redis, a new generation: invalidateUpcomingList), then the cache ABOVE ours:
+//     the web server's Next.js data cache (30 s, revalidateWebCache). In this order: bottom-up.
+export async function invalidateEventLists(log: Log): Promise<void> {
+  await invalidateUpcomingList(log);
+  revalidateWebCache(log);
 }
 
 // Tell the web app to drop its cached events lists (POST /api/revalidate, queries/web-cache.ts).

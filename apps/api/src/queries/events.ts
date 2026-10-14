@@ -1,4 +1,4 @@
-import { and, asc, gt, gte, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { events } from "../db/schema/events";
 
@@ -67,5 +67,14 @@ export async function create(input: {
   seatsLeft: number;
 }) {
   const rows = await db.insert(events).values(input).returning();
+  return rows[0];
+}
+
+// 4. One event by its id (primary key), or undefined if there is none. Used by the event page.
+//    It reads Postgres directly, never the cache: the page shows "seats left" next to the
+//    "Book ticket" button, so it should be as fresh as possible. A primary-key lookup is about a
+//    millisecond. (Booking itself never trusts this number either: it re-reads the row under a lock.)
+export async function findById(id: string) {
+  const rows = await db.select().from(events).where(eq(events.id, id)).limit(1);
   return rows[0];
 }

@@ -1,4 +1,4 @@
-import { CreateEventInput, EventSchema, ListEventsInput, ListEventsOutput } from "@minitickets/shared";
+import { CreateEventInput, EventSchema, GetEventInput, ListEventsInput, ListEventsOutput } from "@minitickets/shared";
 import * as eventsService from "../services/events";
 import { adminProcedure, publicProcedure, router } from "../trpc/init";
 
@@ -22,6 +22,14 @@ export const eventsRouter = router({
       (ctx.req.log as typeof ctx.req.log & { setBindings(bindings: object): void }).setBindings({ cache });
       return events;
     }),
+
+  // 1. Public: one event by id, for the event page (/events/<id>). A malformed id is a 400 (the
+  //    shared schema); an unknown one is a 404 (NotFoundError from the service).
+  // 2. Not cached (unlike list): the page shows seats left next to the "Book ticket" button.
+  byId: publicProcedure
+    .input(GetEventInput)
+    .output(EventSchema)
+    .query(({ input }) => eventsService.getEvent(input.id)),
 
   // 1. adminProcedure: 401 if not logged in, 403 if logged in but not an admin (trpc/init.ts).
   // 2. The same schema the admin form uses in the browser; the server never trusts that check.

@@ -25,6 +25,9 @@ export function HeaderNav() {
         <Link href="/events" className={linkClass}>
           Events
         </Link>
+        <Link href="/tickets" className={linkClass}>
+          My tickets
+        </Link>
         <Link href="/dashboard" className={linkClass}>
           Dashboard
         </Link>

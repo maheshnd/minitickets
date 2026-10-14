@@ -1,4 +1,4 @@
-// Type-checks the TypeScript scripts in this folder (today: check-concepts.ts).
+// Type-checks the TypeScript scripts in this folder (check-concepts.ts, the demos, ...).
 // `pnpm typecheck` runs it after the packages: scripts/ is not a workspace package, so `pnpm -r`
 // alone would never look here.
 {

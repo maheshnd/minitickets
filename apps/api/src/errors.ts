@@ -31,6 +31,13 @@ export class ConflictError extends AppError {
   }
 }
 
+// "This request can never work as it is" (HTTP 400), e.g. booking an event that has already started.
+export class BadRequestError extends AppError {
+  constructor(message: string) {
+    super("BAD_REQUEST", message);
+  }
+}
+
 export class ForbiddenError extends AppError {
   constructor(message: string) {
     super("FORBIDDEN", message);

@@ -1,5 +1,6 @@
 import { accountRouter } from "../procedures/account";
 import { authRouter } from "../procedures/auth";
+import { bookingsRouter } from "../procedures/bookings";
 import { eventsRouter } from "../procedures/events";
 import { router } from "./init";
 
@@ -10,6 +11,7 @@ export const appRouter = router({
   auth: authRouter,
   account: accountRouter,
   events: eventsRouter,
+  bookings: bookingsRouter,
 });
 
 // @concept: end-to-end-types

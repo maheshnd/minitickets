@@ -19,5 +19,6 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
-// 3. Run only for /dashboard and /admin (and anything under them), not for every request.
-export const config = { matcher: ["/dashboard/:path*", "/admin/:path*"] };
+// 3. Run only for the private pages (and anything under them), not for every request:
+//    /dashboard, /admin and /tickets ("My tickets").
+export const config = { matcher: ["/dashboard/:path*", "/admin/:path*", "/tickets/:path*"] };

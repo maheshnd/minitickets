@@ -67,6 +67,7 @@ const nextConfig: NextConfig = {
       //    changes. The rule also covers the proxy's redirect to /login.
       { source: "/dashboard/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       { source: "/admin/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+      { source: "/tickets/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
 
       // 2. /events, the full HTML page only. The same for every visitor, so CloudFront may share it
       //    (docs: infra/src/entry/cdn.ts, the /events behavior):
