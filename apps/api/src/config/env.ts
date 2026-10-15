@@ -24,6 +24,9 @@ const EnvSchema = z.object({
   // The lowest log level that is printed. "info" hides debug lines (like "db query: …"); start
   // the API with LOG_LEVEL=debug to see them, e.g. when counting database queries.
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  // P8. The Redis gate is advisory; disabling it keeps the same locked Postgres transaction.
+  SALE_REDIS_NAMESPACE: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).default("minitickets"),
+  INVENTORY_GATE_ENABLED: z.enum(["true", "false"]).default("true").transform(value => value === "true"),
   // The events list cache's two TTLs, in milliseconds (see services/events.ts, step 1).
   // SOFT: how long a cached list counts as fresh. HARD: when Redis deletes it (the oldest it may
   // ever be served). Shorten both for a demo, e.g. 3000 and 60000.

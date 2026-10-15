@@ -99,7 +99,12 @@ export function BookTicketForm({ eventId }: { eventId: string }) {
             router.push(loginHref);
             return;
           }
-          // 8c. The API's own words for 400 / 404 / 409, e.g. "Not enough seats left".
+          // 8c. A throttle keeps this intent/key for a later retry; never automatically retry 429.
+          if (status === 429) {
+            setFormError(`Too many requests. Try again in ${error.data?.retryAfterSeconds ?? 1} seconds.`);
+            return;
+          }
+          // 8d. The API's own words for 400 / 404 / 409, e.g. "Not enough seats left".
           //     The key is KEPT: clicking again for the same quantity repeats the same intent.
           setFormError(
             status !== undefined && SHOW_API_MESSAGE.includes(status) ? error.message : "Something went wrong. Please try again.",

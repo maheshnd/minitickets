@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { ZodError, z } from "zod";
-import { AppError, type AppErrorKind } from "../errors";
+import { AppError, RateLimitedError, type AppErrorKind } from "../errors";
 import * as usersService from "../services/users";
 import type { Context } from "./context";
 
@@ -33,6 +33,7 @@ const t = initTRPC.context<Context>().create({
         // tRPC adds a stack trace in development. File paths are internals, so always drop it.
         stack: undefined,
         fieldErrors,
+        retryAfterSeconds: error.cause instanceof RateLimitedError ? error.cause.retryAfterSeconds : undefined,
       },
     };
   },
@@ -46,12 +47,14 @@ const codeByKind: Record<AppErrorKind, TRPCError["code"]> = {
   FORBIDDEN: "FORBIDDEN",
   BAD_REQUEST: "BAD_REQUEST",
   UNAUTHORIZED: "UNAUTHORIZED",
+  TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+  SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
 };
 
 // @concept: trpc-middleware
 // 4. errorMapper: a middleware that wraps every procedure.
 //    `next()` runs the procedure and returns its result instead of throwing, so we can look at it.
-const errorMapper = t.middleware(async ({ next }) => {
+const errorMapper = t.middleware(async ({ next, ctx }) => {
   const result = await next();
 
   // 4a. Success, or an error that is not ours (e.g. a ZodError, or a crash): pass it through unchanged.
@@ -62,6 +65,11 @@ const errorMapper = t.middleware(async ({ next }) => {
   // 4b. A business error from a service: throw the matching TRPCError.
   //     We keep the AppError as `cause` so the logs still show where it came from.
   const appError = result.error.cause;
+  // 4c. A batch shares headers: retain the longest wait if several procedures are limited.
+  if (appError instanceof RateLimitedError) {
+    const previous = Number(ctx.res.getHeader("Retry-After") ?? 0);
+    ctx.res.header("Retry-After", String(Math.max(previous, appError.retryAfterSeconds)));
+  }
   throw new TRPCError({
     code: codeByKind[appError.kind],
     message: appError.message,

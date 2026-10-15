@@ -102,8 +102,11 @@ export function LoginForm() {
           // 6c. Wrong email or password (401): one message for both, as the API sends it.
           //     It is not tied to one field, so it goes under the form.
           setFormError(error.message);
+        } else if (data?.httpStatus === 429) {
+          // 6d. A throttle is temporary; use the server's refill time instead of a generic failure.
+          setFormError(`Too many requests. Try again in ${data.retryAfterSeconds ?? 1} seconds.`);
         } else {
-          // 6d. Anything else: a general message, never raw internals.
+          // 6e. Anything else: a general message, never raw internals.
           setFormError("Something went wrong. Please try again.");
         }
       },

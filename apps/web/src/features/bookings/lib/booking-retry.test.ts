@@ -47,7 +47,7 @@ describe("the booking mutation's retries", () => {
     expect(outcome).toEqual({ ok: true, data: "booked" });
   });
 
-  it.each([400, 401, 404, 409])("never retries a %i (1 request only)", async (status) => {
+  it.each([400, 401, 404, 409, 429])("never retries a %i (1 request only)", async (status) => {
     const { sent, outcome } = await attempts([apiError(status)]);
     expect(sent).toBe(1);
     expect(outcome.ok).toBe(false);

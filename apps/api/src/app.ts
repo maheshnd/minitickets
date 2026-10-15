@@ -71,7 +71,7 @@ export async function buildApp() {
   //    browser blocks the calls unless the API explicitly allows the web origin.
   //    credentials: true lets the browser send and receive cookies on these calls. It only
   //    works with one exact origin (never "*"), so a random website can't use our cookie.
-  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true, exposedHeaders: ["Retry-After"] });
 
   // 2b. Cookies: adds `req.cookies` (read) and `reply.setCookie` (write).
   await app.register(cookie);

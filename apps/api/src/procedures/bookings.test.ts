@@ -1,3 +1,4 @@
+vi.mock("../services/rate-limits", () => ({ enforceRateLimit: vi.fn() }));
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +9,8 @@ import type { Context } from "../trpc/context";
 // bookings service run here. Only the edges are fakes: the query layer (the transaction) and the
 // events cache invalidation. So this checks what the browser really gets: the HTTP status and the
 // message of each business error.
+vi.mock("../config/env", () => ({ env: { INVENTORY_GATE_ENABLED: false } }));
+vi.mock("../queries/inventory", () => ({ reserve: vi.fn(), initialize: vi.fn(), settle: vi.fn() }));
 const createBookingTx = vi.fn();
 vi.mock("../queries/bookings", () => ({
   createBookingTx: (eventId: string, userId: string, quantity: number, idempotencyKey: string, correlationId: string) =>

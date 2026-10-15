@@ -1,4 +1,5 @@
 import { BookingSchema, BookTicketInput, MyTicketsOutput } from "@minitickets/shared";
+import { enforceRateLimit } from "../services/rate-limits";
 import * as bookingsService from "../services/bookings";
 import { protectedProcedure, router } from "../trpc/init";
 
@@ -14,7 +15,10 @@ export const bookingsRouter = router({
   create: protectedProcedure
     .input(BookTicketInput)
     .output(BookingSchema)
-    .mutation(({ input, ctx }) => bookingsService.bookTicket(ctx.session.userId, input, ctx.req.log, ctx.req.id)),
+    .mutation(async ({ input, ctx }) => {
+      await enforceRateLimit("booking", ctx.session.userId);
+      return bookingsService.bookTicket(ctx.session.userId, input, ctx.req.log, ctx.req.id);
+    }),
 
   // 1. The logged-in user's own bookings ("My tickets"). No input: whose bookings is decided by the
   //    session, so one user can never ask for another user's list.

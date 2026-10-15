@@ -2,6 +2,7 @@ import { buildApp } from "./app";
 import { env } from "./config/env";
 import { pool } from "./db/client";
 import { redis } from "./redis/client";
+import { startInventoryReconciliation } from "./services/inventory-reconciliation";
 import { startOutboxRelay } from "./services/outbox";
 
 // Entry point of the API (run by `pnpm dev`).
@@ -31,6 +32,7 @@ if (!env.BOOKING_EVENTS_TOPIC_ARN) {
 
 // 2d. Each API task relays committed messages; Postgres row locks divide work between tasks.
 const stopOutboxRelay = startOutboxRelay(app.log);
+const stopInventoryReconciliation = startInventoryReconciliation(app.log);
 
 // @concept: graceful-shutdown
 // 3. Graceful shutdown: on Ctrl+C (SIGINT) or `kill` (SIGTERM), finish cleanly instead of dying mid-request.
@@ -47,6 +49,7 @@ async function shutdown(signal: string) {
     await app.close();
     // 3a2. Finish the relay's current batch before closing the database it is still using.
     await stopOutboxRelay();
+    await stopInventoryReconciliation();
     // 3b. Only then close the data stores (requests may still need them until they finish).
     //     redis.quit() sends QUIT and waits for pending replies, so nothing is cut off.
     await pool.end();

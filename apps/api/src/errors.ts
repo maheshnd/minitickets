@@ -3,7 +3,7 @@
 // The errorMapper in trpc/init.ts is the one place that turns these into HTTP-style errors.
 
 // 1. The kinds of failure we care about. Each one maps to one tRPC/HTTP code later.
-export type AppErrorKind = "NOT_FOUND" | "CONFLICT" | "FORBIDDEN" | "BAD_REQUEST" | "UNAUTHORIZED";
+export type AppErrorKind = "NOT_FOUND" | "CONFLICT" | "FORBIDDEN" | "BAD_REQUEST" | "UNAUTHORIZED" | "TOO_MANY_REQUESTS" | "SERVICE_UNAVAILABLE";
 
 // @concept: error-handling
 // 2. The base class. `kind` tells the errorMapper which code to use.
@@ -49,4 +49,14 @@ export class UnauthorizedError extends AppError {
   constructor(message: string) {
     super("UNAUTHORIZED", message);
   }
+}
+
+// 4. Services report retry timing without knowing anything about HTTP headers.
+export class RateLimitedError extends AppError {
+  constructor(readonly retryAfterSeconds: number) {
+    super("TOO_MANY_REQUESTS", "Too many requests. Please try again shortly");
+  }
+}
+export class UnavailableError extends AppError {
+  constructor(message: string) { super("SERVICE_UNAVAILABLE", message); }
 }

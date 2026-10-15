@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConflictError, NotFoundError } from "../errors";
+import { ConflictError, NotFoundError, RateLimitedError } from "../errors";
 import type { Context } from "./context";
 
 // isAdmin looks the role up through the users service (Postgres). We fake that service, so these
@@ -84,4 +84,12 @@ describe("adminProcedure", () => {
     getRole.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:5432"));
     await expect(callAs({ userId: "u4" })).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
   });
+});
+
+it("rate errors map to 429 and preserve the longest Retry-After in a batch", async () => {
+  const header = vi.fn();
+  const limited = router({ limited: publicProcedure.query(() => { throw new RateLimitedError(3); }) });
+  const ctx = { res: { getHeader: () => "7", header } } as unknown as Context;
+  await expect(createCallerFactory(limited)(ctx).limited()).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+  expect(header).toHaveBeenCalledWith("Retry-After", "7");
 });

@@ -1213,6 +1213,71 @@ checks (requires existing local Postgres/Redis and free :3101/:4101; cleans its 
 Cursor traversal is not a snapshot: deleting a row is safe, but changing start times can
 move rows across the boundary; new inserts before the cursor appear on a fresh search.
 
+### 3.17 P8: rate limits and the advisory Redis inventory gate
+
+Deploy API/web through the existing SHA image/CD path. No migration, new AWS resource,
+IAM permission, security group rule, secret or library is required. Existing Valkey connectivity
+serves both features. Defaults work without adding task env: `SALE_REDIS_NAMESPACE=minitickets`
+and `INVENTORY_GATE_ENABLED=true`; `.env.example` documents both. All API tasks in one
+stack must use the same namespace. Keep namespace changes out of rolling deploys: changing
+it grants fresh rate-limit bursts and rebuilds the advisory counters. Disable the gate only
+through the normal reviewed task-definition/CD configuration if needed; keep rate limiting on.
+Rollback API/web through existing CD; advisory keys expire naturally. Do not flush shared Redis.
+
+Login: 20-token burst per Fastify `request.ip`, one token every 3 seconds. Booking: 10-token
+burst per authenticated user, one token per second. Attempts consume tokens whether they succeed
+or fail; malformed input and unauthenticated booking requests fail validation/auth first.
+Redis TIME + Lua refill/consume are atomic across API tasks. Idle buckets expire after a full
+refill period. Redis eviction resets a bucket, so this is best-effort abuse control, not a durable
+quota. Shared NAT addresses share the login bucket. Trusted proxy count must match the actual
+path: ALB-only = 1, CloudFront + ALB = 2; existing infrastructure selects it. Never trust a
+client-supplied X-Forwarded-For directly. An individual refused procedure returns 429 plus integer
+`Retry-After` seconds and `error.data.retryAfterSeconds`; mixed tRPC batches may return 207 with
+individual 429 errors, retaining the longest Retry-After. Browser CORS exposes the header;
+login/booking forms show the wait and do not automatically retry 429.
+
+Each event lazily creates `{namespace}:inventory:v1:{eventId}:state` and `:leases` in one Redis
+hash slot. Lua checks and decrements the available hash counter atomically (`HINCRBY -quantity`,
+the hash equivalent of DECRBY), recording an intent and random attempt owner. Duplicate in-flight
+intents bypass the debit and reach the original Postgres transaction. Sold-out requests perform
+indexed replay/event reads to preserve idempotency and 400/404 errors, but skip the booking
+transaction/row-lock queue. This protects writes, not every DB read. Success consumes the debit;
+DB failure or a DB replay refunds it at most once, only for the owning attempt. Postgres row locks,
+unique idempotency keys, CHECK constraints and the transactional outbox remain authoritative.
+
+The API process reconciles incremental batches of at most 50 events every 5 seconds, without
+local overlap, and waits for its batch during shutdown. It snapshots Redis, reads Postgres and
+compare-and-sets generation/revision, refusing to overwrite a concurrent debit/refund. It subtracts
+live reservations conservatively; a second pass repairs double-counted committed debits. A bounded
+cleanup of 100 expired 30-second leases per event repairs crashes. Idle event keys expire after an
+hour. Partial eviction of the lease index invalidates the state for a SQL-backed rebuild;
+old attempt owners cannot refund a rebuilt gate. Repair latency depends on scan backlog and contention; 5 seconds is a scheduling interval,
+not a repair SLA. No new scheduled AWS job or customer-facing seat-hold feature is built.
+
+Redis commands have a 200 ms application deadline; late writes may still execute. Gate errors
+fall back to the same Postgres transaction; settlement errors are logged for reconciliation.
+An ambiguous DB commit/refund or a rolling old/bypass writer can temporarily overestimate Redis,
+so the database must always check seats. Rate-limiter errors fail closed with 503 before expensive
+work. A total Redis outage also makes sessions unavailable; advisory fallback does not promise
+booking availability through that outage. Never fail open for rate enforcement or bypass DB checks.
+
+Manual AWS acceptance (controlled, low-traffic window): CloudWatch → Log groups →
+`/minitickets/dev/api`: look for 429 `TOO_MANY_REQUESTS`, and no recurring inventory reconciliation
+or settlement warnings. CLI: `AWS_PROFILE=ticketlite aws logs tail /minitickets/dev/api --since 10m`.
+Through `https://minitickets.theversehub.in`, verify a controlled login/booking burst receives 429,
+Retry-After and no-store, and a normal booking/retry returns one booking ID. Do not load-test live
+AWS as part of this step. With an approved Valkey connection, inspect `HGETALL` on a known event's
+state key after activity settles: `inflight=0`, available converges to Postgres seats_left; no negative
+DB seats and one outbox row per new booking. Test through the ALB with `cdnEnabled=false`.
+
+Local acceptance: `pnpm demo:sale` uses a disposable database, unique sale namespace and its own
+:3101/:4101/:4102 PIDs; it prints Lua atomicity/refill, rollback/reconciliation and load comparisons,
+then related headless tests. It cleans recorded load sessions and its sale namespace; browser
+sessions expire normally. `--gate-check-only` on the API script runs the atomic gate subset.
+A short local sample is not a production capacity estimate; report throughput AND p50/p95/p99,
+including worse tail latency. Autoscaling, waiting rooms, queued booking and customer seat holds
+remain explain-only in D2, with where they would go in MiniTickets.
+
 ## 4. Dependency order
 
 ```mermaid

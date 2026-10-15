@@ -7,6 +7,8 @@ import { ConflictError, NotFoundError } from "../errors";
 //    Both write into ONE list of calls, so a test can check the ORDER they ran in.
 //    The real transaction and lock are checked by `pnpm demo:booking-race` and the e2e test.
 const calls: string[] = [];
+vi.mock("../config/env", () => ({ env: { INVENTORY_GATE_ENABLED: false } }));
+vi.mock("../queries/inventory", () => ({ reserve: vi.fn(), initialize: vi.fn(), settle: vi.fn() }));
 const createBookingTx = vi.fn();
 const listByUser = vi.fn();
 vi.mock("../queries/bookings", () => ({

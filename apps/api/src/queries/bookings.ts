@@ -74,6 +74,11 @@ async function findByKey(executor: Pick<typeof db, "select">, userId: string, id
   return existing;
 }
 
+// P8. Read committed replays without entering the event's booking row-lock queue.
+export function findByIdempotencyKey(userId: string, idempotencyKey: string) {
+  return findByKey(db, userId, idempotencyKey);
+}
+
 // @concept: outbox
 // Book `quantity` seats of one event for one user, in ONE transaction, at most ONCE per
 // (user, idempotency key). Returns the new booking, or the one this key already has.

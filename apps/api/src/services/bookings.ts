@@ -1,4 +1,5 @@
 import type { BookTicketInput, Booking, MyTicket } from "@minitickets/shared";
+import { createGatedBooking } from "./booking-inventory";
 import { ConflictError } from "../errors";
 import * as bookings from "../queries/bookings";
 // The events service owns the events caches, so we reuse its invalidation instead of touching
@@ -30,7 +31,7 @@ export async function bookTicket(userId: string, input: BookTicketInput, log: Lo
   //    When it returns "created", the booking and the new seat count are COMMITTED (visible to
   //    everyone). When it returns "existing", this user already has a booking with this key and
   //    NOTHING was written.
-  const result = await bookings.createBookingTx(input.eventId, userId, input.quantity, input.idempotencyKey, correlationId);
+  const result = await createGatedBooking(userId, input, log, correlationId);
 
   // 2. A key we have seen before. Is it the SAME booking again (a retry, a double click), or did
   //    the client reuse the key for something else?

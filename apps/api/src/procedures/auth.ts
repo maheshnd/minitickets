@@ -1,6 +1,7 @@
 import { LoginInput, PublicUserSchema, SignupInput } from "@minitickets/shared";
 import { z } from "zod";
 import { env } from "../config/env";
+import { enforceRateLimit } from "../services/rate-limits";
 import * as authService from "../services/auth";
 import { SESSION_COOKIE } from "../trpc/context";
 import { publicProcedure, router } from "../trpc/init";
@@ -44,6 +45,7 @@ export const authRouter = router({
     .output(PublicUserSchema)
     .mutation(async ({ input, ctx }) => {
       // 1. The service checks the password and creates the session.
+      await enforceRateLimit("login", ctx.req.ip);
       const { user, sessionId } = await authService.login(input);
 
       // 2. Setting the cookie is an HTTP job, so it happens here, not in the service.

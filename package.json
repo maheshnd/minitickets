@@ -34,7 +34,8 @@
     "tickets:setup": "pnpm --filter @minitickets/worker tickets:setup",
     "demo:tickets": "pnpm --filter @minitickets/worker demo:tickets",
     "demo:p4-assets": "pnpm --filter @minitickets/api demo:p4-assets",
-    "demo:search": "pnpm --filter @minitickets/api demo:search"
+    "demo:search": "pnpm --filter @minitickets/api demo:search",
+    "demo:sale": "pnpm --filter @minitickets/api demo:sale"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
