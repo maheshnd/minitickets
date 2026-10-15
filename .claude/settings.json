@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Edit(/**)",
       "Write(/**)",
@@ -68,32 +69,6 @@
       "Bash(PORT=* node *)",
       "Bash(kill [0-9]*)"
     ],
-    "ask": [
-      "Bash(git add*)",
-      "Bash(git commit*)",
-      "Bash(git push*)",
-
-      "Bash(pulumi up*)",
-      "Bash(pulumi config set*)",
-      "Bash(cd infra && pulumi up*)",
-      "Bash(cd infra && pulumi config set*)",
-
-      "Bash(aws *)",
-
-      "Bash(docker compose up*)",
-      "Bash(docker compose start*)",
-
-      "Bash(pnpm add*)",
-      "Bash(pnpm --filter * add*)",
-      "Bash(pnpm install *)",
-      "Bash(npm install*)",
-      "Bash(npm i *)",
-
-      "Bash(find *-delete*)",
-      "Bash(find *-exec*)",
-      "Bash(redis-cli *-h *)",
-      "Bash(redis-cli *--host*)"
-    ],
     "deny": [
       "Bash(pkill *)",
       "Bash(*pkill *)",
@@ -121,7 +96,23 @@
       "Bash(rm -rf ..*)",
       "Bash(rm -fr ..*)",
       "Bash(rm -rf $HOME*)",
-      "Bash(rm -fr $HOME*)"
+      "Bash(rm -fr $HOME*)",
+
+      "Edit(~/.aws/**)",
+      "Edit(~/.ssh/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-bash.sh"
+          }
+        ]
+      }
     ]
   }
 }

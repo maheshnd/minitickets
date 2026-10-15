@@ -64,6 +64,16 @@ docs/            One file per step (docs/NN-*.md) + the handbook (docs/handbook/
 - Leave `apps/web/AGENTS.md` alone: `next dev` generates it. It holds Next.js notes, not this
   project's rules.
 
+## Agent permissions
+
+- Claude Code sessions in this repo run without approval prompts (`bypassPermissions`).
+- A guard hook (`.claude/hooks/guard-bash.sh`) checks every shell command first and blocks the
+  risky ones listed under "SAFETY" below. Other agents are not behind that hook: follow the same
+  list yourself.
+- If a command is blocked (or would be), do NOT try to work around it: no other spelling, wrapper,
+  script or tool that does the same thing. Continue without it and list it, with the exact command,
+  under **"Manual steps for me"** in your report.
+
 ## SAFETY: hard rules
 
 Claude Code enforces some of these through `.claude/settings.json`. You do not read that file, so

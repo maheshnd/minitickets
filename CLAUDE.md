@@ -201,6 +201,18 @@ as the commit changes nothing else in `docs/handbook/`:
 - Handbook pages hold no hand-written dates; under each title is the line
   "History: see [CHANGELOG.md](…) or run `pnpm docs:history`" (`pnpm docs:check` enforces it).
 
+## Agent permissions
+
+- Sessions run without approval prompts (`bypassPermissions`). Project settings can't switch that
+  mode on, so start sessions with `claude --permission-mode bypassPermissions`.
+- `.claude/hooks/guard-bash.sh` (a PreToolUse hook) checks every shell command first and blocks the
+  risky ones: git push / reset / stash / clean / rebase, pulumi up / destroy / config set, AWS
+  writes, stopping Docker, kill by name, sudo, `rm -rf` outside the repo, writes to ~/.aws or
+  ~/.ssh. Each block is logged to `.claude/hooks/blocked.log` (gitignored).
+- If a command is blocked, do NOT try to work around it (no other spelling, wrapper, script or
+  tool that does the same thing). Continue without it and list it, with the exact command, under
+  **"Manual steps for me"** in your report.
+
 ## Safety rules
 
 - Never commit or stage. Leave changes for the user to review, and suggest a commit message.

@@ -12,3 +12,6 @@ dist
 
 # Written by pnpm infra:graph
 infra/deps.dot
+
+# Written by .claude/hooks/guard-bash.sh: one line per blocked agent command
+.claude/hooks/blocked.log
