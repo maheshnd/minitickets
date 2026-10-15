@@ -34,6 +34,7 @@ run("docker", ["compose", "up", "-d", "--wait"]);
 run("pnpm", ["--filter", "@minitickets/api", "db:migrate"]);
 run("pnpm", ["--filter", "@minitickets/api", "db:seed"]);
 run("pnpm", ["jobs:table"]);
+run("pnpm", ["tickets:setup"]);
 
 // 6. The containers and their data, and free ports for the apps about to start.
 const stack = await stackSections(envs, "starting");

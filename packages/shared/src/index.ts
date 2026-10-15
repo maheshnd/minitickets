@@ -17,3 +17,4 @@ export {
 } from "./schemas/bookings";
 export { RevalidateSecretSchema } from "./schemas/revalidate";
 export { BookingConfirmedMessage, CorrelationId } from "./schemas/jobs";
+export { TicketBookingMessage, TicketClaims, TicketRecord } from "./schemas/tickets";

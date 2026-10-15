@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingMessage } from "../queries/outbox";
 
-// 1. Fake only the SQL and SQS edges. The real service chooses validation, retries and loop timing.
+// 1. Fake only the SQL and SNS edges. The real service chooses validation, retries and loop timing.
 const { deliverBatch, publish, state } = vi.hoisted(() => ({
   deliverBatch: vi.fn(), publish: vi.fn(), state: { enabled: true },
 }));

@@ -12,6 +12,16 @@ const EnvSchema = z.object({
   // Local only: points the AWS SDK at the ElasticMQ container. Unset on AWS.
   SQS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
   AWS_REGION: z.string().min(1).default("us-east-1"),
+  // P4: optional for email-only scripts. ticket-lambda.ts requires the three resource names.
+  TICKETS_QUEUE_URL: z.url({ protocol: /^https?$/ }).optional(),
+  TICKETS_DLQ_URL: z.url({ protocol: /^https?$/ }).optional(),
+  TICKETS_TABLE: z.string().min(1).optional(),
+  TICKETS_BUCKET: z.string().min(1).optional(),
+  TICKET_SIGNING_SECRET_ID: z.string().min(1).optional(),
+  S3_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  SECRETS_MANAGER_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  SNS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  BOOKING_EVENTS_TOPIC_ARN: z.string().optional(),
 
   // 2. The DynamoDB table that remembers which jobs are done (the idempotent consumer,
   //    src/processed-jobs.ts). Locally DYNAMODB_ENDPOINT points at the DynamoDB Local container;

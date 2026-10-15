@@ -5,6 +5,7 @@ import { checkProcessedJobsTable, checkQueues } from "./jobs-checks.ts";
 import { checkPort, type PortMode } from "./port-checks.ts";
 import type { Section } from "./results.ts";
 import { checkContainers, checkDocker, checkNode, checkPackages } from "./tool-checks.ts";
+import { checkTicketPipeline } from "./tickets-checks.ts";
 
 // The checks, grouped and in order. Two halves, because `pnpm dev` (stack-up.ts) needs a gap
 // between them: the first half must pass BEFORE it starts the containers, the second half checks
@@ -30,6 +31,7 @@ export async function stackSections(envs: EnvFiles, portMode: PortMode): Promise
     { name: "Containers (docker-compose.yml)", results: checkContainers() },
     { name: "Data (Postgres, Redis)", results: [...(await checkPostgres(api.DATABASE_URL)), await checkRedis(api.REDIS_URL)] },
     { name: "Jobs (queue, dead-letter queue, processed-jobs table)", results: [...(await checkQueues(worker, api)), await checkProcessedJobsTable(worker)] },
+    { name: "Tickets (SNS fan-out and assets)", results: [checkTicketPipeline()] },
     {
       name: "Dev servers",
       results: [await checkPort("api", Number(api.PORT ?? "4000"), portMode), await checkPort("web", webPort, portMode)],

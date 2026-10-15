@@ -107,6 +107,7 @@ env:
   WORKER_REPO_NAME: minitickets-dev-worker
   # 5b. The worker Lambda (S1c, infra/src/jobs/worker-lambda.ts), checked after the deploy (37).
   WORKER_FUNCTION_NAME: minitickets-dev-worker
+  TICKET_FUNCTION_NAME: minitickets-dev-tickets
   # 6. The SSM parameter (a named value stored in AWS) that says which image tag is deployed
   #    (infra/src/release.ts). The deploy role may write ONLY this one.
   IMAGE_TAG_PARAMETER: /minitickets/dev/image-tag
@@ -537,6 +538,11 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          # P4: an older worker image has no ticket entry point. Refuse it before applying infra.
+          if ! git cat-file -e "$TAG:apps/worker/src/ticket-lambda.ts" 2>/dev/null; then
+            echo "::error::Image $TAG predates P4 tickets. Choose a P4-or-newer tag."
+            exit 1
+          fi
           for REPO in "$API_REPO_NAME" "$WEB_REPO_NAME" "$WORKER_REPO_NAME"; do
             if ! aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$TAG" \
                  --query 'imageDetails[0].imageDigest' --output text; then
@@ -589,6 +595,13 @@ jobs:
           if [ -n "$CURRENT" ] && [ "$CURRENT" != "none" ] && \
              ! aws ecr describe-images --repository-name "$WORKER_REPO_NAME" --image-ids imageTag="$CURRENT" > /dev/null 2>&1; then
             echo "::notice::The current tag $CURRENT has no worker image (published before S1c). Phase A starts the worker with the new tag."
+            WORKER_NEW_TAG=true
+          fi
+
+          # P4 bootstrap: current worker images may exist but lack the new ticket handler.
+          # Promote the published worker early in phase A (neither consumer uses SQL).
+          if [ -n "$CURRENT" ] && [ "$CURRENT" != "none" ] && \
+             ! git cat-file -e "$CURRENT:apps/worker/src/ticket-lambda.ts" 2>/dev/null; then
             WORKER_NEW_TAG=true
           fi
 
@@ -766,19 +779,28 @@ jobs:
           check_revision "$API_SERVICE" apiTaskDefinitionArn
           if [ "$ENTRY" = "true" ]; then check_revision "$WEB_SERVICE" webTaskDefinitionArn; fi
 
-          read -r IMAGE STATE UPDATE <<< "$(aws lambda get-function --function-name "$WORKER_FUNCTION_NAME" \
-            --query '[Code.ImageUri, Configuration.State, Configuration.LastUpdateStatus]' --output text)"
-          if [ "${IMAGE##*:}" != "$TAG" ] || [ "$STATE" != "Active" ] || [ "$UPDATE" != "Successful" ]; then
-            echo "::error::$WORKER_FUNCTION_NAME: image $IMAGE, state $STATE, last update $UPDATE (expected :$TAG, Active, Successful)."
+          # P4: both Lambda functions run the same immutable worker image, different commands.
+          for FUNCTION in "$WORKER_FUNCTION_NAME" "$TICKET_FUNCTION_NAME"; do
+            read -r IMAGE STATE UPDATE <<< "$(aws lambda get-function --function-name "$FUNCTION" \
+              --query '[Code.ImageUri, Configuration.State, Configuration.LastUpdateStatus]' --output text)"
+            if [ "${IMAGE##*:}" != "$TAG" ] || [ "$STATE" != "Active" ] || [ "$UPDATE" != "Successful" ]; then
+              echo "::error::$FUNCTION: image $IMAGE, state $STATE, last update $UPDATE (expected :$TAG, Active, Successful)."
+              exit 1
+            fi
+            MAPPING="$(aws lambda list-event-source-mappings --function-name "$FUNCTION" \
+              --query 'EventSourceMappings[0].State' --output text)"
+            if [ "$MAPPING" != "Enabled" ]; then
+              echo "::error::$FUNCTION's queue trigger is '$MAPPING', expected Enabled: nothing reads the jobs queue."
+              exit 1
+            fi
+            echo "$FUNCTION runs $IMAGE ($STATE, $UPDATE), queue trigger $MAPPING"
+          done
+          COMMAND="$(aws lambda get-function-configuration --function-name "$TICKET_FUNCTION_NAME" \
+            --query 'ImageConfigResponse.ImageConfig.Command[0]' --output text)"
+          if [ "$COMMAND" != "ticket-lambda.handler" ]; then
+            echo "::error::Ticket Lambda command is $COMMAND, expected ticket-lambda.handler"
             exit 1
           fi
-          MAPPING="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION_NAME" \
-            --query 'EventSourceMappings[0].State' --output text)"
-          if [ "$MAPPING" != "Enabled" ]; then
-            echo "::error::$WORKER_FUNCTION_NAME's queue trigger is '$MAPPING', expected Enabled: nothing reads the jobs queue."
-            exit 1
-          fi
-          echo "$WORKER_FUNCTION_NAME runs $IMAGE ($STATE, $UPDATE), queue trigger $MAPPING"
 
       # 38. Smoke test: is the app really answering, from the outside, through the front door?
       #     GET /                   -> 200 (OK): the web app renders (and reaches the api inside AWS)

@@ -30,7 +30,9 @@
     "demo:outbox": "pnpm --filter @minitickets/api demo:outbox",
     "images:push": "bash scripts/push-images.sh",
     "infra:migrate": "bash scripts/run-migrations.sh",
-    "infra:graph": "cd infra && pulumi stack graph deps.dot"
+    "infra:graph": "cd infra && pulumi stack graph deps.dot",
+    "tickets:setup": "pnpm --filter @minitickets/worker tickets:setup",
+    "demo:tickets": "pnpm --filter @minitickets/worker demo:tickets"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

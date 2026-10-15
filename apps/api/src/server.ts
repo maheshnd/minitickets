@@ -24,9 +24,9 @@ if (!env.WEB_INTERNAL_URL) {
   app.log.warn("WEB_INTERNAL_URL and REVALIDATE_SECRET are not set: the web revalidate hook is off (new events reach /events within 30 s)");
 }
 
-// 2c. Same for the jobs queue (config/env.ts): without JOBS_QUEUE_URL no confirmation messages are sent.
-if (!env.JOBS_QUEUE_URL) {
-  app.log.warn("JOBS_QUEUE_URL is not set: outbox delivery is paused (booking confirmations remain in Postgres)");
+// 2c. Same for the booking-events topic (config/env.ts): without BOOKING_EVENTS_TOPIC_ARN no confirmation messages are sent.
+if (!env.BOOKING_EVENTS_TOPIC_ARN) {
+  app.log.warn("BOOKING_EVENTS_TOPIC_ARN is not set: outbox delivery is paused (booking confirmations remain in Postgres)");
 }
 
 // 2d. Each API task relays committed messages; Postgres row locks divide work between tasks.

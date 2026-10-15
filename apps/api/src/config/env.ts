@@ -40,14 +40,11 @@ const EnvSchema = z.object({
   // whole API from starting there, for a feature that only makes lists fresher.
   WEB_INTERNAL_URL: z.url({ protocol: /^https?$/ }).optional(),
   REVALIDATE_SECRET: RevalidateSecretSchema.optional(),
-  // The jobs queue (queues/jobs.ts). OPTIONAL: without JOBS_QUEUE_URL the outbox relay is paused;
-  // confirmations are still saved with bookings and delivered when the queue is configured.
-  // JOBS_QUEUE_URL: the queue's URL (local: the ElasticMQ container, on AWS: the SQS queue's URL).
-  JOBS_QUEUE_URL: z.url({ protocol: /^https?$/ }).optional(),
-  // SQS_ENDPOINT: LOCAL ONLY. Points the AWS SDK at the ElasticMQ container instead of real SQS.
-  // Leave it unset on AWS: the SDK then finds SQS by itself.
-  SQS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
-  // The AWS region the SDK signs requests for (any value works for ElasticMQ). us-east-1 is the
+  // P4: without a topic the outbox waits durably. SNS fans out to both SQS consumers.
+  BOOKING_EVENTS_TOPIC_ARN: z.string().regex(/^arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+$/).optional(),
+  // Local Moto only. Unset on AWS so the SDK uses real SNS.
+  SNS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  // The AWS region the SDK signs requests for (Moto uses us-east-1). us-east-1 is the
   // region of our AWS setup (infra/Pulumi.dev.yaml).
   AWS_REGION: z.string().min(1).default("us-east-1"),
 })

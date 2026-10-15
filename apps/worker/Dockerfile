@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 FROM deps AS build
 
 # 3. WHAT: copy the worker's and the shared package's source, then bundle (apps/worker/build.mjs).
-#    WHY: the result, dist/lambda.mjs, holds our code AND every library it uses, so the final image
+#    WHY: each dist/*.mjs bundle holds its handler AND every library it uses, so the final image
 #    needs no node_modules and no pnpm.
 COPY tsconfig.base.json ./
 COPY apps/worker apps/worker
@@ -57,12 +57,12 @@ RUN pnpm --filter @minitickets/worker build
 #      start with "exec format error".
 FROM public.ecr.aws/lambda/nodejs:24 AS runtime
 
-# 5. WHAT: our one file goes into LAMBDA_TASK_ROOT (/var/task), where the runtime looks for handlers.
+# 5. WHAT: our two bundles go into LAMBDA_TASK_ROOT (/var/task), where the runtime looks for handlers.
 #    WHY no USER line: Lambda runs the function as its own unprivileged user anyway, on a read-only
 #      file system (only /tmp is writable). Nothing here needs root at runtime.
-COPY --from=build /app/apps/worker/dist/lambda.mjs ${LAMBDA_TASK_ROOT}/
+COPY --from=build /app/apps/worker/dist/*.mjs ${LAMBDA_TASK_ROOT}/
 
 # 6. WHAT: the handler: file "lambda" (lambda.mjs), exported function "handler".
 #    WHY CMD and not ENTRYPOINT: the base image's ENTRYPOINT starts the runtime client, which reads
-#      the handler name from CMD. (A Lambda's ImageConfig can override it; ours does not.)
+#      the handler name from CMD. (The ticket Lambda overrides it to ticket-lambda.handler.)
 CMD ["lambda.handler"]

@@ -1,5 +1,5 @@
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient, type Message } from "@aws-sdk/client-sqs";
-import type { SQSEvent, SQSRecord } from "aws-lambda";
+import type { SQSEvent, SQSRecord, SQSBatchResponse } from "aws-lambda";
 import { env } from "./config";
 import { correlationIdOf } from "./correlation";
 import { handler } from "./lambda";
@@ -33,7 +33,7 @@ function toRecord(message: Message): SQSRecord {
   } as SQSRecord;
 }
 
-async function poll() {
+async function poll(queueUrl: string, consume: (event: SQSEvent) => Promise<SQSBatchResponse>) {
   log.info("listening", { queueUrl });
   while (!stopping) {
     try {
@@ -57,7 +57,7 @@ async function poll() {
       //    itself throws (it should not), treat the whole batch as failed, like Lambda would.
       let failedIds: Set<string>;
       try {
-        const response = await handler({ Records: messages.map(toRecord) } as SQSEvent);
+        const response = await consume({ Records: messages.map(toRecord) } as SQSEvent);
         failedIds = new Set(response.batchItemFailures.map((failure) => failure.itemIdentifier));
       } catch (err) {
         log.error("the handler crashed, the whole batch will be retried", { error: err instanceof Error ? err.message : String(err) });
@@ -89,4 +89,10 @@ async function poll() {
 process.on("SIGINT", () => { stopping = true; process.exit(0); });
 process.on("SIGTERM", () => { stopping = true; process.exit(0); });
 
-await poll();
+// 8. Independent long polls: a slow email never blocks a ticket (and vice versa).
+const consumers = [poll(queueUrl, handler)];
+if (env.TICKETS_QUEUE_URL) {
+  const tickets = await import("./ticket-lambda");
+  consumers.push(poll(env.TICKETS_QUEUE_URL, tickets.handler));
+}
+await Promise.all(consumers);

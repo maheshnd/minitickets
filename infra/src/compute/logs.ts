@@ -27,7 +27,7 @@ export interface LogsOutputs {
 }
 
 // @concept: cloudwatch-logs
-export function createLogs(service: "api" | "web" | "worker"): LogsOutputs {
+export function createLogs(service: "api" | "web" | "worker" | "tickets"): LogsOutputs {
   // 1. Log group
   // WHAT: the book named /minitickets/dev/api (or /minitickets/dev/web).
   // WHY: the awslogs driver in task.ts / web-task.ts needs a group to write to. It does not

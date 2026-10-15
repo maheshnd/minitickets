@@ -1,18 +1,19 @@
 import { build } from "esbuild";
 
-// Bundles the Lambda handler into ONE plain JavaScript file: dist/lambda.mjs.
+// Bundles two Lambda handlers: dist/lambda.mjs (email) and dist/ticket-lambda.mjs (QR).
 // Run with `pnpm --filter @minitickets/worker build` (apps/worker/Dockerfile does).
 // Why: Lambda runs JavaScript, not TypeScript (no tsx there).
 
 // 1. Unlike the api (apps/api/build.mjs), EVERYTHING goes into the bundle: the AWS SDK clients, zod
 //    and @minitickets/shared. All of them are plain JavaScript (no native code like argon2), so the
-//    image needs no node_modules folder at all: one file, copied next to Lambda's runtime.
+//    image needs no node_modules folder at all: one bundle per handler, copied next to Lambda's runtime.
 //    Why not rely on the AWS SDK that Lambda's runtime already includes: its version is whatever AWS
 //    ships that week. Bundling ours means the exact version from pnpm-lock.yaml runs on AWS, the same
 //    one the tests and the local worker use.
 await build({
-  entryPoints: ["src/lambda.ts"],
-  outfile: "dist/lambda.mjs",
+  entryPoints: ["src/lambda.ts", "src/ticket-lambda.ts"],
+  outdir: "dist",
+  outExtension: { ".js": ".mjs" },
   bundle: true,
   platform: "node",
   // 2. ESM (.mjs): the handler's files use ES modules. Lambda's Node runtime loads a .mjs handler

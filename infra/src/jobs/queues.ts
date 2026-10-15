@@ -38,7 +38,8 @@ export interface JobQueuesOutputs {
 
 // @concept: sqs
 // @concept: dead-letter-queue
-export function createJobQueues(): JobQueuesOutputs {
+export function createJobQueues(kind: "jobs" | "tickets" = "jobs"): JobQueuesOutputs {
+  const queuePrefix = `${prefix}-${kind}`;
   // 2. The dead-letter queue (DLQ): where a message goes after too many failed tries. Nothing reads
   //    it automatically; a person lists it, fixes the cause, then moves the messages back
   //    ("Start DLQ redrive" in the console, or apps/worker's jobs:redrive locally).
@@ -50,11 +51,11 @@ export function createJobQueues(): JobQueuesOutputs {
   //      needs a KMS permission to use the queue. A customer managed KMS key would add key
   //      policies and a monthly key fee, for no gain in dev.
   // DEPENDS ON: nothing.
-  const dlq = new aws.sqs.Queue(`${prefix}-jobs-dlq`, {
-    name: `${prefix}-jobs-dlq`,
+  const dlq = new aws.sqs.Queue(`${queuePrefix}-dlq`, {
+    name: `${queuePrefix}-dlq`,
     messageRetentionSeconds: 14 * DAY,
     sqsManagedSseEnabled: true,
-    tags: tagsFor(`${prefix}-jobs-dlq`),
+    tags: tagsFor(`${queuePrefix}-dlq`),
   });
 
   // 3. The main jobs queue.
@@ -71,15 +72,16 @@ export function createJobQueues(): JobQueuesOutputs {
   //      instead. With the backoff that is about 10 + 40 + 120 s after the first failure.
   //    sqsManagedSseEnabled: as for the DLQ (2).
   // DEPENDS ON: dlq (its ARN is in the redrive policy).
-  const visibilityTimeoutSeconds = 6 * WORKER_TIMEOUT_SECONDS;
-  const queue = new aws.sqs.Queue(`${prefix}-jobs`, {
-    name: `${prefix}-jobs`,
+  // P4: tickets allow 30 s to render up to four QRs; hide each batch for 6 x that.
+  const visibilityTimeoutSeconds = kind === "tickets" ? 180 : 6 * WORKER_TIMEOUT_SECONDS;
+  const queue = new aws.sqs.Queue(queuePrefix, {
+    name: queuePrefix,
     visibilityTimeoutSeconds,
     messageRetentionSeconds: 4 * DAY,
     receiveWaitTimeSeconds: 20,
     sqsManagedSseEnabled: true,
     redrivePolicy: pulumi.jsonStringify({ deadLetterTargetArn: dlq.arn, maxReceiveCount: 3 }),
-    tags: tagsFor(`${prefix}-jobs`),
+    tags: tagsFor(queuePrefix),
   });
 
   // 4. Redrive ALLOW policy, on the DLQ: which queues may use it as their DLQ. "byQueue" + our one
@@ -87,7 +89,7 @@ export function createJobQueues(): JobQueuesOutputs {
   //    unrelated messages into the list a person reads, and into a later redrive).
   //    A separate resource because of a circle: the queue (3) names the DLQ, and this names the queue.
   // DEPENDS ON: dlq and queue.
-  new aws.sqs.RedriveAllowPolicy(`${prefix}-jobs-dlq-allow`, {
+  new aws.sqs.RedriveAllowPolicy(`${queuePrefix}-dlq-allow`, {
     queueUrl: dlq.url,
     redriveAllowPolicy: pulumi.jsonStringify({ redrivePermission: "byQueue", sourceQueueArns: [queue.arn] }),
   });

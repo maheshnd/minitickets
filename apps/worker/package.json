@@ -11,18 +11,26 @@
     "jobs:dlq": "tsx --env-file=.env src/scripts/dlq-list.ts",
     "jobs:redrive": "tsx --env-file=.env src/scripts/dlq-redrive.ts",
     "jobs:send": "tsx --env-file=.env src/scripts/send-demo.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tickets:setup": "tsx --env-file=.env src/scripts/setup-tickets.ts",
+    "demo:tickets": "node build.mjs && tsx src/scripts/tickets-demo.ts",
+    "tickets:check": "tsx --env-file=.env src/scripts/check-tickets.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/client-secrets-manager": "^3.1152.0",
     "@aws-sdk/client-sesv2": "^3.1152.0",
+    "@aws-sdk/client-sns": "^3.1152.0",
     "@aws-sdk/client-sqs": "^3.1152.0",
     "@minitickets/shared": "workspace:*",
+    "qrcode": "^1.5.4",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.150",
     "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3"

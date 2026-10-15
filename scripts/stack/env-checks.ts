@@ -15,9 +15,11 @@ const MIN_SECRET_LENGTH = 32; // the same minimum as RevalidateSecretSchema (pac
 // 1. Why some settings matter, printed next to a missing one (so a missing line is not a mystery).
 const WHY: Record<string, string> = {
   WEB_INTERNAL_URL: "the revalidate hook (with REVALIDATE_SECRET): without it the 2 admin e2e tests fail",
-  JOBS_QUEUE_URL: "without it the api publishes no booking.confirmed messages (no confirmation emails)",
+  JOBS_QUEUE_URL: "without it the local email worker cannot read confirmations",
   JOBS_DLQ_URL: "used by pnpm jobs:dlq and pnpm jobs:redrive",
   DYNAMODB_ENDPOINT: "without it the worker would call REAL AWS DynamoDB instead of the local container",
+  BOOKING_EVENTS_TOPIC_ARN: "without it the API outbox relay waits instead of publishing",
+  SNS_ENDPOINT: "local SNS must use Moto, matching the worker SQS endpoint",
   SQS_ENDPOINT: "without it the SDK would call REAL AWS SQS instead of the local queue container",
 };
 
@@ -140,13 +142,12 @@ export function checkAgreement(envs: EnvFiles): CheckResult[] {
     });
   }
 
-  // 5c. The api publishes to the queue the worker reads. Two different URLs = messages nobody reads.
-  if (api.JOBS_QUEUE_URL && worker.JOBS_QUEUE_URL && api.JOBS_QUEUE_URL !== worker.JOBS_QUEUE_URL) {
-    problems.push({
-      status: "fail",
-      title: `JOBS_QUEUE_URL differs: ${envs.api.file} publishes to ${api.JOBS_QUEUE_URL}, ${envs.worker.file} reads ${worker.JOBS_QUEUE_URL}`,
-      fix: [`use the same JOBS_QUEUE_URL in both files`],
-    });
+  // 5c. The relay and local setup must agree on the topic and Moto endpoint.
+  for (const key of ["BOOKING_EVENTS_TOPIC_ARN", "SNS_ENDPOINT"]) {
+    if (api[key] && worker[key] && api[key] !== worker[key]) {
+      problems.push({ status: "fail", title: `${key} differs between api and worker`,
+        fix: [`use the same ${key} in apps/api/.env and apps/worker/.env`] });
+    }
   }
 
   // 5d. The web app (browser and server) calls the api on the api's PORT.
@@ -175,7 +176,7 @@ export function checkAgreement(envs: EnvFiles): CheckResult[] {
   }
 
   if (problems.length === 0) {
-    problems.push({ status: "ok", title: "the files agree with each other (database login, Redis port, api port, web port, queue URL)" });
+    problems.push({ status: "ok", title: "the files agree with each other (database login, Redis port, api port, web port, SNS topic)" });
   }
   return problems;
 }

@@ -174,7 +174,7 @@ export async function createBookingTx(
       const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
       const message = BookingConfirmedMessage.parse({
         type: "booking.confirmed", version: 1, messageId: randomUUID(), bookingId: created.id,
-        userEmail: user.email, eventTitle: event.title, eventVenue: event.venue,
+        userId, eventId, userEmail: user.email, eventTitle: event.title, eventVenue: event.venue,
         eventStartsAt: event.startsAt.toISOString(), quantity, occurredAt: created.createdAt.toISOString(), correlationId,
       });
       await tx.insert(outbox).values({ id: message.messageId, bookingId: created.id, payload: message });

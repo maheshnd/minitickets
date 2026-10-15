@@ -31,6 +31,9 @@ export const BookingConfirmedMessage = z.object({
   // Unique per message: lets the consumer recognise a duplicate (queues deliver at least once).
   messageId: z.uuid(),
   bookingId: z.uuid(),
+  // P4: optional for old email messages; the ticket consumer requires these two ids.
+  eventId: z.uuid().optional(),
+  userId: z.uuid().optional(),
   userEmail: z.email(),
   eventTitle: z.string(),
   eventVenue: z.string(),

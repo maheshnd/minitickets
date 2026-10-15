@@ -1023,6 +1023,89 @@ with two relays. It cleans up its processes, database, queue and login session; 
 is stopped. It needs the existing local Postgres, Redis and ElasticMQ. It uses Redis database 15;
 event cache keys there expire normally. Omit `--e2e` for only the short relay demo.
 
+### 3.14 P4 Part A: booking fan-out and private QR tickets
+
+**Before the first P4 deploy:** the approved deploy role needs S3 management permissions on
+`minitickets-dev-ticket-assets-258237553751`. Existing scoped SNS, SQS, DynamoDB, Lambda and
+`minitickets/*` Secrets Manager permissions cover the remaining resources. The owner bootstraps
+only the changed deploy policy from the reviewed P4 commit (agent: preview only):
+
+```bash
+export AWS_PROFILE=ticketlite
+cd infra
+pulumi up --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-deploy-policy'
+```
+
+Then use the normal publish/approve CD path. It builds **one** worker image per SHA containing
+`lambda.handler` (email) and `ticket-lambda.handler` (tickets). Phase A promotes that published
+worker image early only if the current image predates P4; neither consumer needs SQL. Otherwise
+both consumers keep the SSM tag until phase B. CD checks both functions' image tags, Active /
+Successful states, enabled triggers and the ticket command. Rollbacks to images before P4 are
+refused before applying infrastructure: those images have no ticket entry point. Compute-off
+still removes both functions/triggers/log groups; the topic, queues, tables, bucket and key stay.
+
+**Booking cutover:** pause new bookings during the first P4 rollout. Phase A changes the API
+role/environment to SNS while the old image still runs; its relay pauses and pending outbox rows
+remain durable. Pre-P4 confirmations lack `userId`/`eventId`: email still handles them, but the
+ticket consumer refuses them into its own DLQ after three attempts. There is **no historical
+backfill**. Review any legacy pending rows before cutover; do not delete or rebook them. A manual
+repair needs the original booking's owner/event ids. New P4 bookings snapshot both ids atomically.
+
+**Console acceptance after CD:**
+
+| Where | Expected | Read-only CLI |
+| --- | --- | --- |
+| SNS → Topics → `minitickets-dev-booking-events` → Subscriptions | Two SQS subscriptions (`jobs`, `tickets`), Raw message delivery true | `aws sns list-subscriptions-by-topic --topic-arn arn:aws:sns:us-east-1:258237553751:minitickets-dev-booking-events` then `aws sns get-subscription-attributes --subscription-arn <arn>` |
+| SQS → `minitickets-dev-jobs` and `minitickets-dev-tickets` → Redrive / Access policy | Separate `*-dlq`, maxReceiveCount 3; only this SNS topic may SendMessage via the resource policy | `aws sqs get-queue-attributes --queue-url <queue-url> --attribute-names All` |
+| Lambda → `minitickets-dev-tickets` → Configuration / Triggers | 512 MB, 30 s, arm64, no VPC; one enabled SQS trigger, batch 1 / partial failures / max concurrency 2 | `aws lambda get-function-configuration --function-name minitickets-dev-tickets --query '[State,LastUpdateStatus,ImageConfigResponse,Timeout,MemorySize]'` |
+| DynamoDB → Tables → `minitickets-dev-tickets` → Explore items / Indexes | One ready record per booked seat; `by-event-date` active (UTC date + date/time/ticket sort key) | `aws dynamodb describe-table --table-name minitickets-dev-tickets` |
+| S3 → `minitickets-dev-ticket-assets-258237553751` → Permissions / Properties / Management | All public access blocked; bucket owner enforced; SSE-S3 AES256; HTTPS-only policy; abort incomplete uploads after 1 day | `aws s3api get-public-access-block --bucket minitickets-dev-ticket-assets-258237553751`; also `get-bucket-encryption`, `get-bucket-ownership-controls`, `get-bucket-policy`, `get-bucket-lifecycle-configuration` with that bucket |
+| Secrets Manager → `minitickets/dev/ticket-signing` | Exists; only ticket Lambda runtime reads it. Never print its value | `aws secretsmanager describe-secret --secret-id minitickets/dev/ticket-signing` |
+| CloudWatch → `/minitickets/dev/tickets` | After booking quantity N: created N; after replay: skipped N. No token/email/body logs | `aws logs tail /minitickets/dev/tickets --since 5m` |
+
+**IAM:** the API task now has `sns:Publish` on one topic; it has no ticket/S3/secret reads in
+Part A. The ticket role trusts Lambda and can receive/delete/get attributes of only its queue,
+GetItem/PutItem/UpdateItem on only its table, PutObject on only the bucket's `tickets/*`, read
+only the signing secret, and create streams/write events in only its log group. SNS queue policies
+require the exact topic ARN and source account. No new security group or network rule. Existing
+ECR Lambda pull policy already covers `minitickets-dev-*` functions in this account/region.
+
+**Failure/retry:** records start `creating` with a canonical signed token. S3 writes the same
+`tickets/<bookingId>/<seat>.png` key on a retry; only then is the record `ready`. A crash at either
+boundary resumes safely. Ready records skip PNG writes. The QR authenticates identity using
+HMAC-SHA256; it is a bearer token, and does not itself prevent reuse (door check-in is later).
+Never delete/rotate the signing key casually: existing QR codes need it for verification. There
+is no automatic rotation in Part A; a future key-ring rollout must retain old verification keys.
+
+**Retention and cost:** S3 lifecycle aborts incomplete multipart uploads, and intentionally does
+not age out an issued ticket before a distant event. Ticket records have no TTL yet. Application
+retention is deferred. S3/DynamoDB/log storage grows with use; SNS/SQS and Lambda are usage-billed.
+The retained signing secret adds about [$0.40/month plus calls](https://aws.amazon.com/secrets-manager/pricing/)
+even with compute off. No NAT, custom KMS key, provisioned capacity or provisioned concurrency.
+The existing alarms still cover only the email pipeline; ticket-specific alarms are deferred.
+
+**Local:** Moto (`motoserver/moto:5.2.2`, loopback :5001) provides SNS/SQS/S3/Secrets Manager so
+SNS can deliver into queues in the same backend. DynamoDB Local remains :8000. ElasticMQ :9324
+remains available for older SQS-only experiments; the P3 outbox demo now uses Moto SNS. Compare
+both apps' committed `.env.example` files with their local files, including changing the worker's
+existing `JOBS_QUEUE_URL` and `SQS_ENDPOINT` from :9324 to :5001. Preserve unrelated values and
+secrets. Start the new emulators, then set up:
+
+```bash
+docker compose up -d --wait aws-local dynamodb
+pnpm jobs:table
+pnpm tickets:setup
+pnpm stack:check
+pnpm demo:tickets
+```
+
+`pnpm dev` sets up P4 before starting apps; the one local worker long-polls both queues and calls
+the same handlers as Lambda. `stack:reset` now also clears Moto's disposable ticket resources
+and recreates them (owner-run only). The demo uses unique resources and cleans only those.
+Moto's IAM/anonymous-access behaviour is not proof of AWS security; verify the live settings
+above. HTTPS-only policy is AWS-only because the local emulator endpoint uses HTTP.
+Part B (ticket retrieval, presigned URLs, QR UI, poster uploads) is deliberately still pending.
+
 ## 4. Dependency order
 
 ```mermaid

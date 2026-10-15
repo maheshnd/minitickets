@@ -42,6 +42,10 @@ import { createHttpsListener } from "./src/entry/https-listener";
 import { createAlbPublicIngress } from "./src/entry/alb-public-ingress";
 import { parseAllowedCidrs, parseDomainName, trustedProxyHops } from "./src/entry/mode";
 import { createJobQueues } from "./src/jobs/queues";
+import { createBookingEvents } from "./src/jobs/booking-events";
+import { createTicketStorage } from "./src/tickets/storage";
+import { createTicketRole } from "./src/tickets/iam";
+import { createTicketLambda } from "./src/tickets/lambda";
 import { createProcessedJobsTable } from "./src/jobs/processed-jobs-table";
 import { createEmail } from "./src/jobs/email";
 import { createWorkerRole } from "./src/jobs/worker-iam";
@@ -163,6 +167,10 @@ const cicd = createCicd({
 //                 pulumi config set --secret sesTestRecipient you@example.com
 //               Then add the 3 DKIM records shown by: pulumi stack output sesDkimRecords
 const jobQueues = createJobQueues();
+// P4 Part A: independent ticket delivery, durable assets and the SNS fan-out stay across off/on.
+const ticketQueues = createJobQueues("tickets");
+const bookingEvents = createBookingEvents(jobQueues, ticketQueues);
+const ticketStorage = createTicketStorage();
 const processedJobs = createProcessedJobsTable();
 const email = domainName
   ? createEmail({ domainName, testRecipient: config.getSecret("sesTestRecipient") })
@@ -279,7 +287,7 @@ const iam =
         dbMasterSecretArn: postgres.masterSecretArn,
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         revalidateSecretArn: revalidateSecret?.secretArn,
-        jobsQueueArn: jobQueues.queueArn,
+        bookingEventsTopicArn: bookingEvents.topicArn,
       })
     : undefined;
 
@@ -384,7 +392,7 @@ const apiTask =
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         webOrigin: appUrlValue ?? "https://placeholder.invalid",
         trustProxyHops: trustedProxyHops({ entryEnabled, cdnEnabled }),
-        jobsQueueUrl: jobQueues.queueUrl,
+        bookingEventsTopicArn: bookingEvents.topicArn,
         serviceConnect: revalidateSecret
           ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
           : undefined,
@@ -457,6 +465,19 @@ const worker =
 const workerTrigger = worker
   ? createQueueTrigger({ queueArn: jobQueues.queueArn, functionArn: worker.functionArn })
   : undefined;
+
+// 20c. P4: ticket compute follows computeEnabled; same published worker image, separate role.
+//      On the first deploy CD promotes the worker early (no SQL dependency), so the new entry
+//      point exists before this trigger is enabled. Subsequent versions follow the SSM tag.
+const ticketLogs = computeEnabled ? createLogs("tickets") : undefined;
+const ticketRole = ticketLogs ? createTicketRole({ queueArn: ticketQueues.queueArn,
+  tableArn: ticketStorage.tableArn, bucketArn: ticketStorage.bucketArn,
+  secretArn: ticketStorage.secretArn, logGroupArn: ticketLogs.logGroupArn }) : undefined;
+const ticketWorker = imageTags && ticketLogs && ticketRole ? createTicketLambda({
+  image: pulumi.interpolate`${registry.workerRepoUrl}:${imageTags.worker}`, roleArn: ticketRole.roleArn,
+  logGroupName: ticketLogs.logGroupName, tableName: ticketStorage.tableName,
+  bucketName: ticketStorage.bucketName, secretArn: ticketStorage.secretArn, queueArn: ticketQueues.queueArn,
+}) : undefined;
 
 // 21. Web log group. Needs: nothing. Only the entry switch.
 const webLogs = entryEnabled ? createLogs("web") : undefined;
@@ -605,6 +626,15 @@ export const sesMailFrom = email?.mailFrom ?? null;
 export const sesDkimRecords = email?.dkimRecords ?? null;
 export const workerFunctionName = worker?.functionName ?? null;
 export const workerTriggerId = workerTrigger?.mappingId ?? null;
+// P4: addresses and names only. Never export the signing value or signed bearer tokens.
+export const bookingEventsTopicArn = bookingEvents.topicArn;
+export const ticketsQueueUrl = ticketQueues.queueUrl;
+export const ticketsDlqUrl = ticketQueues.dlqUrl;
+export const ticketsTableName = ticketStorage.tableName;
+export const ticketsBucketName = ticketStorage.bucketName;
+export const ticketSigningSecretArn = ticketStorage.secretArn;
+export const ticketFunctionName = ticketWorker?.functionName ?? null;
+export const ticketTriggerId = ticketWorker?.triggerId ?? null;
 
 // 29c. Observability outputs (P2). alertTopicArn: where the alarms publish (aws sns
 //      list-subscriptions-by-topic --topic-arn ... shows whether the email is confirmed).

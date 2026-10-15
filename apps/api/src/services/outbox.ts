@@ -28,7 +28,7 @@ export async function relayOnce(log: Log): Promise<number> {
       correlationId = message.correlationId;
       if (message.messageId !== row.id || message.bookingId !== row.bookingId) throw new Error("outbox identity mismatch");
       await jobs.publishBookingConfirmed(message);
-      log.info({ messageId: row.id, bookingId: row.bookingId, correlationId: message.correlationId }, "outbox message accepted by queue");
+      log.info({ messageId: row.id, bookingId: row.bookingId, correlationId: message.correlationId }, "outbox message accepted by SNS");
       return { sent: true };
     } catch {
       // 4. Do not log the raw error: validation errors can quote personal data from the payload.

@@ -2,7 +2,7 @@
 // NEEDS (inputs):   dbMasterSecretArn  <- from postgres (the RDS master password secret)
 //                   redisUrlSecretArn  <- from secrets
 //                   revalidateSecretArn <- from revalidate-secret (OPTIONAL: only when entry is on)
-//                   jobsQueueArn       <- from jobs/queues (the one queue the api may send to, S1c)
+//                   bookingEventsTopicArn       <- from jobs/booking-events (the one topic the API may publish to, P4)
 // CREATES:          execution role + managed policy attachment + inline secrets policy,
 //                   task role + inline ECS Exec policy + inline "send-jobs" policy (S1c)
 // GIVES (outputs):  executionRoleArn -> used by task (ECS uses it to START the task)
@@ -22,7 +22,7 @@ import { tagsFor } from "../tags";
 //     PERMISSION POLICY: WHAT the wearer may do.
 //   Our two roles are worn at different moments:
 //     execution role -> worn by the ECS agent BEFORE our code runs (pull image, read secrets, logs)
-//     task role      -> worn by OUR CODE while it runs (ECS Exec, and sending jobs to SQS)
+//     task role      -> worn by OUR CODE while it runs (ECS Exec, and sending jobs to SNS)
 //   Keeping them apart means our app's code never holds the power to read the secrets.
 
 const prefix = "minitickets-dev";
@@ -32,7 +32,7 @@ export interface IamInputs {
   redisUrlSecretArn: pulumi.Input<string>;
   // undefined = entry off: no web app to revalidate, so the role reads only the two data secrets.
   revalidateSecretArn?: pulumi.Input<string>;
-  jobsQueueArn: pulumi.Input<string>;
+  bookingEventsTopicArn: pulumi.Input<string>;
 }
 
 export interface IamOutputs {
@@ -122,8 +122,8 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
   // ---------- Task role ----------
   // TRUST POLICY (who can use it):  ecs-tasks.amazonaws.com, only for our account (step 2).
   // PERMISSION POLICY (what it can do): the 4 ssmmessages actions that ECS Exec needs (step 7), and
-  //   since S1c sqs:SendMessage on the ONE jobs queue (step 7b). Nothing else: the app gets its
-  //   secrets as env vars, and SendMessage is the only AWS API its code calls.
+  //   since S1c sns:Publish on the ONE booking-events topic (step 7b). Nothing else: the app gets its
+  //   secrets as env vars, and Publish is the only AWS API its code calls.
   // USED BY: the api task definition (task.ts), field taskRoleArn. Our running container
   //   (its code AND the ECS Exec agent inside it) wears it.
 
@@ -131,7 +131,7 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
   // DEPENDS ON: accountId (inside the trust policy).
   const taskRole = new aws.iam.Role(`${prefix}-api-task-role`, {
     name: `${prefix}-api-task-role`,
-    description: "The running api container: ECS Exec (debug shell) + send booking jobs to the jobs queue",
+    description: "The running api container: ECS Exec (debug shell) + send booking jobs to the booking-events topic",
     assumeRolePolicy: ecsTasksTrustPolicy,
     tags: tagsFor(`${prefix}-api-task-role`),
   });
@@ -166,18 +166,15 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
   });
 
   // @concept: least-privilege
-  // 7b. Send jobs (S1c): after a booking, the api puts a "booking confirmed" message on the jobs
-  //     queue (apps/api/src/queues/jobs.ts). The AWS SDK finds this role's credentials inside the
-  //     task by itself. ONLY SendMessage, ONLY that queue: the api can't read, delete or purge
-  //     messages, and can't touch the dead-letter queue. No KMS permission: the queue is encrypted
-  //     with an SQS-managed key (jobs/queues.ts), which needs none.
-  // DEPENDS ON: taskRole, the queue ARN (jobs/queues).
+  // 7b. P4 WHO: the running API task (trust above). WHAT: Publish on ONE booking-events
+  //     SNS topic. ATTACHED: api-task-role. The API cannot consume either SQS queue or
+  //     read the signing secret. SNS -> SQS delivery uses each queue's resource policy.
   const taskSendJobs = new aws.iam.RolePolicy(`${prefix}-api-task-send-jobs`, {
     name: "send-jobs",
     role: taskRole.id,
     policy: pulumi.jsonStringify({
       Version: "2012-10-17",
-      Statement: [{ Effect: "Allow", Action: "sqs:SendMessage", Resource: inputs.jobsQueueArn }],
+      Statement: [{ Effect: "Allow", Action: "sns:Publish", Resource: inputs.bookingEventsTopicArn }],
     }),
   });
 

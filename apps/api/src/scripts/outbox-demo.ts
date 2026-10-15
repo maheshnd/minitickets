@@ -1,6 +1,7 @@
 // P3: pnpm demo:outbox [--e2e]. Uses a disposable LOCAL database + queue and two API processes.
 // Queue downtime is simulated at our own proxy; the owner's containers and servers stay running.
-import { CreateQueueCommand, DeleteQueueCommand, ReceiveMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import { CreateQueueCommand, DeleteQueueCommand, GetQueueAttributesCommand, ReceiveMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import { CreateTopicCommand, DeleteTopicCommand, SNSClient, SubscribeCommand } from "@aws-sdk/client-sns";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -14,7 +15,7 @@ import { z } from "zod";
 
 // 1. Refuse remote services: this demo creates/deletes ONLY its own local database and queue.
 const localUrl = z.url().refine((value) => ["localhost", "127.0.0.1", "::1"].includes(new URL(value).hostname), "local services only");
-const settings = z.object({ DATABASE_URL: localUrl, REDIS_URL: localUrl, SQS_ENDPOINT: localUrl.default("http://127.0.0.1:9324") }).parse(process.env);
+const settings = z.object({ DATABASE_URL: localUrl, REDIS_URL: localUrl, SNS_ENDPOINT: localUrl.default("http://localhost:5001") }).parse(process.env);
 const { values } = parseArgs({ options: { e2e: { type: "boolean", default: false } } });
 const databaseName = `minitickets_p3_${Date.now()}`;
 const databaseUrl = new URL(settings.DATABASE_URL);
@@ -23,7 +24,9 @@ const redisUrl = new URL(settings.REDIS_URL);
 redisUrl.pathname = "/15";
 const admin = new Pool({ connectionString: settings.DATABASE_URL, max: 1 });
 const db = new Pool({ connectionString: databaseUrl.toString(), max: 2 });
-const sqs = new SQSClient({ endpoint: settings.SQS_ENDPOINT, region: "us-east-1", credentials: { accessKeyId: "local", secretAccessKey: "local" }, maxAttempts: 1 });
+const sqs = new SQSClient({ endpoint: settings.SNS_ENDPOINT, region: "us-east-1", credentials: { accessKeyId: "local", secretAccessKey: "local" }, maxAttempts: 1 });
+const sns = new SNSClient({ endpoint: settings.SNS_ENDPOINT, region: "us-east-1", credentials: { accessKeyId: "local", secretAccessKey: "local" }, maxAttempts: 1 });
+let topicArn: string | undefined;
 const children: ChildProcess[] = [];
 const publishCounts = [0, 0];
 let queueUrl: string | undefined;
@@ -32,7 +35,7 @@ let queueUp = false;
 let hangFirstSend = true;
 let accepted = 0;
 
-// 2. Our proxy returns 503 while "down" and forwards to ElasticMQ while "up". The actual SDK,
+// 2. Our proxy returns 503 while "down" and forwards to Moto while "up". The actual SDK,
 //    message serialization and emulator are used in both cases. A small delay exposes overlap.
 const proxy = createServer(async (req, res) => {
   if (!queueUp) {
@@ -43,8 +46,8 @@ const proxy = createServer(async (req, res) => {
     res.writeHead(503); res.end("queue unavailable"); return;
   }
   await sleep(100);
-  const upstream = forward(new URL(req.url ?? "/", settings.SQS_ENDPOINT), { method: req.method, headers: req.headers }, (response) => {
-    if (response.statusCode === 200 && String(req.headers["x-amz-target"]).endsWith(".SendMessage")) accepted++;
+  const upstream = forward(new URL(req.url ?? "/", settings.SNS_ENDPOINT), { method: req.method, headers: req.headers }, (response) => {
+    if (response.statusCode === 200) accepted++;
     res.writeHead(response.statusCode ?? 502, response.headers);
     response.pipe(res);
   });
@@ -79,7 +82,7 @@ function start(args: string[], env: NodeJS.ProcessEnv, cwd = process.cwd(), inst
     lines += chunk.toString();
     const split = lines.split("\n"); lines = split.pop()!;
     if (instance !== undefined) for (const line of split) {
-      if (line.includes('"msg":"outbox message accepted by queue"')) publishCounts[instance]++;
+      if (line.includes('"msg":"outbox message accepted by SNS"')) publishCounts[instance]++;
     }
   });
   child.stderr!.on("data", (chunk: Buffer) => { diagnostics = (diagnostics + chunk.toString()).slice(-4000); });
@@ -111,11 +114,13 @@ try {
   queueUrl = (await sqs.send(new CreateQueueCommand({ QueueName: databaseName }))).QueueUrl;
   check(queueUrl, "local queue created");
   await new Promise<void>((resolve) => proxy.listen(19326, "127.0.0.1", resolve));
-  const proxiedQueue = new URL(queueUrl); proxiedQueue.host = "127.0.0.1:19326";
+  topicArn = (await sns.send(new CreateTopicCommand({ Name: databaseName }))).TopicArn;
+  const queueArn = (await sqs.send(new GetQueueAttributesCommand({ QueueUrl: queueUrl, AttributeNames: ["QueueArn"] }))).Attributes!.QueueArn;
+  await sns.send(new SubscribeCommand({ TopicArn: topicArn, Protocol: "sqs", Endpoint: queueArn, Attributes: { RawMessageDelivery: "true" } }));
   const apiEnv = {
     ...process.env, DATABASE_URL: databaseUrl.toString(), REDIS_URL: redisUrl.toString(), NODE_ENV: "development",
-    HOST: "127.0.0.1", WEB_ORIGIN: "http://127.0.0.1:3101", JOBS_QUEUE_URL: proxiedQueue.toString(),
-    SQS_ENDPOINT: "http://127.0.0.1:19326", AWS_REGION: "us-east-1", AWS_ACCESS_KEY_ID: "local", AWS_SECRET_ACCESS_KEY: "local",
+    HOST: "127.0.0.1", WEB_ORIGIN: "http://127.0.0.1:3101", BOOKING_EVENTS_TOPIC_ARN: topicArn!,
+    SNS_ENDPOINT: "http://127.0.0.1:19326", AWS_REGION: "us-east-1", AWS_ACCESS_KEY_ID: "local", AWS_SECRET_ACCESS_KEY: "local",
     WEB_INTERNAL_URL: "http://127.0.0.1:3101", REVALIDATE_SECRET: "outbox-demo-local-revalidate-secret", LOG_LEVEL: "info",
   };
   for (const [instance, port] of [4101, 4102].entries()) {
@@ -166,7 +171,7 @@ try {
   const messages: { messageId: string }[] = [];
   while (messages.length < accepted) {
     const response = await sqs.send(new ReceiveMessageCommand({ QueueUrl: queueUrl, MaxNumberOfMessages: 10, WaitTimeSeconds: 1 }));
-    check(response.Messages?.length, "messages really reached ElasticMQ");
+    check(response.Messages?.length, "messages really reached Moto");
     messages.push(...response.Messages.map((message) => JSON.parse(message.Body!) as { messageId: string }));
   }
   check(messages.length === 24 && new Set(messages.map((message) => message.messageId)).size === 24, "exactly one delivery per message in the healthy relay race");
@@ -203,6 +208,8 @@ try {
   await new Promise<void>((resolve) => proxy.close(() => resolve()));
   await db.end();
   if (queueUrl) await sqs.send(new DeleteQueueCommand({ QueueUrl: queueUrl }));
+  if (topicArn) await sns.send(new DeleteTopicCommand({ TopicArn: topicArn }));
+  sns.destroy();
   sqs.destroy();
   if (databaseCreated) await admin.query(`DROP DATABASE "${databaseName}"`);
   await admin.end();

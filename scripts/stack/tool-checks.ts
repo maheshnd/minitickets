@@ -56,7 +56,7 @@ export function checkDocker(): CheckResult {
 //    healthy when it has a healthcheck (queue has none: its image has no shell tools).
 //    DynamoDB Local keeps everything in memory, so a container that was (re)started has NO table:
 //    `pnpm jobs:table` (also run by `pnpm dev`) creates it again.
-export const SERVICES = ["postgres", "redis", "queue", "dynamodb"] as const;
+export const SERVICES = ["postgres", "redis", "queue", "dynamodb", "aws-local"] as const;
 
 type ComposeContainer = { Service: string; State: string; Health: string };
 

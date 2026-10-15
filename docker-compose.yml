@@ -70,6 +70,22 @@ services:
     # 3. No healthcheck: the image has no shell tools to run one. "Running" is enough for
     #    `up --wait`, because the server is ready within a moment of starting.
 
+  # P4: Moto handles SNS -> SQS fan-out in one backend, plus S3 and Secrets Manager.
+  # ElasticMQ above remains for the isolated P3 outage demo; it cannot subscribe to SNS.
+  # Only loopback is published. All Moto data is disposable and recreated by tickets:setup.
+  aws-local:
+    image: motoserver/moto:5.2.2
+    ports:
+      - "127.0.0.1:5001:5000"
+    environment:
+      MOTO_PORT: "5000"
+      MOTO_ACCOUNT_ID: "000000000000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/moto-api/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # A local DynamoDB that speaks the real DynamoDB API (same idea as the queue above: only the
   # endpoint differs, DYNAMODB_ENDPOINT in apps/worker/.env.example). The worker keeps its
   # "processed jobs" table here, to skip duplicate messages. Started by `pnpm db:up`.

@@ -46,7 +46,8 @@ flowchart LR
   three apps, 4 CloudWatch alarms emailing through SNS, a dashboard, saved Logs Insights queries;
   waits for its first CD deploy (bootstrap + email confirmation in `docs/20-deploy-day.md` 3.12).
   **P3 (outbox) is built:** atomic booking + confirmation, API relay with locked batches and retries.
-  **Next: P4**, tickets with QR codes + file uploads.
+  **P4 Part A is built:** SNS fan-out + idempotent HMAC QR ticket Lambda, private S3/DynamoDB, local emulators and CD; AWS acceptance pending.
+  **Next: P4 Part B**, tickets.mine/presigned reads, My tickets QR/download/pending UI and admin poster uploads.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

@@ -6,9 +6,9 @@ import { exampleLines, type EnvFile, type EnvFileKey, type EnvValues } from "./e
 // don't change when an example gains a line).
 const EXAMPLES: Record<EnvFileKey, string> = {
   root: "# comment\nPOSTGRES_USER=minitickets\nPOSTGRES_PASSWORD=minitickets\nPOSTGRES_DB=minitickets\nREDIS_PORT=6379\nREVALIDATE_SECRET=CHANGE-ME\n",
-  api: "PORT=4000\nWEB_ORIGIN=http://localhost:3000\nDATABASE_URL=postgres://minitickets:minitickets@localhost:5432/minitickets\nREDIS_URL=redis://localhost:6379\nWEB_INTERNAL_URL=http://localhost:3000\nREVALIDATE_SECRET=CHANGE-ME\n# LOG_LEVEL=info\nJOBS_QUEUE_URL=http://localhost:9324/000000000000/minitickets-jobs\n",
+  api: "PORT=4000\nWEB_ORIGIN=http://localhost:3000\nDATABASE_URL=postgres://minitickets:minitickets@localhost:5432/minitickets\nREDIS_URL=redis://localhost:6379\nWEB_INTERNAL_URL=http://localhost:3000\nREVALIDATE_SECRET=CHANGE-ME\n# LOG_LEVEL=info\nBOOKING_EVENTS_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:minitickets-booking-events\n",
   web: "NEXT_PUBLIC_API_URL=http://localhost:4000\nAPI_INTERNAL_URL=http://localhost:4000\nREVALIDATE_SECRET=CHANGE-ME\n",
-  worker: "JOBS_QUEUE_URL=http://localhost:9324/000000000000/minitickets-jobs\n",
+  worker: "BOOKING_EVENTS_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:minitickets-booking-events\n",
 };
 const SECRET_A = "a".repeat(64);
 const SECRET_B = "b".repeat(64);
@@ -44,7 +44,7 @@ function envs(values: Record<EnvFileKey, EnvValues | undefined>): Record<EnvFile
 describe("exampleLines", () => {
   it("keeps KEY=value lines in order and skips comments", () => {
     expect([...exampleLines(EXAMPLES.api).keys()]).toEqual([
-      "PORT", "WEB_ORIGIN", "DATABASE_URL", "REDIS_URL", "WEB_INTERNAL_URL", "REVALIDATE_SECRET", "JOBS_QUEUE_URL",
+      "PORT", "WEB_ORIGIN", "DATABASE_URL", "REDIS_URL", "WEB_INTERNAL_URL", "REVALIDATE_SECRET", "BOOKING_EVENTS_TOPIC_ARN",
     ]);
   });
 });
@@ -59,15 +59,15 @@ describe("checkEnvFile", () => {
   it("missing settings: fail, with the exact lines from the example (the secret is left to its own check)", () => {
     const values = healthyValues();
     delete values.api.WEB_INTERNAL_URL;
-    delete values.api.JOBS_QUEUE_URL;
+    delete values.api.BOOKING_EVENTS_TOPIC_ARN;
     delete values.api.REVALIDATE_SECRET;
     const result = checkEnvFile(envs(values).api);
     expect(result.status).toBe("fail");
-    expect(result.title).toContain("2 settings missing: WEB_INTERNAL_URL, JOBS_QUEUE_URL");
+    expect(result.title).toContain("2 settings missing: WEB_INTERNAL_URL, BOOKING_EVENTS_TOPIC_ARN");
     expect(result.fix).toEqual([
       "add these lines to apps/api/.env (from apps/api/.env.example):",
       "  WEB_INTERNAL_URL=http://localhost:3000",
-      "  JOBS_QUEUE_URL=http://localhost:9324/000000000000/minitickets-jobs",
+      "  BOOKING_EVENTS_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:minitickets-booking-events",
     ]);
   });
 
@@ -150,10 +150,10 @@ describe("checkAgreement", () => {
     expect(checkAgreement(envs(values))[0].title).toContain("uses port 6380, but .env publishes Redis on 6379");
   });
 
-  it("the api publishes to another queue than the worker reads: fail", () => {
+  it("the api publishes to a different SNS topic than local setup: fail", () => {
     const values = healthyValues();
-    values.worker.JOBS_QUEUE_URL = "http://localhost:9324/000000000000/other";
-    expect(checkAgreement(envs(values))[0].title).toContain("JOBS_QUEUE_URL differs");
+    values.worker.BOOKING_EVENTS_TOPIC_ARN = "arn:aws:sns:us-east-1:000000000000:other";
+    expect(checkAgreement(envs(values))[0].title).toContain("BOOKING_EVENTS_TOPIC_ARN differs");
   });
 
   it("the web app calls the api on another port: fail", () => {

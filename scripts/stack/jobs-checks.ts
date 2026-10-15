@@ -55,6 +55,7 @@ export async function checkQueues(worker: EnvValues, api: EnvValues): Promise<Ch
     return [{ status: "warn", title: "queue: skipped (needs JOBS_QUEUE_URL and a local SQS_ENDPOINT in apps/worker/.env)" }];
   }
   const where = new URL(endpoint);
+  const setupQueue = where.port === "5001" ? "pnpm tickets:setup" : RESTART_QUEUE;
   if (!(await isPortOpen(where.hostname, Number(where.port)))) {
     return [{ status: "fail", title: `queue: nothing listens on ${where.host}`, fix: ["pnpm db:up"] }];
   }
@@ -73,7 +74,7 @@ export async function checkQueues(worker: EnvValues, api: EnvValues): Promise<Ch
     //     tries (its "redrive policy"). A queue without one comes from a container that was started
     //     before docker/elasticmq.conf had the DLQ (S1b): ElasticMQ reads that file only at startup.
     const main = await attributesOf(queueUrl);
-    if (!main) return [{ status: "fail", title: `queue ${nameOf(queueUrl)} does not exist`, fix: [RESTART_QUEUE] }];
+    if (!main) return [{ status: "fail", title: `queue ${nameOf(queueUrl)} does not exist`, fix: [setupQueue] }];
     const redrive = main.RedrivePolicy ? (JSON.parse(main.RedrivePolicy) as { deadLetterTargetArn: string; maxReceiveCount: number }) : undefined;
     const counts = `${main.ApproximateNumberOfMessages ?? "?"} waiting, ${main.ApproximateNumberOfMessagesNotVisible ?? "?"} being handled`;
     if (!redrive) {
@@ -81,7 +82,7 @@ export async function checkQueues(worker: EnvValues, api: EnvValues): Promise<Ch
         status: "fail",
         title: `queue ${nameOf(queueUrl)} has no dead-letter queue (${counts})`,
         detail: ["the container started before docker/elasticmq.conf had one; a poison message would come back forever"],
-        fix: [RESTART_QUEUE],
+        fix: [setupQueue],
       }];
     }
     results.push({
@@ -94,7 +95,7 @@ export async function checkQueues(worker: EnvValues, api: EnvValues): Promise<Ch
     if (!dlqUrl) return results;
     const dlq = await attributesOf(dlqUrl);
     if (!dlq) {
-      results.push({ status: "fail", title: `dead-letter queue ${nameOf(dlqUrl)} does not exist`, fix: [RESTART_QUEUE] });
+      results.push({ status: "fail", title: `dead-letter queue ${nameOf(dlqUrl)} does not exist`, fix: [setupQueue] });
     } else if (nameOf(dlqUrl) !== nameOf(redrive.deadLetterTargetArn)) {
       results.push({
         status: "fail",

@@ -479,6 +479,15 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
         //      Global services (IAM, CloudFront, Budgets) send their requests to us-east-1, so they
         //      still pass. If the stack ever moves region, change this together with aws:region.
         {
+          // P4 WHO: approved deploy job (trust above). WHAT: manage only our asset bucket.
+          // ATTACHED: gh-deploy; Lambda separately gets PutObject on tickets/ only.
+          Sid: "TicketAssets",
+          Effect: "Allow",
+          Action: "s3:*",
+          Resource: [pulumi.interpolate`arn:aws:s3:::${prefix}-ticket-assets-${accountId}`,
+            pulumi.interpolate`arn:aws:s3:::${prefix}-ticket-assets-${accountId}/*`],
+        },
+        {
           Sid: "DenyOtherRegions",
           Effect: "Deny",
           Action: "*",
