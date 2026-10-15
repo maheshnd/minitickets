@@ -35,10 +35,10 @@ flowchart LR
 
 ## Where things stand now
 
-- **F2a is done** (committed). **F2b (idempotency key for booking) is built locally, not committed
-  yet:** `bookings.idempotency_key` + UNIQUE per user, booking retries on, `pnpm demo:idempotency`.
-- **S1a (booking confirmation through a queue) is built locally, not committed yet:** ElasticMQ in
-  `docker-compose.yml`, `queues/jobs.ts`, the new `apps/worker` package, `BookingConfirmedMessage`.
+- **F2a, F2b and S1a are done** (committed).
+- **S1b (failure handling for the jobs) is built locally, not committed yet:** a dead-letter queue
+  (`jobs:dlq`, `jobs:redrive`), retry backoff, an idempotent consumer in DynamoDB Local
+  (`jobs:table`), partial batch failures, `MAILER_FAIL_MODE` for demos.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
@@ -69,13 +69,13 @@ The ticketing + serverless series. Each item links to its prompt once there is o
 
 1. **F2a: book a ticket + "My tickets"** (done, [prompt](prompts/f2a.md)). A database
    transaction with a row lock (`SELECT … FOR UPDATE`), so two people can't buy the same last seat.
-2. **F2b: idempotency key for booking** (built locally, awaiting review, [prompt](prompts/f2b.md)).
+2. **F2b: idempotency key for booking** (done, [prompt](prompts/f2b.md)).
    A retried "Book ticket" request doesn't book twice.
-3. **S1: booking confirmation email.** In parts. **S1a** (built locally, awaiting review,
-   [prompt](prompts/s1a.md)): the API puts a message on a local queue (ElasticMQ), a worker reads it
-   and logs the email. S1b and S1c (SQS, Lambda, SES on AWS) follow. The full plan: SQS + Lambda + SES, a dead-letter queue (DLQ: where messages
-   go after too many failures), and idempotency in DynamoDB (handling the same message twice does
-   no harm).
+3. **S1: booking confirmation email.** In parts. **S1a** (done, [prompt](prompts/s1a.md)): the API
+   puts a message on a local queue (ElasticMQ), a worker reads it and logs the email. **S1b** (built
+   locally, awaiting review, [prompt](prompts/s1b.md)): a dead-letter queue (DLQ: where messages go
+   after too many failures), retries with backoff, and idempotency in DynamoDB Local (handling the
+   same message twice does no harm). **S1c** follows: the same on AWS (SQS, Lambda, SES, DynamoDB).
 4. **S2: a ticket with a QR code**, through SNS fan-out (one message, several subscribers): a
    Lambda draws the ticket, stores it in S3, and the user downloads it through a presigned URL.
 5. **S3: a reminder email the day before**, with EventBridge Scheduler.

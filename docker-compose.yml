@@ -70,6 +70,29 @@ services:
     # 3. No healthcheck: the image has no shell tools to run one. "Running" is enough for
     #    `up --wait`, because the server is ready within a moment of starting.
 
+  # A local DynamoDB that speaks the real DynamoDB API (same idea as the queue above: only the
+  # endpoint differs, DYNAMODB_ENDPOINT in apps/worker/.env.example). The worker keeps its
+  # "processed jobs" table here, to skip duplicate messages. Started by `pnpm db:up`.
+  dynamodb:
+    # 1. Pinned version.
+    image: amazon/dynamodb-local:3.3.1
+    restart: unless-stopped
+    # 2. -inMemory: the data lives only as long as the container (no volume: the image has no data
+    #    folder its user may write to). So after `pnpm db:up` creates or restarts it, run
+    #    `pnpm jobs:table` to create the table again. Losing the data locally costs at most a
+    #    duplicate demo email. -sharedDb: one database for every access key and region (otherwise
+    #    DynamoDB Local keeps a separate database per access key + region).
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports:
+      - "8000:8000"
+    # 3. Healthcheck: any HTTP answer means the server is up (a plain GET gets a 400, that is fine:
+    #    without -f, curl succeeds on any answer).
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # ---- The app, in containers. Only started with `--profile app` (`pnpm app:up`). ----
 
   # @concept: migrations

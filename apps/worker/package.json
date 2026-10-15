@@ -6,9 +6,14 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env src/local.ts",
     "start": "tsx --env-file=.env src/local.ts",
+    "jobs:table": "tsx --env-file=.env src/scripts/create-table.ts",
+    "jobs:dlq": "tsx --env-file=.env src/scripts/dlq-list.ts",
+    "jobs:redrive": "tsx --env-file=.env src/scripts/dlq-redrive.ts",
+    "jobs:send": "tsx --env-file=.env src/scripts/send-demo.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
     "@aws-sdk/client-sqs": "^3.1152.0",
     "@minitickets/shared": "workspace:*",
     "zod": "^4.6.5"

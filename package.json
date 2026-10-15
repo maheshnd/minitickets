@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "worker:dev": "pnpm --filter @minitickets/worker dev",
+    "jobs:table": "pnpm --filter @minitickets/worker jobs:table",
+    "jobs:dlq": "pnpm --filter @minitickets/worker jobs:dlq",
+    "jobs:redrive": "pnpm --filter @minitickets/worker jobs:redrive",
+    "jobs:send": "pnpm --filter @minitickets/worker jobs:send",
     "typecheck": "pnpm -r typecheck && tsc -p scripts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
