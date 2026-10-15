@@ -2,8 +2,10 @@ import { z } from "zod";
 
 // The worker's settings, validated once at startup (same idea as apps/api/src/config/env.ts).
 const EnvSchema = z.object({
-  // 1. The queues. Optional HERE because on AWS, Lambda reads the queue for us and never needs its
-  //    URL. The local runner (local.ts) and the scripts check that the one they need is set.
+  // 1. The queues. Lambda READS the queue for us, but the handler still needs its URL to delay a
+  //    failed message's retry (backoff, src/retry-later.ts), so the Lambda gets it too
+  //    (infra/src/jobs/worker-lambda.ts). Optional HERE so the scripts that only need the DLQ still
+  //    start; the local runner (local.ts) and the scripts check that the one they need is set.
   JOBS_QUEUE_URL: z.url({ protocol: /^https?$/ }).optional(),
   // The dead-letter queue (docker/elasticmq.conf). Only the jobs:dlq / jobs:redrive scripts use it.
   JOBS_DLQ_URL: z.url({ protocol: /^https?$/ }).optional(),
@@ -24,7 +26,21 @@ const EnvSchema = z.object({
     .string()
     .regex(/^(off|always|first-n:[1-9][0-9]*)$/, 'use "off", "always" or "first-n:<n>"')
     .default("off"),
-});
+
+  // 4. Which mailer sends the emails (src/lambda.ts picks it):
+  //    "log" (default, local): writes a log line instead of sending (src/mailer.ts).
+  //    "ses" (AWS):            really sends, through Amazon SES (src/ses-mailer.ts). Set by
+  //                            infra/src/jobs/worker-lambda.ts, together with MAIL_FROM.
+  MAILER: z.enum(["log", "ses"]).default("log"),
+  // The sender address. SES only sends FROM an address of a VERIFIED identity (our domain,
+  // infra/src/jobs/email.ts), so it must be an address at that domain. Needed only for "ses".
+  MAIL_FROM: z.email().optional(),
+})
+  // 5. "ses" without a sender is half a configuration: stop at startup, not at the first email.
+  .refine((e) => e.MAILER !== "ses" || e.MAIL_FROM !== undefined, {
+    message: "MAILER=ses needs MAIL_FROM (an address at the verified SES domain)",
+    path: ["MAIL_FROM"],
+  });
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
@@ -33,7 +49,7 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-// 4. A mailer that fails on purpose has no business in production: refuse to start. This check
+// 6. A mailer that fails on purpose has no business in production: refuse to start. This check
 //    is the reason the switch is safe to have in the code at all.
 if (parsed.data.NODE_ENV === "production" && parsed.data.MAILER_FAIL_MODE !== "off") {
   console.error(`MAILER_FAIL_MODE=${parsed.data.MAILER_FAIL_MODE} is for local demos only; refusing to start with NODE_ENV=production.`);

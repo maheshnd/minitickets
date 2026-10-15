@@ -30,6 +30,7 @@ flowchart TB
 - Anchor: `infra/src/compute/web-iam.ts` · `createWebIamRole`: web's role cannot read any secret; no task role.
 - Anchor: `infra/src/security.ts` · `createSecurityGroups`: group-to-group rules, no egress for the data stores.
 - Anchor: `.github/workflows/ci.yml` · `permissions: contents: read`: the CI token can only read.
+- Anchor: `infra/src/jobs/worker-iam.ts` · `createWorkerRole`: the worker Lambda may read ONE queue, GetItem/PutItem on ONE table, send email only from `no-reply@` with our identities, write ONE log group (S1c).
 
 Step by step:
 

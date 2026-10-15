@@ -1,10 +1,10 @@
-// `pnpm run doctor`: checks everything the app needs on this laptop and prints exactly what to fix.
+// `pnpm stack:check`: checks everything the app needs on this laptop and prints exactly what to fix.
 // It only LOOKS: it never starts, changes or deletes anything (`pnpm dev` and `pnpm stack:reset`
 // are the ones that act). Safe to run any time, also while `pnpm dev` is running.
 //
-// Always with "run": plain `pnpm doctor` is pnpm's OWN built-in command (it checks pnpm's config),
-// and a built-in wins over a script with the same name. It prints nothing when pnpm is fine, which
-// looks just like "all good", so the "run" matters.
+// Why not "doctor": `pnpm doctor` is pnpm's OWN built-in command (it checks pnpm's config), and a
+// built-in wins over a script with the same name. It prints nothing when pnpm is fine, which looks
+// just like "all good". "stack:check" can't be shadowed that way, and sits next to stack:up/reset.
 //
 // What it checks, in order (each group in scripts/stack/):
 //   1. Tools: Node version, installed packages, Docker running        (tool-checks.ts)
@@ -21,7 +21,7 @@ import { readEnvFiles } from "./stack/env-files.ts";
 import { count, printSection, printSummary } from "./stack/results.ts";
 import { checkDocker } from "./stack/tool-checks.ts";
 
-console.log("MiniTickets doctor (only looks, changes nothing)");
+console.log("MiniTickets stack check (only looks, changes nothing)");
 
 const envs = readEnvFiles();
 const sections = setupSections(envs);
@@ -34,5 +34,5 @@ if (checkDocker().status === "ok") {
   sections.push(...more);
 }
 
-printSummary(sections, "check again with: pnpm run doctor");
+printSummary(sections, "check again with: pnpm stack:check");
 process.exitCode = count(sections, "fail") > 0 ? 1 : 0;

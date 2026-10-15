@@ -10,6 +10,7 @@
 //                                         entry off (entry/mode.ts)
 //                   serviceConnect     <- OPTIONAL, only when entry is on: WEB_INTERNAL_URL and the
 //                                         revalidate-secret ARN (Step 11h, compute/service-connect.ts)
+//                   jobsQueueUrl       <- from jobs/queues (JOBS_QUEUE_URL, S1c)
 // CREATES:          ECS task definition minitickets-dev-api (one new revision per change)
 // GIVES (outputs):  taskDefinitionArn -> used by service (and cd.yml checks the service runs it)
 //
@@ -39,6 +40,7 @@ export interface TaskInputs {
   redisUrlSecretArn: pulumi.Input<string>;
   webOrigin: pulumi.Input<string>;
   trustProxyHops: number;
+  jobsQueueUrl: pulumi.Input<string>;
   // undefined = no Service Connect (entry off): exactly the Step 11e/11g task. One object, not two
   // optional fields, because the api's env check wants BOTH values or neither (config/env.ts).
   serviceConnect?: {
@@ -134,6 +136,10 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           ...(inputs.serviceConnect
             ? [{ name: "WEB_INTERNAL_URL", value: inputs.serviceConnect.webInternalUrl }]
             : []),
+          // The jobs queue (S1c): after each booking the api sends a "booking confirmed" message
+          // here (apps/api/src/queues/jobs.ts). Its credentials come from the task role (iam.ts 7b).
+          // No SQS_ENDPOINT: unset = the SDK talks to real SQS (it is only set locally, for ElasticMQ).
+          { name: "JOBS_QUEUE_URL", value: inputs.jobsQueueUrl },
         ],
 
         // @concept: secrets-management

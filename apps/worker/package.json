@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env src/local.ts",
     "start": "tsx --env-file=.env src/local.ts",
+    "build": "node build.mjs",
     "jobs:table": "tsx --env-file=.env src/scripts/create-table.ts",
     "jobs:dlq": "tsx --env-file=.env src/scripts/dlq-list.ts",
     "jobs:redrive": "tsx --env-file=.env src/scripts/dlq-redrive.ts",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/client-sesv2": "^3.1152.0",
     "@aws-sdk/client-sqs": "^3.1152.0",
     "@minitickets/shared": "workspace:*",
     "zod": "^4.6.5"
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.150",
     "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }

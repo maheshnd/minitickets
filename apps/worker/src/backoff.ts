@@ -5,8 +5,9 @@
 // once can keep a struggling service down. Waiting longer after each failure gives it time to
 // recover: 10 s after the 1st failure, 40 s after the 2nd, 120 s after the 3rd (x4 each time, capped).
 //
-// The local runner (local.ts) applies this with ChangeMessageVisibility: the failed message stays
-// hidden for this many seconds, then the queue offers it again. (SQS allows up to 12 hours.)
+// The handler applies this with ChangeMessageVisibility (retry-later.ts), on Lambda and locally:
+// the failed message stays hidden for this many seconds, then the queue offers it again. (SQS
+// allows up to 12 hours.)
 // Not built: JITTER (a random part added to each wait). When many messages fail at the same
 // moment, jitter spreads their retries out so they do not all come back at the same second.
 

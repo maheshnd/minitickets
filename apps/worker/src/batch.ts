@@ -9,7 +9,7 @@ import { handleBookingConfirmed, type Deps } from "./handlers/booking-confirmed"
 // Instead we return { batchItemFailures: [{ itemIdentifier: <messageId> }, ...] } listing only the
 // failed ones: the queue deletes the rest and retries only those. This is Lambda's
 // "ReportBatchItemFailures" format. On AWS it works ONLY if the event source mapping has
-// FunctionResponseTypes = ["ReportBatchItemFailures"] (step S1c). Without that setting, Lambda
+// FunctionResponseTypes = ["ReportBatchItemFailures"] (infra/src/jobs/queue-trigger.ts). Without that setting, Lambda
 // ignores this answer and treats a normal return as "all done", deleting the failed ones too.
 // The local runner (local.ts) honours the same answer.
 export async function handleBatch(event: SQSEvent, deps: Deps): Promise<SQSBatchResponse> {

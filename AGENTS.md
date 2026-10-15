@@ -149,8 +149,8 @@ new prompt file in `docs/handbook/prompts/`.
 ## How to verify
 
 ```bash
-pnpm run doctor   # the local stack: env files, containers, migrations, queues, table, ports
-                  # (with "run": `pnpm doctor` is pnpm's own built-in and prints nothing)
+pnpm stack:check  # the local stack: env files, containers, migrations, queues, table, ports
+                  # (not "doctor": `pnpm doctor` is pnpm's own built-in and prints nothing)
 pnpm typecheck    # tsc --noEmit in every package
 pnpm lint         # ESLint
 pnpm test         # Vitest unit tests

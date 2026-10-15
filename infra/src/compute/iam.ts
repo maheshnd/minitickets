@@ -2,8 +2,9 @@
 // NEEDS (inputs):   dbMasterSecretArn  <- from postgres (the RDS master password secret)
 //                   redisUrlSecretArn  <- from secrets
 //                   revalidateSecretArn <- from revalidate-secret (OPTIONAL: only when entry is on)
+//                   jobsQueueArn       <- from jobs/queues (the one queue the api may send to, S1c)
 // CREATES:          execution role + managed policy attachment + inline secrets policy,
-//                   task role + inline ECS Exec policy
+//                   task role + inline ECS Exec policy + inline "send-jobs" policy (S1c)
 // GIVES (outputs):  executionRoleArn -> used by task (ECS uses it to START the task)
 //                   taskRoleArn      -> used by task (our app's code runs with it)
 //
@@ -21,7 +22,7 @@ import { tagsFor } from "../tags";
 //     PERMISSION POLICY: WHAT the wearer may do.
 //   Our two roles are worn at different moments:
 //     execution role -> worn by the ECS agent BEFORE our code runs (pull image, read secrets, logs)
-//     task role      -> worn by OUR CODE while it runs (here: only ECS Exec)
+//     task role      -> worn by OUR CODE while it runs (ECS Exec, and sending jobs to SQS)
 //   Keeping them apart means our app's code never holds the power to read the secrets.
 
 const prefix = "minitickets-dev";
@@ -31,6 +32,7 @@ export interface IamInputs {
   redisUrlSecretArn: pulumi.Input<string>;
   // undefined = entry off: no web app to revalidate, so the role reads only the two data secrets.
   revalidateSecretArn?: pulumi.Input<string>;
+  jobsQueueArn: pulumi.Input<string>;
 }
 
 export interface IamOutputs {
@@ -119,8 +121,9 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
 
   // ---------- Task role ----------
   // TRUST POLICY (who can use it):  ecs-tasks.amazonaws.com, only for our account (step 2).
-  // PERMISSION POLICY (what it can do): only the 4 ssmmessages actions that ECS Exec needs.
-  //   Nothing else: our app does not call any AWS API (it gets its secrets as env vars).
+  // PERMISSION POLICY (what it can do): the 4 ssmmessages actions that ECS Exec needs (step 7), and
+  //   since S1c sqs:SendMessage on the ONE jobs queue (step 7b). Nothing else: the app gets its
+  //   secrets as env vars, and SendMessage is the only AWS API its code calls.
   // USED BY: the api task definition (task.ts), field taskRoleArn. Our running container
   //   (its code AND the ECS Exec agent inside it) wears it.
 
@@ -128,7 +131,7 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
   // DEPENDS ON: accountId (inside the trust policy).
   const taskRole = new aws.iam.Role(`${prefix}-api-task-role`, {
     name: `${prefix}-api-task-role`,
-    description: "The running api container: only ECS Exec (debug shell)",
+    description: "The running api container: ECS Exec (debug shell) + send booking jobs to the jobs queue",
     assumeRolePolicy: ecsTasksTrustPolicy,
     tags: tagsFor(`${prefix}-api-task-role`),
   });
@@ -162,6 +165,22 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     }),
   });
 
+  // @concept: least-privilege
+  // 7b. Send jobs (S1c): after a booking, the api puts a "booking confirmed" message on the jobs
+  //     queue (apps/api/src/queues/jobs.ts). The AWS SDK finds this role's credentials inside the
+  //     task by itself. ONLY SendMessage, ONLY that queue: the api can't read, delete or purge
+  //     messages, and can't touch the dead-letter queue. No KMS permission: the queue is encrypted
+  //     with an SQS-managed key (jobs/queues.ts), which needs none.
+  // DEPENDS ON: taskRole, the queue ARN (jobs/queues).
+  const taskSendJobs = new aws.iam.RolePolicy(`${prefix}-api-task-send-jobs`, {
+    name: "send-jobs",
+    role: taskRole.id,
+    policy: pulumi.jsonStringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Action: "sqs:SendMessage", Resource: inputs.jobsQueueArn }],
+    }),
+  });
+
   // 8. Return each ARN only once its policies are attached (same idea as cluster.ts step 3).
   //    WHY: the task definition needs only the ARN, so without this ECS could start the first
   //    task while the role still has no permissions, and it would fail to read the secrets.
@@ -170,6 +189,6 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     executionRoleArn: pulumi
       .all([executionRole.arn, executionManaged.id, executionSecrets.id])
       .apply(([arn]) => arn),
-    taskRoleArn: pulumi.all([taskRole.arn, taskExec.id]).apply(([arn]) => arn),
+    taskRoleArn: pulumi.all([taskRole.arn, taskExec.id, taskSendJobs.id]).apply(([arn]) => arn),
   };
 }

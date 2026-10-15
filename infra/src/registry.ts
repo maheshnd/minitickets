@@ -1,10 +1,14 @@
 // LAYER: registry
 // NEEDS (inputs):   nothing
-// CREATES:          2 ECR repositories (api, web), each with a lifecycle policy
+// CREATES:          3 ECR repositories (api, web, worker), each with a lifecycle policy,
+//                   + a repository policy on worker: the Lambda service may pull from it (S1c)
 // GIVES (outputs):  apiRepoUrl -> used by task (image), and the push script
-//                   webRepoUrl -> used by the push script (and, later, the web task)
-//                   apiRepoArn, webRepoArn -> used by cicd (the only repos CD may push to / tag)
+//                   webRepoUrl -> used by web-task (image) and the push script
+//                   workerRepoUrl -> used by jobs/worker-lambda (image) and the push script
+//                   apiRepoArn, webRepoArn, workerRepoArn -> used by cicd (the only repos CD may
+//                     push to / tag)
 //
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
 
@@ -13,7 +17,7 @@ import { tagsFor } from "./tags";
 
 const prefix = "minitickets-dev";
 
-// 1. Lifecycle policy (the same for both repositories), as JSON text.
+// 1. Lifecycle policy (the same for all three repositories), as JSON text.
 //    WHY: images pile up with every push and storage is billed per GB. Three rules keep it small,
 //    WITHOUT deleting an image we may want to roll back to (Step 12b):
 //    - rule 1: images CD has deployed (they carry an extra tag "deployed-<sha>", cd.yml phase B):
@@ -56,14 +60,14 @@ const lifecyclePolicy = JSON.stringify({
 });
 
 // @concept: ecr
-// 2. Helper that builds one repository plus its lifecycle policy, so api and web are not copy-pasted.
-function createRepo(service: "api" | "web") {
+// 2. Helper that builds one repository plus its lifecycle policy, so the repos are not copy-pasted.
+function createRepo(service: "api" | "web" | "worker") {
   const name = `${prefix}-${service}`;
 
   // @concept: immutable-image-tags
   // @concept: image-scanning
   // WHAT: a private repository that holds the images of one service.
-  // WHY: ECS (a later step) pulls images from here; it cannot pull from our laptop.
+  // WHY: ECS (api, web) and Lambda (worker) pull images from here; they cannot pull from a laptop.
   // DEPENDS ON: nothing.
   // imageTagMutability IMMUTABLE: a tag can never point to different code later, so a tag
   //   (a git SHA) always means exactly one build and deploys are traceable.
@@ -98,16 +102,57 @@ function createRepo(service: "api" | "web") {
   return repo;
 }
 
+// @concept: aws-lambda
+// 3. Repository policy for the worker: let the LAMBDA SERVICE pull its image (S1c).
+//    WHY: ECS pulls with the task's EXECUTION ROLE (an IAM permission on our side). Lambda is
+//      different: the Lambda service itself pulls the image when the function is created or
+//      updated, so the REPOSITORY must allow it (a "resource policy": a rule stuck on the repo,
+//      saying who may use it). Without it, AWS tries to add this rule by itself on the first
+//      deploy, which needs extra rights (ecr:SetRepositoryPolicy) on whoever creates the function.
+//      Written down here, it is visible and reviewed like any other code.
+//    WHAT it allows: only the two read actions an image pull needs (manifest + layers), only for
+//      the Lambda service, and only when it works for a function named minitickets-dev-* in our
+//      account and region (aws:SourceArn). Without that condition, Lambda working for ANY account
+//      could pull our image if it knew the address (the "confused deputy", see compute/iam.ts).
+//    DEPENDS ON: the worker repository.
+function allowLambdaPull(repo: aws.ecr.Repository) {
+  const accountId = aws.getCallerIdentityOutput().accountId;
+  const region = aws.getRegionOutput().region;
+  return new aws.ecr.RepositoryPolicy(`${prefix}-worker-lambda-pull`, {
+    repository: repo.name,
+    policy: pulumi.jsonStringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Sid: "LambdaPullWorkerImage",
+          Effect: "Allow",
+          Principal: { Service: "lambda.amazonaws.com" },
+          Action: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+          Condition: {
+            StringLike: { "aws:SourceArn": pulumi.interpolate`arn:aws:lambda:${region}:${accountId}:function:${prefix}-*` },
+          },
+        },
+      ],
+    }),
+  });
+}
+
 export function createRegistry() {
-  // 3. One repository per service: the api and web images are built and deployed separately.
+  // 4. One repository per service: the api, web and worker images are built and deployed separately.
   const api = createRepo("api");
   const web = createRepo("web");
+  const worker = createRepo("worker");
+  const workerPull = allowLambdaPull(worker);
 
-  // 4. URLs are for docker (where to push/pull); ARNs are for IAM policies (what a role may touch).
+  // 5. URLs are for docker (where to push/pull); ARNs are for IAM policies (what a role may touch).
+  //    workerRepoUrl only once the pull policy exists (same idea as compute/iam.ts step 8): the
+  //    Lambda reads the URL, so it is created after the policy that lets it pull.
   return {
     apiRepoUrl: api.repositoryUrl,
     webRepoUrl: web.repositoryUrl,
+    workerRepoUrl: pulumi.all([worker.repositoryUrl, workerPull.id]).apply(([url]) => url),
     apiRepoArn: api.arn,
     webRepoArn: web.arn,
+    workerRepoArn: worker.arn,
   };
 }

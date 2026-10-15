@@ -11,7 +11,7 @@ import type { CheckResult } from "./results.ts";
 export type PortState = "free" | "ours" | "other";
 
 // 1. What the check means depends on WHEN it runs:
-//    "running"  (pnpm run doctor):   ours is good; free means "not started" (the e2e tests need both);
+//    "running"  (pnpm stack:check):  ours is good; free means "not started" (the e2e tests need both);
 //    "starting" (pnpm dev):      free is good; ours means a second pnpm dev, which would crash.
 export type PortMode = "running" | "starting";
 
@@ -34,7 +34,7 @@ export function portResult(app: "api" | "web", port: number, state: PortState, m
     : {
         status: "fail",
         title: `the ${app} is already running on :${port} (a second pnpm dev?)`,
-        fix: ["stop the other one first (Ctrl+C in its terminal). To check a running stack: pnpm run doctor"],
+        fix: ["stop the other one first (Ctrl+C in its terminal). To check a running stack: pnpm stack:check"],
       };
 }
 

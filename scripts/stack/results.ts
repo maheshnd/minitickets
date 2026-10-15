@@ -1,5 +1,5 @@
 // The shape every check returns, and how a list of them is printed.
-// Used by `pnpm run doctor`, `pnpm stack:up` (the first half of `pnpm dev`) and `pnpm stack:reset`.
+// Used by `pnpm stack:check`, `pnpm stack:up` (the first half of `pnpm dev`) and `pnpm stack:reset`.
 
 // 1. ok   = fine.
 //    warn = works, but something is off or missing that you may want (printed, never stops anything).

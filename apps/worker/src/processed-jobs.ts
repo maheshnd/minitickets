@@ -17,7 +17,8 @@ export interface ProcessedJobs {
 const REMEMBER_DAYS = 30;
 
 // The table: one item per finished job. Partition key "jobKey" (text). Created locally by
-// `pnpm jobs:table` (src/scripts/create-table.ts).
+// `pnpm jobs:table` (src/scripts/create-table.ts), on AWS by Pulumi
+// (infra/src/jobs/processed-jobs-table.ts, same key and TTL attribute).
 export class DynamoProcessedJobs implements ProcessedJobs {
   private readonly client: Pick<DynamoDBClient, "send">;
   private readonly tableName: string;

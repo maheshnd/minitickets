@@ -32,7 +32,7 @@ flowchart LR
 - Anchor: `infra/src/compute/task.ts` · `healthCheck`: ECS runs node inside the container to call `/health`.
 - Anchor: `infra/src/entry/target-groups.ts` · `healthCheckTiming`, `healthCheck: { path: "/health" }` (api), `"/"` (web).
 - Anchor: `docker-compose.yml` · api `healthcheck`: the same node one-liner.
-- Anchor: `scripts/stack/data-checks.ts` · `checkPostgres`, `checkRedis`: the same idea for the laptop (`pnpm run doctor`): log in + migrations + sample events, Redis `PING`, each failure with its fix.
+- Anchor: `scripts/stack/data-checks.ts` · `checkPostgres`, `checkRedis`: the same idea for the laptop (`pnpm stack:check`): log in + migrations + sample events, Redis `PING`, each failure with its fix.
 
 Step by step:
 

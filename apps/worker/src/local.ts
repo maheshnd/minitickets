@@ -1,19 +1,13 @@
-import {
-  ChangeMessageVisibilityCommand,
-  DeleteMessageCommand,
-  ReceiveMessageCommand,
-  SQSClient,
-  type Message,
-} from "@aws-sdk/client-sqs";
+import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient, type Message } from "@aws-sdk/client-sqs";
 import type { SQSEvent, SQSRecord } from "aws-lambda";
-import { backoffSeconds } from "./backoff";
 import { env } from "./config";
 import { handler } from "./lambda";
 
 // The LOCAL runner (`pnpm worker:dev`). On AWS, Lambda reads the queue for us and calls
 // handler(event). Locally nothing does that, so this file plays Lambda's part: it reads the queue,
 // builds the SAME SQSEvent shape, calls the SAME handler, and then does what Lambda does with
-// its answer (delete the successes) plus our retry backoff for the failures.
+// its answer: delete the successes, leave the failures. (The retry backoff for the failures is in
+// the handler itself since S1c, src/retry-later.ts, because Lambda has no backoff of its own.)
 
 const queueUrl = env.JOBS_QUEUE_URL;
 if (!queueUrl) {
@@ -67,22 +61,15 @@ async function poll() {
       }
 
       for (const message of messages) {
-        if (failedIds.has(message.MessageId ?? "")) {
-          // 4. FAILED: do NOT delete. Keep it hidden for a backoff wait that grows with each try
-          //    (10 s, 40 s, 120 s; src/backoff.ts), instead of the queue's fixed 30 s. When the
-          //    wait is over, the queue offers it again. On the 4th delivery the queue moves it
-          //    to the dead-letter queue instead (maxReceiveCount 3, docker/elasticmq.conf).
-          const tries = Number(message.Attributes?.ApproximateReceiveCount ?? "1");
-          const wait = backoffSeconds(tries);
-          await sqs.send(
-            new ChangeMessageVisibilityCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle, VisibilityTimeout: wait }),
-          );
-          console.log(`[worker] message ${message.MessageId} stays in the queue, next try in ${wait} s`);
-        } else {
-          // 5. DELETE ONLY AFTER SUCCESS (a skipped duplicate is a success too).
-          await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }));
-          console.log(`[worker] message ${message.MessageId} deleted`);
-        }
+        // 4. FAILED: do NOT delete. The handler already set its wait before the next try
+        //    (10 s, 40 s, 120 s; src/retry-later.ts). When the wait is over, the queue offers it
+        //    again. On the 4th delivery the queue moves it to the dead-letter queue instead
+        //    (maxReceiveCount 3, docker/elasticmq.conf). Exactly what Lambda does on AWS.
+        if (failedIds.has(message.MessageId ?? "")) continue;
+
+        // 5. DELETE ONLY AFTER SUCCESS (a skipped duplicate is a success too).
+        await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }));
+        console.log(`[worker] message ${message.MessageId} deleted`);
       }
     } catch (err) {
       // 6. The queue itself is unreachable: say so, wait a little, and try again (do not spin).

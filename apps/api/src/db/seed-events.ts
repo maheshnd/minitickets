@@ -1,5 +1,5 @@
 // The sample events for local development and the e2e tests. Only data, no imports, so both the
-// seed script (seed.ts) and `pnpm run doctor` (scripts/stack/data-checks.ts, which checks they are in
+// seed script (seed.ts) and `pnpm stack:check` (scripts/stack/data-checks.ts, which checks they are in
 // the database) can read the same list.
 //
 // 1. Fixed ids (not random): the same event always has the same id, which is what makes running

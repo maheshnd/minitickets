@@ -28,6 +28,7 @@ flowchart LR
 - Anchor: `infra/src/compute/logs.ts` · `createLogs`: the log group with `retentionInDays: 7`.
 - Anchor: `infra/src/compute/task.ts` · `logConfiguration`: the api's awslogs driver.
 - Anchor: `infra/src/compute/web-task.ts` · `logConfiguration`: the web app's awslogs driver.
+- Anchor: `infra/src/jobs/worker-lambda.ts` · `loggingConfig: { logGroup }`: the worker Lambda writes to `/minitickets/dev/worker` (7 days), not to the default `/aws/lambda/...` group that would keep logs forever (S1c).
 
 Step by step:
 

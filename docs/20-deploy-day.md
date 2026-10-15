@@ -615,6 +615,7 @@ flowchart LR
 | Budget alert         | $0                                       |
 | ECR images           | cents per month (lifecycle policy keeps it small) |
 | ACM certificate (if `domainName` is set) | $0 (public ACM certificates are free) |
+| Jobs queue + DLQ, processed-jobs table, SES identities, worker ECR repo (S1c, section 3.10) | $0 while idle (billed per request / per email) |
 
 ### 3.9 Troubleshooting
 
@@ -691,6 +692,114 @@ done
 | Browser: "Your connection is not private", `NET::ERR_CERT_COMMON_NAME_INVALID` | You opened the ALB's own name, or the CNAME points somewhere else. Only `https://<domainName>` is on the certificate |
 | Browser refuses the site with **no** "continue anyway" button | HSTS: the browser saw `Strict-Transport-Security` before and now insists on a working https. Fix the certificate/DNS problem; the promise ends by itself after 1 day (max-age) |
 | `curl` shows `x-cache` or `cloudfront` | You are on Path A (`cdnEnabled` is not `false`) |
+
+### 3.10 The job pipeline: booking emails (S1c)
+
+**What it is.** After a booking, the api puts a "booking confirmed" message on an SQS queue (a waiting line for messages) and answers the browser at once. A Lambda function (code AWS runs only when there is work) reads the queue in batches and sends the email through SES (Amazon's email service). A message that fails 3 times moves to a dead-letter queue (DLQ), where a person looks at it. CD deploys all of it; this section is the one-time setup and the checks. Code: `infra/src/jobs/`, `apps/worker/`.
+
+```mermaid
+flowchart LR
+    api["api task<br/>(task role: SendMessage)"] --> q["SQS<br/>minitickets-dev-jobs"]
+    q --> trig["event source mapping<br/>batch 10, max 5 at once"]
+    trig --> fn["Lambda<br/>minitickets-dev-worker"]
+    fn --> ddb["DynamoDB<br/>processed-jobs"]
+    fn --> ses["SES<br/>no-reply@domain"]
+    q -->|"3 failed tries"| dlq["SQS DLQ<br/>minitickets-dev-jobs-dlq"]
+```
+
+Real-life comparison: the shop takes your order and hands you a receipt at once; the order slip goes into a tray (the queue). A clerk in the back (the Lambda) works through the tray and posts the letters (SES). A slip that keeps failing goes into a "problems" box (the DLQ) for the manager.
+
+**One time, before the first deploy that contains S1c.** In this order:
+
+1. **Your address as the SES test recipient** (the SES "sandbox" only sends to verified addresses; `infra/src/jobs/email.ts` explains it). From `infra/`:
+
+   ```bash
+   pulumi config set --secret sesTestRecipient you@example.com
+   git add Pulumi.dev.yaml && git commit -m "chore(infra): SES test recipient"
+   ```
+
+   **Expect:** `Pulumi.dev.yaml` gains `minitickets:sesTestRecipient: secure: …` (encrypted, safe to commit).
+
+2. **Bootstrap the worker repository and the CD roles' new permissions** (a targeted `pulumi up`, only these 6 resources). WHY: CD's publish job pushes the worker image BEFORE the deploy job runs `pulumi up`, so the repository and the publish permission must exist first; and the deploy role needs its new permissions (SQS, DynamoDB, Lambda, SES) before it can create those. With the committed config, from `infra/`:
+
+   ```bash
+   pulumi up \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/repository:Repository::minitickets-dev-worker' \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/lifecyclePolicy:LifecyclePolicy::minitickets-dev-worker-lifecycle' \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/repositoryPolicy:RepositoryPolicy::minitickets-dev-worker-lambda-pull' \
+     --target 'urn:pulumi:dev::minitickets::aws:iam/role:Role::minitickets-dev-gh-publish' \
+     --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-publish-ecr' \
+     --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-deploy-policy'
+   ```
+
+   **Expect:** `+ 3 to create, ~ 3 to update`, nothing else; confirm with `yes`.
+
+3. **Push, then approve the CD deploy.** **Expect** in the run: publish pushes 3 images (api, web, worker); the deploy's "Read the committed config" step says the current tag has no worker image, so phase A starts the worker with the new tag; "Wait for the services" ends with `minitickets-dev-worker runs …:<tag> (Active, Successful), queue trigger Enabled`.
+
+4. **DKIM records at Cloudflare** (they prove to mail servers that SES may send for the domain):
+
+   ```bash
+   pulumi stack output sesDkimRecords
+   ```
+
+   Add the 3 CNAME records it lists, **DNS only** (grey cloud, not proxied). Then:
+
+   ```bash
+   aws sesv2 get-email-identity --email-identity minitickets.theversehub.in \
+     --query '{dkim: DkimAttributes.Status, verified: VerifiedForSendingStatus}'
+   ```
+
+   **Expect:** `"dkim": "SUCCESS", "verified": true`. `PENDING` = SES has not seen the records yet (it checks by itself, usually within minutes, at most 72 hours).
+
+5. **Click the link** in the email "Amazon Web Services – Email Address Verification Request" sent to your address. **Expect:** `aws sesv2 get-email-identity --email-identity you@example.com --query VerifiedForSendingStatus` says `true`.
+
+**Verify (after every deploy that touches it).** Sign up in the app with **your verified address**, then book a ticket.
+
+```bash
+aws logs tail /minitickets/dev/api --since 5m | grep 'booking.confirmed'
+aws logs tail /minitickets/dev/worker --since 5m
+```
+
+**Expect:** the api line `published booking.confirmed messageId=… bookingId=…`, then in the worker: `SES accepted email … to *@<your domain>: "Your booking is confirmed: …"` and `email sent [booking.confirmed:<bookingId>]`. The email arrives within seconds (check spam the first time).
+
+```bash
+cd infra
+aws sqs get-queue-attributes --queue-url "$(pulumi stack output jobsQueueUrl)" \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible
+aws sqs get-queue-attributes --queue-url "$(pulumi stack output jobsDlqUrl)" --attribute-names ApproximateNumberOfMessages
+aws dynamodb get-item --table-name minitickets-dev-processed-jobs \
+  --key '{"jobKey":{"S":"booking.confirmed:<bookingId>"}}'
+```
+
+**Expect:** both queues `"0"`; the item exists with `doneAt` and `expiresAt` (30 days ahead).
+
+**The DLQ, live.** Book once with an account whose address is **not** verified. **Expect** in the worker log: 3 tries about 10 s and 40 s apart, each `failed: Email address is not verified…`; after ~3 minutes the DLQ count is `1`. Clear it: SQS console -> `minitickets-dev-jobs-dlq` -> **Start DLQ redrive** (it would just fail again while the address is unverified), or **Purge** it.
+
+**Console tour.**
+
+| Where | Look at | It shows |
+| --- | --- | --- |
+| **SQS** -> `minitickets-dev-jobs` | **Dead-letter queue** tab: the DLQ, max receives 3; **Encryption**: SSE-SQS; **Lambda triggers** tab: the worker, Enabled | queue + redrive |
+| **SQS** -> `minitickets-dev-jobs-dlq` | **Monitoring**: messages; **Start DLQ redrive** button | where failures wait |
+| **Lambda** -> `minitickets-dev-worker` | **Image**: `…/minitickets-dev-worker:<tag>`, arm64; **Configuration** -> General (256 MB, 10 s), Environment variables (`MAILER=ses`, `MAIL_FROM`), Triggers (batch 10, report batch item failures, max concurrency 5), Permissions (the role) | the function |
+| **CloudWatch** -> Log groups -> `/minitickets/dev/worker` | one stream per Lambda instance; `REPORT` lines with duration and memory | the logs, 7 days |
+| **DynamoDB** -> Tables -> `minitickets-dev-processed-jobs` | **Explore items**; **Additional settings**: TTL on `expiresAt`, on-demand | the "already done" memory |
+| **SES** -> Identities | the domain (DKIM: Successful) and your address (Verified); **Account dashboard**: "sandbox", 200/day, 1/s | who may send |
+| **ECR** -> `minitickets-dev-worker` | **Permissions**: the policy that lets `lambda.amazonaws.com` pull | the pull permission |
+| **IAM** -> Roles -> `minitickets-dev-worker-role` | **Trust relationships**: `lambda.amazonaws.com`; **Permissions**: the inline policy `worker` (one queue, one table, SES from `no-reply@`, one log group) | least privilege |
+
+**Troubleshooting.**
+
+| You see | Usually means |
+| --- | --- |
+| Messages pile up in the queue, nothing in the worker log | The trigger is off or failing: `aws lambda list-event-source-mappings --function-name minitickets-dev-worker --query 'EventSourceMappings[].[State,StateTransitionReason,LastProcessingResult]'` |
+| Worker log: `Email address is not verified. The following identities failed the check…: no-reply@…` | The DOMAIN is not verified yet: DKIM records missing or proxied (step 4) |
+| Worker log: `Email address is not verified…: <someone>@…` | Sandbox: that recipient is not verified. Expected for every address except yours |
+| Worker log: `not authorized to perform: ses:SendEmail on resource …identity/…` | The role's SES statement does not cover that identity (`infra/src/jobs/worker-iam.ts` 2c) |
+| Lambda create/update fails: image manifest or media type "not supported" | The image was pushed with an attestation; it must be built with `provenance: false` (cd.yml 17b) |
+| `Specified ReservedConcurrentExecutions … below its minimum value` | `workerReservedConcurrency` is set, but the account's Lambda quota is still 10 (`infra/src/jobs/worker-lambda.ts` 2e) |
+
+**Cost.** Idle: about $0. SQS bills per request (first 1 million a month free, then about $0.40 per million), DynamoDB on demand per read/write, Lambda per millisecond, SES about $0.10 per 1,000 emails. One thing runs while compute is on: the trigger's pollers long-poll the queue all the time, and those receives count as SQS requests (watch the queue's `NumberOfEmptyReceives` metric in CloudWatch; expected to stay inside the free tier). Turning compute off removes the Lambda and its trigger; the queues, table and identities stay.
 
 ## 4. Dependency order
 

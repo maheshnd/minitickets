@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the api and web images for ARM64 and pushes them to ECR.
+# Builds the api, web and worker images for ARM64 and pushes them to ECR.
 # Run from anywhere:  pnpm images:push   (export AWS_PROFILE=ticketlite first)
 # Since Step 12b CD does this on every push to main (.github/workflows/cd.yml, job publish);
 # this script is for manual / emergency pushes.
@@ -45,10 +45,11 @@ fi
 cd "$ROOT/infra"
 export AWS_REGION="${AWS_REGION:-$(pulumi config get aws:region 2>/dev/null || echo us-east-1)}"
 
-# 7. WHAT: read the two repository URLs from the Pulumi stack outputs.
+# 7. WHAT: read the three repository URLs from the Pulumi stack outputs.
 #    WHY: Pulumi is the single source of truth for them; no URL is typed here by hand.
 API_REPO="$(pulumi stack output apiRepoUrl)"
 WEB_REPO="$(pulumi stack output webRepoUrl)"
+WORKER_REPO="$(pulumi stack output workerRepoUrl)"
 cd "$ROOT"
 
 # 8. WHAT: log Docker in to ECR. The password comes from `aws ecr get-login-password`.
@@ -60,7 +61,7 @@ aws ecr get-login-password --region "$AWS_REGION" \
 
 # @concept: arm64-graviton
 # @concept: same-origin-routing
-# 9. WHAT: build for linux/arm64 and push in one step (--push), api first and then web.
+# 9. WHAT: build for linux/arm64 and push in one step (--push): api, web, then the worker (S1c).
 #    WHY: the ECS tasks (Step 11e) will run on ARM64, and an image only runs on the CPU it
 #    was built for. buildx is Docker's multi-platform builder.
 #    --provenance=false: stops buildx adding extra "attestation" manifests, so each tag is
@@ -74,12 +75,18 @@ echo "Building and pushing web:$TAG ..."
 docker buildx build --platform linux/arm64 --provenance=false \
   -f apps/web/Dockerfile -t "$WEB_REPO:$TAG" --push .
 
+# The worker is a Lambda container image: Lambda accepts only a plain single-platform image, so
+# --provenance=false is required here, not just tidy (cd.yml step 17b).
+echo "Building and pushing worker:$TAG ..."
+docker buildx build --platform linux/arm64 --provenance=false \
+  -f apps/worker/Dockerfile -t "$WORKER_REPO:$TAG" --push .
+
 # 10. WHAT: print what was pushed: the tag and the digest of each image.
 #     WHY: the tag is a name; the digest (sha256 of the content) is the exact content. Later
 #     steps can pin the digest to be sure about what runs.
 echo
 echo "Pushed (tag = git SHA):"
-for SERVICE in api web; do
+for SERVICE in api web worker; do
   REPO_NAME="minitickets-dev-$SERVICE"
   DIGEST="$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$REPO_NAME" \
     --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)"

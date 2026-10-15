@@ -1,6 +1,6 @@
 # CD ("continuous deployment"): takes code that CI approved and puts it live on AWS.
-#   Job publish (Step 12a): build the api and web IMAGES (packed, ready-to-run copies of the app)
-#     and store them in ECR (Amazon's private image storage).
+#   Job publish (Step 12a): build the api, web and worker IMAGES (packed, ready-to-run copies of
+#     the app; the worker one since S1c) and store them in ECR (Amazon's private image storage).
 #   Job deploy (Step 12b): after a human clicks "Approve", run those images on AWS.
 #
 # Beginner's guide, with every word explained: docs/handbook/guides/cicd-story.md.
@@ -12,7 +12,7 @@
 #                        │ green
 #                        ▼
 #   ┌─ JOB publish ─────────────────────────────────────────────────────────────────────┐
-#   │ build api:<sha> + web:<sha> for ARM64, push to ECR (skip a tag that already exists) │
+#   │ build api + web + worker :<sha> for ARM64, push to ECR (skip tags that exist)      │
 #   └────────────────────────────────────────────────────────────────────────────────────┘
 #                        │ success                      "Run workflow" with image_tag = <old sha>:
 #                        │                              publish is SKIPPED, deploy runs with that tag
@@ -20,14 +20,16 @@
 #   ┌─ JOB deploy (GitHub environment "dev") ───────────────────────────────────────────┐
 #   │ ⏸ waits until YOU click "Approve" in the Actions tab                               │
 #   │ 1. log in to AWS as the deploy role (OIDC: no stored password, keys last 2 h)      │
-#   │ 2. <tag> in both ECR repos?   no ──▶ fail (nothing changed)                        │
+#   │ 2. <tag> in all 3 ECR repos?  no ──▶ fail (nothing changed)                        │
 #   │ 3. committed Pulumi.dev.yaml says computeEnabled false?                            │
 #   │      yes ──▶ pulumi up (this is how "everything off/on" works), summary, END       │
 #   │ 4. PHASE A  pulumi up --config migrationImageTag=<tag>                             │
 #   │      app keeps the CURRENT version (SSM); anything missing is created (DB, ...)    │
+#   │      (worker: the new tag if the current one has no worker image yet, S1c)         │
 #   │ 5. migration task with the NEW image ── fails? ──▶ stop; running app untouched     │
 #   │ 6. PHASE B  SSM image-tag = <tag>; ECR tag deployed-<tag>; pulumi up ──▶ roll      │
-#   │ 7. wait until api + web are stable, and really run the new version                 │
+#   │ 7. wait until api + web are stable, and really run the new version; same for the  │
+#   │    worker Lambda (its image tag) and its queue trigger (Enabled)                   │
 #   │      (first time web exists: restart the api once, so it can find "web")           │
 #   │ 8. smoke test: GET / and /trpc/events.list ── fail ──▶ print ECS events, fail      │
 #   │ 9. job summary: tag, migration, URL, how to roll back                              │
@@ -88,15 +90,18 @@ env:
   # 4. The AWS region (the area of AWS data centres we use). Same as the Pulumi stack
   #    (infra/Pulumi.dev.yaml, aws:region).
   AWS_REGION: us-east-1
-  # 5. The two ECR repositories (infra/src/registry.ts). The publish role may push ONLY here.
+  # 5. The three ECR repositories (infra/src/registry.ts). The publish role may push ONLY here.
   API_REPO_NAME: minitickets-dev-api
   WEB_REPO_NAME: minitickets-dev-web
+  WORKER_REPO_NAME: minitickets-dev-worker
+  # 5b. The worker Lambda (S1c, infra/src/jobs/worker-lambda.ts), checked after the deploy (37).
+  WORKER_FUNCTION_NAME: minitickets-dev-worker
   # 6. The SSM parameter (a named value stored in AWS) that says which image tag is deployed
   #    (infra/src/release.ts). The deploy role may write ONLY this one.
   IMAGE_TAG_PARAMETER: /minitickets/dev/image-tag
 
 jobs:
-  # CHAPTER 3: publish = build the api and web images ONCE and store them in ECR.
+  # CHAPTER 3: publish = build the api, web and worker images ONCE and store them in ECR.
   publish:
     # 7. Run only when it is safe to ship:
     #    - a manual run (workflow_dispatch) from main WITHOUT image_tag, OR
@@ -236,6 +241,7 @@ jobs:
           }
           check api "$API_REPO_NAME"
           check web "$WEB_REPO_NAME"
+          check worker "$WORKER_REPO_NAME"
 
       # 16. Build the api image for linux/arm64 and push it (only if step 15 did not find it).
       #     push: true = upload to ECR right after the build.
@@ -277,6 +283,25 @@ jobs:
           cache-from: type=gha,scope=web-arm64
           cache-to: type=gha,mode=max,scope=web-arm64
 
+      # 17b. The worker image (S1c): the Lambda that sends the booking emails (apps/worker/Dockerfile).
+      #      provenance: false matters MORE here: Lambda accepts only a plain single-platform image.
+      #        An image index with an attestation (what provenance adds) is refused when the
+      #        function is created or updated ("image manifest ... media type not supported").
+      #      platforms linux/arm64: the function's architecture is arm64 (Graviton), the same as ECS.
+      - name: Build and push worker
+        id: build_worker
+        if: steps.check.outputs.worker_exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.WORKER_REPO_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=worker-arm64
+          cache-to: type=gha,mode=max,scope=worker-arm64
+
       # 18. Write what was published to the job summary (the run's page in the Actions tab).
       #     WHAT: for each image: the tag, the digest, and whether it was pushed now or skipped.
       #     WHY: the tag is a name; the digest (sha256 fingerprint of the content) is the exact
@@ -288,8 +313,10 @@ jobs:
           COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
           API_DIGEST: ${{ steps.build_api.outputs.digest || steps.check.outputs.api_digest }}
           WEB_DIGEST: ${{ steps.build_web.outputs.digest || steps.check.outputs.web_digest }}
+          WORKER_DIGEST: ${{ steps.build_worker.outputs.digest || steps.check.outputs.worker_digest }}
           API_STATUS: ${{ steps.check.outputs.api_exists == 'true' && 'already in ECR (skipped)' || 'pushed now' }}
           WEB_STATUS: ${{ steps.check.outputs.web_exists == 'true' && 'already in ECR (skipped)' || 'pushed now' }}
+          WORKER_STATUS: ${{ steps.check.outputs.worker_exists == 'true' && 'already in ECR (skipped)' || 'pushed now' }}
         run: |
           {
             echo "## Published images"
@@ -300,6 +327,7 @@ jobs:
             echo "|---|---|---|---|"
             echo "| \`$REGISTRY/$API_REPO_NAME\` | \`$TAG\` | \`$API_DIGEST\` | $API_STATUS |"
             echo "| \`$REGISTRY/$WEB_REPO_NAME\` | \`$TAG\` | \`$WEB_DIGEST\` | $WEB_STATUS |"
+            echo "| \`$REGISTRY/$WORKER_REPO_NAME\` | \`$TAG\` | \`$WORKER_DIGEST\` | $WORKER_STATUS |"
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
 
@@ -441,15 +469,17 @@ jobs:
           pulumi login
           pulumi stack select dev
 
-      # 30. Does <tag> exist in BOTH repositories? Fail early, before anything changes.
+      # 30. Does <tag> exist in ALL THREE repositories? Fail early, before anything changes.
       #     WHY: a rollback to a tag that was never published (typo), or that ECR already deleted
       #     (ECR deletes old images automatically: lifecycle rules in infra/src/registry.ts), would
       #     otherwise fail much later, as containers that cannot download their image.
+      #     NOTE (S1c): tags published before S1c have no worker image, so a rollback to one of them
+      #     stops here. Roll back to a tag from S1c on, or push that commit's worker image by hand.
       - name: Check the image exists in ECR
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          for REPO in "$API_REPO_NAME" "$WEB_REPO_NAME"; do
+          for REPO in "$API_REPO_NAME" "$WEB_REPO_NAME" "$WORKER_REPO_NAME"; do
             if ! aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="$TAG" \
                  --query 'imageDetails[0].imageDigest' --output text; then
               echo "::error::$REPO:$TAG is not in ECR. Publish it first (push to main), or pick another tag."
@@ -463,14 +493,17 @@ jobs:
       #     current_tag: SSM /minitickets/dev/image-tag, the version running now ("none" = never
       #       deployed). Empty if that image is no longer in ECR (then phase A cannot keep it, 33).
       #     web_existed: did the web service exist BEFORE this run? (Needed for the restart in 37.)
+      #     worker_new_tag (S1c): "true" when the current tag has NO worker image (the first deploy
+      #       with a worker: tags published before S1c have none). Phase A then
+      #       starts the worker with the NEW tag (33); api and web still keep the current one.
       #     Also REFUSES committed image-tag overrides: apiImageTag / webImageTag in the committed
       #       file would silently keep the services on that tag (infra/index.ts 9b), and
-      #       migrationImageTag must only ever come from the command line (33).
+      #       migrationImageTag / workerImageTag must only ever come from the command line (33).
       - name: Read the committed config and the current state
         id: state
         working-directory: infra
         run: |
-          for KEY in apiImageTag webImageTag migrationImageTag; do
+          for KEY in apiImageTag webImageTag migrationImageTag workerImageTag; do
             if pulumi config get "$KEY" > /dev/null 2>&1; then
               echo "::error::$KEY is set in the committed infra/Pulumi.dev.yaml. Remove it (pulumi config rm $KEY), commit, push."
               exit 1
@@ -494,6 +527,13 @@ jobs:
             done
           fi
 
+          WORKER_NEW_TAG=false
+          if [ -n "$CURRENT" ] && [ "$CURRENT" != "none" ] && \
+             ! aws ecr describe-images --repository-name "$WORKER_REPO_NAME" --image-ids imageTag="$CURRENT" > /dev/null 2>&1; then
+            echo "::notice::The current tag $CURRENT has no worker image (published before S1c). Phase A starts the worker with the new tag."
+            WORKER_NEW_TAG=true
+          fi
+
           WEB_SERVICE="$(pulumi stack output webServiceName 2>/dev/null || true)"
           if [ -n "$WEB_SERVICE" ] && [ "$WEB_SERVICE" != "null" ]; then WEB_EXISTED=true; else WEB_EXISTED=false; fi
 
@@ -502,8 +542,9 @@ jobs:
             echo "entry_enabled=$ENTRY"
             echo "current_tag=$CURRENT"
             echo "web_existed=$WEB_EXISTED"
+            echo "worker_new_tag=$WORKER_NEW_TAG"
           } >> "$GITHUB_OUTPUT"
-          echo "computeEnabled=$COMPUTE entryEnabled=$ENTRY current tag='$CURRENT' web existed=$WEB_EXISTED"
+          echo "computeEnabled=$COMPUTE entryEnabled=$ENTRY current tag='$CURRENT' web existed=$WEB_EXISTED worker new tag=$WORKER_NEW_TAG"
 
       # CHAPTER 5, side path: the containers are switched off. Only apply the committed switches.
       # 32. computeEnabled is false in the committed config: nothing to deploy an image TO.
@@ -529,8 +570,12 @@ jobs:
       #       Their first seconds may hit a database without tables (the migration runs next). That is
       #       fine: requests fail with a 500, /health stays green (it does not touch the database), and
       #       the next step creates the tables.
+      #     WORKER (S1c): it normally keeps the current tag too, like the services. Only when the
+      #       current tag has NO worker image (31: the first deploy with a worker) does it get the new
+      #       tag here, via --config workerImageTag. That is safe: the worker never touches the
+      #       database, so it does not wait for the migration.
       #     --config also writes the value into this runner's copy of Pulumi.dev.yaml. That copy is
-      #       thrown away with the runner; it is never committed.
+      #       thrown away with the runner; it is never committed. (So phase B, 36, keeps the values.)
       - name: "Phase A: pulumi up (migration image = new, services unchanged)"
         id: phase_a
         if: steps.state.outputs.compute_enabled == 'true'
@@ -538,12 +583,15 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           CURRENT: ${{ steps.state.outputs.current_tag }}
+          WORKER_NEW_TAG: ${{ steps.state.outputs.worker_new_tag }}
         run: |
           if [ -z "$CURRENT" ] || [ "$CURRENT" = "none" ]; then
             echo "No running version to keep: services start with $TAG directly."
             aws ssm put-parameter --name "$IMAGE_TAG_PARAMETER" --value "$TAG" --overwrite > /dev/null
           fi
-          pulumi up --yes --non-interactive --config migrationImageTag="$TAG"
+          WORKER_CONFIG=()
+          if [ "$WORKER_NEW_TAG" = "true" ]; then WORKER_CONFIG=(--config workerImageTag="$TAG"); fi
+          pulumi up --yes --non-interactive --config migrationImageTag="$TAG" "${WORKER_CONFIG[@]}"
 
       # CHAPTER 7: migrate = update the database with the NEW code, while the OLD app keeps running.
       # 34. Migrate: run the NEW image's migrations as a one-off ECS task and wait for it.
@@ -559,7 +607,7 @@ jobs:
       # CHAPTER 8: phase B = switch the app to the new version.
       # 35. PHASE B, part 1: record the new version.
       #     a. SSM image-tag = <tag>: from now on EVERY `pulumi up` (CD or local) runs this tag.
-      #     b. ECR: add the tag "deployed-<tag>" to both images. It is a second NAME for the SAME
+      #     b. ECR: add the tag "deployed-<tag>" to all three images (api, web, worker). It is a second NAME for the SAME
       #        image (same digest), so ECR's automatic clean-up keeps it longer (the last 10 deployed,
       #        see infra/src/registry.ts): these are the rollback targets.
       #        The repositories are IMMUTABLE, so an existing deployed- tag cannot be written again:
@@ -575,7 +623,7 @@ jobs:
           aws ssm put-parameter --name "$IMAGE_TAG_PARAMETER" --value "$TAG" --overwrite > /dev/null
           echo "SSM $IMAGE_TAG_PARAMETER = $TAG"
 
-          for REPO in "$API_REPO_NAME" "$WEB_REPO_NAME"; do
+          for REPO in "$API_REPO_NAME" "$WEB_REPO_NAME" "$WORKER_REPO_NAME"; do
             if aws ecr describe-images --repository-name "$REPO" --image-ids imageTag="deployed-$TAG" > /dev/null 2>&1; then
               echo "$REPO: deployed-$TAG already exists, skipping."
               continue
@@ -619,11 +667,15 @@ jobs:
       #        (an automatic "this is not working, go back" switch) ROLLS BACK to the previous
       #        revision, and that is stable too. So compare each service's revision with the one
       #        Pulumi just registered; different = rolled back = fail.
+      #     d. The worker Lambda (S1c): its image must end in :<tag>, the function must be Active with
+      #        its last update Successful, and its queue trigger (event source mapping) Enabled.
+      #        (`pulumi up` already waited for the update; this proves WHAT is running.)
       - name: Wait for the services to be stable
         id: wait
         if: steps.state.outputs.compute_enabled == 'true'
         working-directory: infra
         env:
+          TAG: ${{ steps.tag.outputs.tag }}
           ENTRY: ${{ steps.state.outputs.entry_enabled }}
           WEB_EXISTED: ${{ steps.state.outputs.web_existed }}
         run: |
@@ -655,6 +707,20 @@ jobs:
           }
           check_revision "$API_SERVICE" apiTaskDefinitionArn
           if [ "$ENTRY" = "true" ]; then check_revision "$WEB_SERVICE" webTaskDefinitionArn; fi
+
+          read -r IMAGE STATE UPDATE <<< "$(aws lambda get-function --function-name "$WORKER_FUNCTION_NAME" \
+            --query '[Code.ImageUri, Configuration.State, Configuration.LastUpdateStatus]' --output text)"
+          if [ "${IMAGE##*:}" != "$TAG" ] || [ "$STATE" != "Active" ] || [ "$UPDATE" != "Successful" ]; then
+            echo "::error::$WORKER_FUNCTION_NAME: image $IMAGE, state $STATE, last update $UPDATE (expected :$TAG, Active, Successful)."
+            exit 1
+          fi
+          MAPPING="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION_NAME" \
+            --query 'EventSourceMappings[0].State' --output text)"
+          if [ "$MAPPING" != "Enabled" ]; then
+            echo "::error::$WORKER_FUNCTION_NAME's queue trigger is '$MAPPING', expected Enabled: nothing reads the jobs queue."
+            exit 1
+          fi
+          echo "$WORKER_FUNCTION_NAME runs $IMAGE ($STATE, $UPDATE), queue trigger $MAPPING"
 
       # 38. Smoke test: is the app really answering, from the outside, through the front door?
       #     GET /                   -> 200 (OK): the web app renders (and reaches the api inside AWS)
@@ -748,7 +814,7 @@ jobs:
               echo "| Phase A (pulumi up, migration image = new) | $PHASE_A |"
               echo "| Migration | $MIGRATE |"
               echo "| Phase B (SSM + ECR tag + pulumi up) | $PHASE_B |"
-              echo "| Services stable on the new revision | $WAIT |"
+              echo "| Services + worker Lambda on the new version | $WAIT |"
               echo "| Smoke test | ${SMOKE:-skipped} |"
               echo
               if [ -n "$APP_URL" ]; then echo "App: $APP_URL"; else echo "App: no public URL (entryEnabled is false)."; fi

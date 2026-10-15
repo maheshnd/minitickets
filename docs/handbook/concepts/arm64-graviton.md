@@ -32,6 +32,7 @@ flowchart LR
 - Anchor: `infra/src/compute/web-task.ts` · `runtimePlatform`: web tasks.
 - Anchor: `infra/src/data/postgres.ts` · `instanceClass: "db.t4g.micro"`: the database (the `g` means Graviton).
 - Anchor: `infra/src/data/cache.ts` · `nodeType: "cache.t4g.micro"`: the cache.
+- Anchor: `infra/src/jobs/worker-lambda.ts` · `architectures: ["arm64"]`: the worker Lambda (S1c), about 20% cheaper per GB-second than x86.
 
 Step by step:
 

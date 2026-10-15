@@ -29,6 +29,7 @@ flowchart TB
 - Anchor: `apps/api/Dockerfile` · step 4 (package files only) and step 5 (`--mount=type=cache` for the pnpm store).
 - Anchor: `apps/web/Dockerfile` · steps 4-5, the same pattern.
 - Anchor: `.github/workflows/ci.yml` · `docker` job: `cache-from: type=gha,scope=api`, `cache-to: type=gha,mode=max,scope=api` (and `web`).
+- Anchor: `apps/worker/Dockerfile` · step 2: the same pattern for the worker image (S1c).
 
 Step by step:
 

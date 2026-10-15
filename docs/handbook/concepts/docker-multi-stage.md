@@ -30,6 +30,7 @@ flowchart LR
 - Anchor: `apps/api/Dockerfile` · stages `base`, `deps`, `build`, `prod`, `runtime`.
 - Anchor: `apps/web/Dockerfile` · stages `base`, `deps`, `build`, `runtime`.
 - Anchor: `apps/web/next.config.ts` · `output: "standalone"`, `outputFileTracingRoot`.
+- Anchor: `apps/worker/Dockerfile` · stages `base`, `deps`, `build`, `runtime`: the runtime stage is AWS's Lambda base image plus ONE bundled file (S1c).
 
 Step by step (api):
 

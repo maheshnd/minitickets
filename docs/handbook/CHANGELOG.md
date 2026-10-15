@@ -25,9 +25,35 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · feat(dev): local stack health: pnpm run doctor, pnpm dev sets up the stack, pnpm stack:reset (series 2, P0)
+## 2026-10-15 · feat(jobs): booking emails on AWS: SQS + DLQ, worker Lambda, DynamoDB, SES; pnpm stack:check (series 2, P1 = S1c)
 
 Commit: filled in by the next handbook commit
+
+Why: Series 2, phase P1 (S1c): the job pipeline runs on AWS. The series asks for `@concept` anchors
+on new code with stub cards allowed, so 5 stub cards are added and 7 cards gain an anchor line. Also
+`pnpm run doctor` is renamed to `pnpm stack:check` (pnpm's built-in `doctor` shadowed it), so every
+handbook page that named it changes. `pnpm docs:history --since 83f2ff3` lists the files below.
+
+- `concepts/sqs.md`, `concepts/dead-letter-queue.md`, `concepts/aws-lambda.md`, `concepts/dynamodb.md`,
+  `concepts/ses-email.md`: NEW 📋 stub cards ("1. In one line", "4. Where in our code", "Where it
+  appears in the story" not linked yet); written in full in the D3 catch-up.
+- `concepts/arm64-graviton.md`, `cloudwatch-logs.md`, `docker-layer-caching.md`,
+  `docker-multi-stage.md`, `idempotency.md`, `least-privilege.md`, `retry-policy.md`: "4. Where in our
+  code" gains the S1c anchor (worker Lambda, worker Dockerfile, processed-jobs table, worker role,
+  backoff via ChangeMessageVisibility).
+- `concepts/health-checks.md`, `concepts/twelve-factor-config.md`: "4. Where in our code" says
+  `pnpm stack:check` (renamed).
+- `concept-map.md`: "Async & Events" intro + the queue and DLQ rows point at the stub cards; "AWS
+  Compute" gains Lambda and SES rows, "AWS Data" a DynamoDB row (docs:check needs every card linked).
+- `prompts/series-2.md`: "Rules for every phase" and "P0" say `pnpm stack:check`.
+- `ROADMAP.md`: status lines only (P1 built, waits for its first CD deploy; next P2).
+- `PENDING.md`: the P1 entry; the P0 entry's file names and "unsure (1)" updated for the rename.
+
+---
+
+## 2026-10-15 · feat(dev): local stack health: pnpm run doctor, pnpm dev sets up the stack, pnpm stack:reset (series 2, P0)
+
+Commit: 83f2ff3
 
 Why: Series 2, phase P0. The series asks for `@concept` anchors on new code, so two cards gain an
 anchor line; the series prompt gets its missing history line (`docs:check` failed on it since

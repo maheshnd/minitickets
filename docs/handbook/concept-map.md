@@ -154,16 +154,17 @@ becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of t
 
 ## Async & Events
 
-Nothing in this area is in our app yet. Every request is handled start to finish while the
-browser waits.
+Since S1a-S1c (series 2, P1) the booking confirmation email runs as a background job: api -> SQS
+queue -> worker Lambda. The rows below are updated in full in the D3 catch-up (see PENDING.md); the
+📋 stub cards already point at the code.
 
 | Concept | Status | Where in our code | Card |
 | ------- | ------ | ----------------- | ---- |
-| Message queues (e.g. SQS), idempotent consumers | 📖 | Explain-only | `message-queues` · P5 |
+| Message queues (e.g. SQS), idempotent consumers | 📋 | `infra/src/jobs/queues.ts` → `createJobQueues`; `apps/worker/src/handlers/booking-confirmed.ts` (stub card) | [`sqs`](concepts/sqs.md) |
 | Background jobs and workers | 📖 | Explain-only | `background-jobs` · P5 |
 | Event-driven architecture | 📖 | Explain-only | `event-driven` · P5 |
 | RabbitMQ vs Kafka | 📖 | Explain-only | `rabbitmq-vs-kafka` · P5 |
-| Dead-letter queue (DLQ) | 📖 | Explain-only | `dead-letter-queue` · P5 |
+| Dead-letter queue (DLQ) | 📋 | `infra/src/jobs/queues.ts` → `minitickets-dev-jobs-dlq`, maxReceiveCount 3 (stub card) | [`dead-letter-queue`](concepts/dead-letter-queue.md) |
 | Event sourcing | 📖 | Explain-only | `event-sourcing` · P5 |
 | CQRS | 📖 | Explain-only | `cqrs` · P5 |
 | Saga pattern | 📖 | Explain-only | `saga` · P5 |
@@ -241,6 +242,8 @@ browser waits.
 | Fargate Spot | ✅ | `infra/compute/service.ts` → `capacityProviderStrategies`; `scripts/run-migrations.sh` → `--launch-type FARGATE` (not Spot) | [`fargate-spot`](concepts/fargate-spot.md) |
 | Execution role vs task role | ✅ | `infra/compute/iam.ts` → `createIamRoles`; `infra/compute/web-iam.ts` → `createWebIamRole` | [`execution-vs-task-role`](concepts/execution-vs-task-role.md) |
 | ECS Exec: a shell inside a running task | ✅ | `infra/compute/iam.ts` → `taskExec`; `infra/compute/service.ts` → `enableExecuteCommand` | [`ecs-exec`](concepts/ecs-exec.md) |
+| Lambda: the worker, fed by an SQS event source mapping | 📋 | `infra/src/jobs/worker-lambda.ts` → `createWorkerLambda`, `queue-trigger.ts` (stub card) | [`aws-lambda`](concepts/aws-lambda.md) |
+| SES: booking emails, DKIM, the sandbox | 📋 | `infra/src/jobs/email.ts` → `createEmail`; `apps/worker/src/ses-mailer.ts` (stub card) | [`ses-email`](concepts/ses-email.md) |
 | ECS Service Connect / Cloud Map: web task → api task | 📋 | Not built. Planned for SSR on AWS (see [docs/22](../22-events-ssr.md), section 7) | [`service-connect`](concepts/service-connect.md) |
 | ARM64 (Graviton) images and tasks | ✅ | `infra/compute/task.ts` → `runtimePlatform`; `scripts/push-images.sh` → `--platform linux/arm64`; `infra/data/postgres.ts`, `infra/data/cache.ts` → `t4g` classes | [`arm64-graviton`](concepts/arm64-graviton.md) |
 | Auto scaling | 📖 | Explain-only | `autoscaling` · P5 |
@@ -254,6 +257,7 @@ browser waits.
 | RDS-managed master password (and the rotation limit) | ✅ | `infra/data/postgres.ts` → `manageMasterUserPassword`, `masterSecretArn` | [`rds-managed-password`](concepts/rds-managed-password.md) |
 | ElastiCache Valkey: TLS + auth token | ✅ | `infra/data/cache.ts` → `createCache` | [`elasticache-valkey`](concepts/elasticache-valkey.md) |
 | Secrets Manager | ✅ | `infra/data/secrets.ts` → `createSecrets` | [`secrets-manager`](concepts/secrets-manager.md) |
+| DynamoDB: the worker's processed-jobs table (on demand, TTL) | 📋 | `infra/src/jobs/processed-jobs-table.ts` → `createProcessedJobsTable` (stub card) | [`dynamodb`](concepts/dynamodb.md) |
 | KMS keys (AWS-managed) | 🟡 | `infra/data/postgres.ts` → `storageEncrypted`; `infra/compute/iam.ts` → comment at `executionSecrets` | [`kms`](concepts/kms.md) |
 | Backups, snapshots, disaster recovery | 🟡 | `infra/data/postgres.ts` → `backupRetentionPeriod: 1`, `skipFinalSnapshot: true`; `infra/data/cache.ts` → `snapshotRetentionLimit: 0` | [`backups-dr`](concepts/backups-dr.md) |
 | Multi-AZ and read replicas | 📖 | `infra/data/postgres.ts` → `multiAz: false` (chosen off) | `multi-az-replicas` · P5 |

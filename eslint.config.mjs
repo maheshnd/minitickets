@@ -5,8 +5,12 @@ import tseslint from "typescript-eslint";
 import nextVitals from "eslint-config-next/core-web-vitals";
 
 export default tseslint.config(
-  // 1. Files ESLint should never look at (build output and generated files).
-  { ignores: ["**/node_modules/**", "**/.next/**", "**/next-env.d.ts", "**/playwright-report/**", "**/test-results/**"] },
+  // 1. Files ESLint should never look at (build output and generated files). dist/: the esbuild
+  //    bundles (api, worker); the worker's holds the whole AWS SDK after `pnpm --filter
+  //    @minitickets/worker build`.
+  {
+    ignores: ["**/node_modules/**", "**/.next/**", "**/dist/**", "**/next-env.d.ts", "**/playwright-report/**", "**/test-results/**"],
+  },
 
   // 2. Base rules for all TypeScript files in every package: ESLint's recommended set
   //    plus typescript-eslint's recommended set.

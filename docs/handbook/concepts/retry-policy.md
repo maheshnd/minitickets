@@ -28,6 +28,7 @@ flowchart TB
 ## 4. Where in our code
 
 - Anchor: `apps/web/src/providers/query-provider.tsx` · `shouldRetry`, `defaultOptions: { queries: { retry: shouldRetry }, mutations: { retry: 0 } }`.
+- Anchor: `apps/worker/src/retry-later.ts` · `delayFailedMessages`: background jobs retry with exponential backoff (10 s, 40 s, 120 s) via `ChangeMessageVisibility`, then the dead-letter queue (S1c).
 
 Step by step:
 

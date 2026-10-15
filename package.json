@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "pnpm stack:up && pnpm dev:apps",
     "dev:apps": "pnpm --parallel --filter \"./apps/*\" dev",
-    "doctor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/doctor.ts",
+    "stack:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stack-check.ts",
     "stack:up": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stack-up.ts",
     "stack:reset": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stack-reset.ts",
     "worker:dev": "pnpm --filter @minitickets/worker dev",

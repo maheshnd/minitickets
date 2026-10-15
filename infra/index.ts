@@ -41,6 +41,12 @@ import { createCertificate } from "./src/certificate";
 import { createHttpsListener } from "./src/entry/https-listener";
 import { createAlbPublicIngress } from "./src/entry/alb-public-ingress";
 import { parseAllowedCidrs, parseDomainName, trustedProxyHops } from "./src/entry/mode";
+import { createJobQueues } from "./src/jobs/queues";
+import { createProcessedJobsTable } from "./src/jobs/processed-jobs-table";
+import { createEmail } from "./src/jobs/email";
+import { createWorkerRole } from "./src/jobs/worker-iam";
+import { createWorkerLambda } from "./src/jobs/worker-lambda";
+import { createQueueTrigger } from "./src/jobs/queue-trigger";
 
 const config = new pulumi.Config();
 
@@ -114,14 +120,15 @@ const secrets = cache
   : undefined;
 
 // 8. Registry (ECR). Needs: nothing. Always on, because storing images costs cents.
-//    The push script (scripts/push-images.sh) reads its two URLs from the stack outputs.
+//    The push script (scripts/push-images.sh) reads the URLs from the stack outputs.
+//    Three repositories since S1c: api, web and worker (the Lambda's image).
 const registry = createRegistry();
 
 // 8a. Release (Step 12b). Needs: nothing. Always on (a standard SSM parameter is free). The ONE record
 //     of which image tag is deployed. Pulumi only creates it; CD writes its value (src/release.ts).
 const release = createRelease();
 
-// 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: the two repo ARNs (registry), because
+// 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: the three repo ARNs (registry), because
 //     the roles may push to / tag exactly those, the parameter ARN (release, 8a), the only parameter
 //     the deploy role may write, and which GitHub repo may use them (config). Always on: IAM is free.
 //     require() stops with a clear error if it is missing: a wrong or empty value would
@@ -133,8 +140,25 @@ const cicd = createCicd({
   githubSubjectPrefix: config.require("githubSubjectPrefix"),
   apiRepoArn: registry.apiRepoArn,
   webRepoArn: registry.webRepoArn,
+  workerRepoArn: registry.workerRepoArn,
   imageTagParameterArn: release.parameterArn,
 });
+
+// 8c. The job pipeline, always-on part (S1c, src/jobs/). Needs: nothing but config. Always on,
+//     because none of it costs anything while idle (billed per request / per email), and it keeps
+//     its state across off/on: messages waiting in the queue, the DKIM records you added by hand.
+//     - queues: minitickets-dev-jobs + its dead-letter queue (maxReceiveCount 3, encrypted)
+//     - table:  minitickets-dev-processed-jobs (on demand, TTL), the worker's "already done" memory
+//     - email:  the SES identities, only when domainName is set (the sender address is
+//               no-reply@<domainName>). sesTestRecipient: your own address, verified so the SES
+//               SANDBOX lets SES send to it (src/jobs/email.ts). A SECRET:
+//                 pulumi config set --secret sesTestRecipient you@example.com
+//               Then add the 3 DKIM records shown by: pulumi stack output sesDkimRecords
+const jobQueues = createJobQueues();
+const processedJobs = createProcessedJobsTable();
+const email = domainName
+  ? createEmail({ domainName, testRecipient: config.getSecret("sesTestRecipient") })
+  : undefined;
 
 // 9. The compute layer ON/OFF switch (see docs/17-infra-ecs-api.md).
 //    WHY: a running Fargate task is billed every second it runs. Same idea as dataEnabled.
@@ -159,6 +183,8 @@ if (computeEnabled && !dataEnabled) {
 //       broken): never commit them, or every CD deploy would keep running that old tag.
 //     migration: config migrationImageTag, set ONLY by CD on the command line (cd.yml phase A:
 //       `pulumi up --config migrationImageTag=<new>`), never committed. Unset = the api tag.
+//     worker (S1c): the SSM tag, or config workerImageTag, set ONLY by CD in phase A when the tag
+//       running now has no worker image yet (the first deploy with a worker). Never committed.
 //     No tag anywhere: chooseImageTags stops with a clear message. No "latest" default on purpose:
 //     it would hide WHICH code runs.
 const apiImageTagOverride = config.get("apiImageTag");
@@ -178,6 +204,7 @@ const imageTags = computeEnabled
         apiImageTag: apiImageTagOverride,
         webImageTag: webImageTagOverride,
         migrationImageTag: config.get("migrationImageTag"),
+        workerImageTag: config.get("workerImageTag"),
       }),
     )
   : undefined;
@@ -234,7 +261,8 @@ const cluster = computeEnabled ? createCluster() : undefined;
 const revalidateSecret = entryEnabled ? createRevalidateSecret() : undefined;
 
 // 13. IAM roles. Needs: the two secret ARNs from the data layer, because the execution role
-//     may read exactly those two secrets, plus the revalidate secret when entry is on (12b).
+//     may read exactly those two secrets, plus the revalidate secret when entry is on (12b), and
+//     the jobs queue's ARN (8c): the task role may send to exactly that queue (S1c).
 //     (postgres and secrets exist whenever compute is on, see 9a; checking them here also tells
 //     TypeScript they are not undefined.)
 const iam =
@@ -243,6 +271,7 @@ const iam =
         dbMasterSecretArn: postgres.masterSecretArn,
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         revalidateSecretArn: revalidateSecret?.secretArn,
+        jobsQueueArn: jobQueues.queueArn,
       })
     : undefined;
 
@@ -333,6 +362,7 @@ const serviceConnect = entryEnabled
 //     1 with the ALB alone, 0 with entry off (src/entry/mode.ts says why one too many is unsafe).
 //     With entry on it also gets the revalidate hook (Step 11h): the web server's Service Connect
 //     name and the shared secret. With entry off serviceConnect is undefined: hook off, small size.
+//     Since S1c also the jobs queue's URL (8c), so every booking sends a confirmation job.
 const apiTask =
   imageTags && iam && logs && postgres && secrets
     ? createApiTask({
@@ -346,6 +376,7 @@ const apiTask =
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         webOrigin: appUrlValue ?? "https://placeholder.invalid",
         trustProxyHops: trustedProxyHops({ entryEnabled, cdnEnabled }),
+        jobsQueueUrl: jobQueues.queueUrl,
         serviceConnect: revalidateSecret
           ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
           : undefined,
@@ -384,6 +415,40 @@ const apiService =
         namespaceArn: serviceConnect?.namespaceArn,
       })
     : undefined;
+
+// 20b. The worker Lambda (S1c, src/jobs/). Only the compute switch: with compute off nothing sends
+//      jobs, and the event source mapping would keep polling the empty queue (SQS requests).
+//      A Lambda costs nothing while idle; the queue, table and identities (8c) stay either way.
+//      - log group /minitickets/dev/worker (7 days), like the api's
+//      - role: read THIS queue, GetItem/PutItem on THIS table, SES send from no-reply@, logs (worker-iam.ts)
+//      - function: the worker image (registry, tag from 9b), arm64, 256 MB, 10 s, outside the VPC
+//      - trigger: the event source mapping, batches of 10, partial failures, max 5 in parallel
+//      workerReservedConcurrency (optional): see src/jobs/worker-lambda.ts 2e. This account's Lambda
+//      quota (10) is too low for any reservation today, so it is unset.
+const workerLogs = computeEnabled ? createLogs("worker") : undefined;
+const workerRole = workerLogs
+  ? createWorkerRole({
+      queueArn: jobQueues.queueArn,
+      tableArn: processedJobs.tableArn,
+      logGroupArn: workerLogs.logGroupArn,
+      email: email ? { identityArns: email.identityArns, mailFrom: email.mailFrom } : undefined,
+    })
+  : undefined;
+const worker =
+  imageTags && workerLogs && workerRole
+    ? createWorkerLambda({
+        image: pulumi.interpolate`${registry.workerRepoUrl}:${imageTags.worker}`,
+        roleArn: workerRole.roleArn,
+        logGroupName: workerLogs.logGroupName,
+        queueUrl: jobQueues.queueUrl,
+        tableName: processedJobs.tableName,
+        mailFrom: email?.mailFrom,
+        reservedConcurrency: config.getNumber("workerReservedConcurrency"),
+      })
+    : undefined;
+const workerTrigger = worker
+  ? createQueueTrigger({ queueArn: jobQueues.queueArn, functionArn: worker.functionArn })
+  : undefined;
 
 // 21. Web log group. Needs: nothing. Only the entry switch.
 const webLogs = entryEnabled ? createLogs("web") : undefined;
@@ -454,6 +519,7 @@ export const redisUrlSecretArn = secrets?.redisUrlSecretArn ?? null;
 // 27. Registry outputs: where to push the images.
 export const apiRepoUrl = registry.apiRepoUrl;
 export const webRepoUrl = registry.webRepoUrl;
+export const workerRepoUrl = registry.workerRepoUrl;
 
 // 27b. CI/CD outputs: copy them into the GitHub repo variables AWS_PUBLISH_ROLE_ARN and
 //      AWS_DEPLOY_ROLE_ARN (cd.yml reads them).
@@ -489,6 +555,18 @@ export const appDnsRecord =
 export const webServiceName = webService?.serviceName ?? null;
 export const webTaskDefinitionArn = webTask?.taskDefinitionArn ?? null;
 export const webLogGroup = webLogs?.logGroupName ?? null;
+
+// 29b. Job pipeline outputs (S1c). The queue URLs are for the CLI (aws sqs get-queue-attributes
+//      --queue-url ..., docs/20-deploy-day.md). sesDkimRecords: the 3 CNAMEs to add at Cloudflare
+//      ONCE (DNS only, no proxy). Not secrets: anyone can look them up in DNS.
+//      workerFunctionName / workerTriggerId: null when compute is off (same reason as 26).
+export const jobsQueueUrl = jobQueues.queueUrl;
+export const jobsDlqUrl = jobQueues.dlqUrl;
+export const processedJobsTable = processedJobs.tableName;
+export const sesMailFrom = email?.mailFrom ?? null;
+export const sesDkimRecords = email?.dkimRecords ?? null;
+export const workerFunctionName = worker?.functionName ?? null;
+export const workerTriggerId = workerTrigger?.mappingId ?? null;
 
 // 30. Certificate outputs (Step 11i, always on when domainName is set). The validation record is
 //     the CNAME to add at your DNS provider ONCE and keep (ACM renews with it). It is not a secret:

@@ -9,8 +9,8 @@ import { env } from "../config";
 
 // `pnpm jobs:table`: creates the processed-jobs table in DynamoDB LOCAL. Run it once after
 // `pnpm db:up`: DynamoDB Local keeps its data in memory, so a new or restarted container starts
-// empty. Safe to run again (it skips what already exists). On AWS the table will come from
-// Pulumi (S1c), never from this script.
+// empty. Safe to run again (it skips what already exists). On AWS the table comes from Pulumi
+// (infra/src/jobs/processed-jobs-table.ts), never from this script.
 
 // 1. Refuse to run without a local endpoint: without one, the SDK would talk to REAL AWS.
 if (!env.DYNAMODB_ENDPOINT) {

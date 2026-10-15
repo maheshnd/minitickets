@@ -23,7 +23,7 @@ describe("pendingMigrations", () => {
 });
 
 describe("portResult", () => {
-  it("pnpm run doctor (running): ours is ok, free is a warning, another program fails", () => {
+  it("pnpm stack:check (running): ours is ok, free is a warning, another program fails", () => {
     expect(portResult("api", 4000, "ours", "running").status).toBe("ok");
     expect(portResult("api", 4000, "free", "running").status).toBe("warn");
     const other = portResult("api", 4000, "other", "running", "java, pid 42");

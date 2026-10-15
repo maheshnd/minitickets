@@ -131,7 +131,7 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
-  # Proves both Docker images build. Nothing is pushed: CI never publishes. cd.yml builds the
+  # Proves the three Docker images build. Nothing is pushed: CI never publishes. cd.yml builds the
   # ARM64 images and pushes them to ECR, but only after this whole workflow has succeeded on main.
   docker:
     needs: quality
@@ -172,3 +172,15 @@ jobs:
           build-args: NEXT_PUBLIC_API_URL=http://localhost:4100
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      # 5. Build the worker image (S1c: the Lambda that sends booking emails). Built here for x86,
+      #    which only proves the Dockerfile and the bundle build; cd.yml builds the arm64 one that
+      #    Lambda runs (the Lambda base image exists for both).
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: false
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker

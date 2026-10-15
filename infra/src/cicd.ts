@@ -1,6 +1,7 @@
 // LAYER: cicd
 // NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish / deploy)
-//                   apiRepoArn, webRepoArn  <- from registry (the ONLY repos it may push to / tag)
+//                   apiRepoArn, webRepoArn, workerRepoArn <- from registry (the ONLY repos it may
+//                                            push to / tag)
 //                   imageTagParameterArn    <- from release (the ONLY parameter CD may write)
 // CREATES:          1 IAM OIDC provider (trust GitHub's login tokens),
 //                   1 role "minitickets-dev-gh-publish" + its inline permission policy,
@@ -26,7 +27,7 @@ import { tagsFor } from "./tags";
 //   GitHub job ── "give me an ID card" ──▶ GitHub (token.actions.githubusercontent.com)
 //   GitHub job ── ID card ──▶ AWS STS ── checks signature + trust conditions
 //   GitHub job ◀── temporary credentials (1 h) ── AWS STS
-//   GitHub job ── docker push ──▶ ECR (only our 2 repos)
+//   GitHub job ── docker push ──▶ ECR (only our 3 repos)
 //
 // TWO roles, one per job (least privilege):
 //   publish role: build + push images. Runs on every push to main, with no human in the loop.
@@ -44,6 +45,7 @@ export interface CicdInputs {
   githubSubjectPrefix: string;
   apiRepoArn: pulumi.Input<string>;
   webRepoArn: pulumi.Input<string>;
+  workerRepoArn: pulumi.Input<string>;
   imageTagParameterArn: pulumi.Input<string>;
 }
 
@@ -89,7 +91,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //   a GitHub Actions job, proven by a GitHub token (federated by the provider in step 2),
   //   only when the token is for AWS (aud) AND comes from main of our repo (sub). See step 4.
   // PERMISSION POLICY (what it can do):
-  //   log in to ECR + push/pull on ONLY the two minitickets repos. See step 6.
+  //   log in to ECR + push/pull on ONLY the three minitickets repos (api, web, worker). See step 6.
   // USED BY: .github/workflows/cd.yml, job "publish", step "Configure AWS credentials".
 
   // 4. The trust policy.
@@ -129,14 +131,14 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   // DEPENDS ON: trustPolicy (so: the provider).
   const publishRole = new aws.iam.Role(`${prefix}-gh-publish`, {
     name: `${prefix}-gh-publish`,
-    description: "GitHub Actions (main of our repo only): push images to the 2 minitickets ECR repos",
+    description: "GitHub Actions (main of our repo only): push images to the 3 minitickets ECR repos",
     assumeRolePolicy: trustPolicy,
     maxSessionDuration: 3600,
     tags: tagsFor(`${prefix}-gh-publish`),
   });
 
-  // 6. The permission policy: exactly what `docker login` + `docker push` to our 2 repos need.
-  // DEPENDS ON: publishRole, plus the two repo ARNs (from the registry layer).
+  // 6. The permission policy: exactly what `docker login` + `docker push` to our 3 repos need.
+  // DEPENDS ON: publishRole, plus the three repo ARNs (from the registry layer).
   const publishPolicy = new aws.iam.RolePolicy(`${prefix}-gh-publish-ecr`, {
     name: "push-images",
     role: publishRole.id,
@@ -154,7 +156,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Action: "ecr:GetAuthorizationToken",
           Resource: "*",
         },
-        // 6b. Push and pull, on ONLY our two repositories.
+        // 6b. Push and pull, on ONLY our three repositories (the worker's since S1c).
         //     PULL side (read):
         //       BatchCheckLayerAvailability: "do you already have this layer?" (push skips it)
         //       BatchGetImage:               read a manifest (cd.yml checks if a tag exists)
@@ -177,7 +179,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
             "ecr:CompleteLayerUpload",
             "ecr:PutImage",
           ],
-          Resource: [inputs.apiRepoArn, inputs.webRepoArn],
+          Resource: [inputs.apiRepoArn, inputs.webRepoArn, inputs.workerRepoArn],
         },
       ],
     }),
@@ -243,12 +245,14 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //     delete things that are NOT ours, if this account holds other projects.
   //     WHAT LIMITS IT:
   //       - WHO: only an approved job in the "dev" environment of our repo (step 8).
-  //       - WHERE: only us-east-1 (10j). Global services (IAM, CloudFront, Budgets) are called
+  //       - WHERE: only us-east-1 (10l). Global services (IAM, CloudFront, Budgets) are called
   //         through us-east-1, so they still work.
   //       - IAM (the dangerous one, 10c-10g): only roles named minitickets-dev-*, only passed to ECS
-  //         tasks, and only one AWS managed policy may be attached.
+  //         tasks or Lambda, and only one AWS managed policy may be attached.
   //       - Secrets (10b): only minitickets/* and the RDS-managed rds!* secrets.
-  //       - ECR and SSM (10h, 10i): only our 2 repositories and our 1 parameter.
+  //       - ECR and SSM (10h, 10i): only our 3 repositories and our 1 parameter.
+  //       - The job pipeline (10j, 10k, S1c): only queues, tables and functions named minitickets-dev-*,
+  //         and SES identities in this account and region.
   //       - TIME: credentials last at most 2 hours (step 9).
   //     WHAT IT DOES NOT STOP (be aware):
   //       - PutRolePolicy cannot be limited by CONTENT: an approved job could write an inline policy
@@ -257,7 +261,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //         environment. Not built in dev.
   //       - It can READ the secrets it manages (Pulumi reads them back), e.g. the DB password.
   //     The real protection is the approval: you see WHICH commit you approve.
-  // DEPENDS ON: deployRole, the 2 repo ARNs (registry), the parameter ARN (release), account + region.
+  // DEPENDS ON: deployRole, the 3 repo ARNs (registry), the parameter ARN (release), account + region.
   const accountId = aws.getCallerIdentityOutput().accountId;
   const region = aws.getRegionOutput().region;
   const deployPolicy = new aws.iam.RolePolicy(`${prefix}-gh-deploy-policy`, {
@@ -346,14 +350,15 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
             ArnEquals: { "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" },
           },
         },
-        // 10f. PassRole: "hand one of our roles to ECS". Needed to register a task definition with
-        //      an execution / task role, and to run the migration task. Only to ECS tasks.
+        // 10f. PassRole: "hand one of our roles to ECS or Lambda". Needed to register a task
+        //      definition with an execution / task role, to run the migration task, and (S1c) to
+        //      create the worker function with its role. Only to those two services.
         {
-          Sid: "PassOurRolesToEcsTasks",
+          Sid: "PassOurRolesToEcsTasksAndLambda",
           Effect: "Allow",
           Action: "iam:PassRole",
           Resource: pulumi.interpolate`arn:aws:iam::${accountId}:role/${prefix}-*`,
-          Condition: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } },
+          Condition: { StringEquals: { "iam:PassedToService": ["ecs-tasks.amazonaws.com", "lambda.amazonaws.com"] } },
         },
         // 10g. The GitHub OIDC provider (step 2) is part of the stack too, so Pulumi manages it.
         //      Plus: let AWS create its own "service-linked roles" for ECS, the ALB, RDS and
@@ -390,15 +395,17 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
             },
           },
         },
-        // 10h. ECR, only our 2 repositories. Everything there, because Pulumi owns them (create,
-        //      lifecycle policy, delete). cd.yml uses: DescribeImages (does the tag exist?),
-        //      BatchGetImage + PutImage (add the tag "deployed-<sha>" to an existing image).
+        // 10h. ECR, only our 3 repositories. Everything there, because Pulumi owns them (create,
+        //      lifecycle policy, the worker's repository policy, delete). cd.yml uses: DescribeImages
+        //      (does the tag exist?), BatchGetImage + PutImage (add the tag "deployed-<sha>" to an
+        //      existing image). Creating the worker Lambda also reads its image with the CALLER's
+        //      rights (BatchGetImage, GetDownloadUrlForLayer), which this covers.
         //      No GetAuthorizationToken: the deploy job never runs docker.
         {
           Sid: "OurEcrRepos",
           Effect: "Allow",
           Action: "ecr:*",
-          Resource: [inputs.apiRepoArn, inputs.webRepoArn],
+          Resource: [inputs.apiRepoArn, inputs.webRepoArn, inputs.workerRepoArn],
         },
         // 10i. SSM, only our one parameter (release.ts): Pulumi manages it, cd.yml reads and writes
         //      its value. GetParametersByPath is checked against the PATH (/minitickets/dev): that is
@@ -430,7 +437,39 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Action: "ssm:DescribeParameters",
           Resource: "*",
         },
-        // 10j. A DENY beats every Allow above: nothing outside our region. WHY: 10a is broad; this at
+        // 10j. The job pipeline (S1c): everything there, because Pulumi owns it (create, change,
+        //      delete), but only OUR resources, by name:
+        //        sqs:*      the jobs queue and its DLQ (minitickets-dev-*)
+        //        dynamodb:* the processed-jobs table (table/minitickets-dev-*)
+        //        lambda:*   the worker function (function:minitickets-dev-*) and its event source
+        //                   mapping (event-source-mapping:*: AWS names mappings by a random id, so
+        //                   they can't be limited by name)
+        //        ses:*      the email identities (identity/*: one is your email ADDRESS, which is a
+        //                   secret and must not be written into this policy)
+        //      cd.yml uses lambda:GetFunction + ListEventSourceMappings (is the new image running?).
+        {
+          Sid: "JobPipeline",
+          Effect: "Allow",
+          Action: ["sqs:*", "dynamodb:*", "lambda:*", "ses:*"],
+          Resource: [
+            pulumi.interpolate`arn:aws:sqs:${region}:${accountId}:${prefix}-*`,
+            pulumi.interpolate`arn:aws:dynamodb:${region}:${accountId}:table/${prefix}-*`,
+            pulumi.interpolate`arn:aws:lambda:${region}:${accountId}:function:${prefix}-*`,
+            pulumi.interpolate`arn:aws:lambda:${region}:${accountId}:event-source-mapping:*`,
+            pulumi.interpolate`arn:aws:ses:${region}:${accountId}:identity/*`,
+          ],
+        },
+        // 10k. Two Lambda actions that are not about one existing resource, so AWS accepts only "*":
+        //      CreateEventSourceMapping (the mapping's ARN does not exist yet) and
+        //      ListEventSourceMappings (a listing). They only create / list mappings; what a mapping
+        //      may then read is decided by the FUNCTION's role (jobs/worker-iam.ts).
+        {
+          Sid: "LambdaMappingsCreateList",
+          Effect: "Allow",
+          Action: ["lambda:CreateEventSourceMapping", "lambda:ListEventSourceMappings"],
+          Resource: "*",
+        },
+        // 10l. A DENY beats every Allow above: nothing outside our region. WHY: 10a is broad; this at
         //      least keeps a mistake (or a misuse) out of every other region of the account.
         //      Global services (IAM, CloudFront, Budgets) send their requests to us-east-1, so they
         //      still pass. If the stack ever moves region, change this together with aws:region.

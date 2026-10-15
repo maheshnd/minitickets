@@ -5,11 +5,12 @@ const none = { apiImageTag: undefined, webImageTag: undefined, migrationImageTag
 
 describe("chooseImageTags", () => {
   // 1. The normal case: CD wrote a tag to SSM, nothing in config. Everything runs that tag.
-  it("uses the SSM tag for api, web and the migration", () => {
+  it("uses the SSM tag for api, web, the migration and the worker", () => {
     expect(chooseImageTags({ ...none, deployedTag: "1a2b3c4" })).toEqual({
       api: "1a2b3c4",
       web: "1a2b3c4",
       migration: "1a2b3c4",
+      worker: "1a2b3c4",
     });
   });
 
@@ -19,7 +20,16 @@ describe("chooseImageTags", () => {
       api: "1a2b3c4",
       web: "1a2b3c4",
       migration: "9f8e7d6",
+      worker: "1a2b3c4",
     });
+  });
+
+  // 2b. CD phase A, first deploy with a worker (S1c): the running tag has no worker image, so the
+  //     worker gets the new tag; api and web keep the current one.
+  it("workerImageTag changes only the worker", () => {
+    expect(
+      chooseImageTags({ ...none, deployedTag: "1a2b3c4", migrationImageTag: "9f8e7d6", workerImageTag: "9f8e7d6" }),
+    ).toEqual({ api: "1a2b3c4", web: "1a2b3c4", migration: "9f8e7d6", worker: "9f8e7d6" });
   });
 
   // 3. Emergency / manual override: config beats SSM, per service. The migration follows the api.
@@ -28,9 +38,10 @@ describe("chooseImageTags", () => {
       api: "aaaaaaa",
       web: "1a2b3c4",
       migration: "aaaaaaa",
+      worker: "1a2b3c4",
     });
     expect(chooseImageTags({ ...none, deployedTag: undefined, apiImageTag: "aaaaaaa", webImageTag: "bbbbbbb" }))
-      .toEqual({ api: "aaaaaaa", web: "bbbbbbb", migration: "aaaaaaa" });
+      .toEqual({ api: "aaaaaaa", web: "bbbbbbb", migration: "aaaaaaa", worker: "aaaaaaa" });
   });
 
   // 4. Nothing deployed yet (no parameter, or still the placeholder) and no override: a clear error.
@@ -50,6 +61,9 @@ describe("chooseImageTags", () => {
       expect(() => chooseImageTags({ ...none, deployedTag: bad }), bad).toThrow(/not a git SHA/);
       expect(() => chooseImageTags({ ...none, deployedTag: "1a2b3c4", migrationImageTag: bad }), bad).toThrow(
         /migration image tag/,
+      );
+      expect(() => chooseImageTags({ ...none, deployedTag: "1a2b3c4", workerImageTag: bad }), bad).toThrow(
+        /worker image tag/,
       );
     }
   });

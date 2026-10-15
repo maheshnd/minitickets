@@ -7,10 +7,12 @@
 //          ▼
 //   chooseImageTags ──▶ api tag, web tag        (the services)
 //                   ──▶ migration tag           (the migration task definition)
+//                   ──▶ worker tag              (the worker Lambda, S1c)
 //
 // Priority, highest first:
 //   api / web:  config apiImageTag / webImageTag (EMERGENCY / MANUAL USE ONLY) > SSM
 //   migration:  config migrationImageTag (set ONLY by CD with --config, never committed) > api tag
+//   worker:     config workerImageTag (set ONLY by CD with --config, never committed) > SSM
 import * as pulumi from "@pulumi/pulumi";
 
 // 1. The value the SSM parameter starts with, before the first deploy (release.ts). SSM refuses an
@@ -29,12 +31,16 @@ export interface ImageTagInputs {
   apiImageTag: string | undefined;
   webImageTag: string | undefined;
   migrationImageTag: string | undefined;
+  // Set ONLY by CD phase A when the tag running now has no worker image (the first deploy after S1c
+  // added the worker, cd.yml step 31): the worker then starts with the NEW tag right away.
+  workerImageTag?: string | undefined;
 }
 
 export interface ImageTags {
   api: string;
   web: string;
   migration: string;
+  worker: string;
 }
 
 export function chooseImageTags(inputs: ImageTagInputs): ImageTags {
@@ -60,15 +66,21 @@ export function chooseImageTags(inputs: ImageTagInputs): ImageTags {
   // 6. The migration runs the NEW image during CD phase A; otherwise the same code as the api.
   const migration = inputs.migrationImageTag ?? api;
 
+  // 6b. The worker Lambda runs the deployed tag too (all images of one commit share its tag), unless
+  //     CD says otherwise for the first deploy (see workerImageTag above). With no SSM tag but an
+  //     emergency api override, it follows the api (one commit's images belong together).
+  //     NOT the api override when SSM has a tag: that override is about the api container only.
+  const worker = inputs.workerImageTag ?? deployed ?? api;
+
   // 7. Every tag must look like a git SHA (2).
-  for (const [name, tag] of Object.entries({ api, web, migration })) {
+  for (const [name, tag] of Object.entries({ api, web, migration, worker })) {
     if (!IMAGE_TAG.test(tag)) {
       throw new pulumi.RunError(
         `The ${name} image tag "${tag}" is not a git SHA (7-40 lowercase hex characters). ` +
-          "Check SSM /minitickets/dev/image-tag and the config keys apiImageTag, webImageTag, migrationImageTag.",
+          "Check SSM /minitickets/dev/image-tag and the config keys apiImageTag, webImageTag, migrationImageTag, workerImageTag.",
       );
     }
   }
 
-  return { api, web, migration };
+  return { api, web, migration, worker };
 }
