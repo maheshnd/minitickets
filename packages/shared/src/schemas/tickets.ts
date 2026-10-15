@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_TICKETS_PER_BOOKING } from "./bookings";
+import { MyTicketSchema } from "./bookings";
 import { BookingConfirmedMessage } from "./jobs";
 
 // 1. Email can read pre-P4 messages. Tickets need ownership and a valid event date;
@@ -37,3 +38,14 @@ export const TicketRecord = TicketClaims.extend({
   createdAt: z.iso.datetime(),
 });
 export type TicketRecord = z.infer<typeof TicketRecord>;
+
+// 4. Public ticket output deliberately omits the token, owner id and storage key.
+export const IssuedTicket = z.object({
+  ticketId: z.string(), seat: z.number().int().min(1).max(MAX_TICKETS_PER_BOOKING),
+  qrUrl: z.url(), downloadUrl: z.url(), expiresAt: z.iso.datetime(),
+});
+export const TicketBooking = MyTicketSchema.extend({
+  creationStatus: z.enum(["creating", "ready"]), tickets: z.array(IssuedTicket),
+});
+export const TicketsMineOutput = z.array(TicketBooking);
+export type TicketBooking = z.infer<typeof TicketBooking>;

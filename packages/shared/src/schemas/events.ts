@@ -9,6 +9,8 @@ export const EventSchema = z.object({
   startsAt: z.string(),
   totalSeats: z.number().int(),
   seatsLeft: z.number().int(),
+  // Detail responses sign this at request time; cached list rows carry no expiring URLs.
+  posterUrl: z.url().nullable().optional(),
 });
 
 export type Event = z.infer<typeof EventSchema>;

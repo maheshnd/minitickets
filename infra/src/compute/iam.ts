@@ -33,6 +33,8 @@ export interface IamInputs {
   // undefined = entry off: no web app to revalidate, so the role reads only the two data secrets.
   revalidateSecretArn?: pulumi.Input<string>;
   bookingEventsTopicArn: pulumi.Input<string>;
+  ticketsTableArn: pulumi.Input<string>;
+  assetsBucketArn: pulumi.Input<string>;
 }
 
 export interface IamOutputs {
@@ -178,6 +180,23 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     }),
   });
 
+  // 7c. WHO: API task (ECS trust above). WHAT: Query one tickets table and GET only tickets/*;
+  //     no ticket writes, Scan, signing-secret read or bucket listing. Poster permissions are
+  //     separate: GET staging for validation/copy, PUT staging/published with SSE-S3.
+  //     ATTACHED: api-task-role, used by SDK signing AND actual validation requests.
+  const taskAssets = new aws.iam.RolePolicy(`${prefix}-api-task-assets`, {
+    name: "ticket-reads-and-posters", role: taskRole.id,
+    policy: pulumi.jsonStringify({ Version: "2012-10-17", Statement: [
+      { Sid: "ReadTickets", Effect: "Allow", Action: "dynamodb:Query", Resource: inputs.ticketsTableArn },
+      { Sid: "ReadTicketPngs", Effect: "Allow", Action: "s3:GetObject", Resource: pulumi.interpolate`${inputs.assetsBucketArn}/tickets/*` },
+      { Sid: "ReadPosters", Effect: "Allow", Action: "s3:GetObject", Resource: [
+        pulumi.interpolate`${inputs.assetsBucketArn}/posters/*`, pulumi.interpolate`${inputs.assetsBucketArn}/poster-uploads/*`] },
+      { Sid: "WritePosters", Effect: "Allow", Action: "s3:PutObject", Resource: [
+        pulumi.interpolate`${inputs.assetsBucketArn}/posters/*`, pulumi.interpolate`${inputs.assetsBucketArn}/poster-uploads/*`],
+        Condition: { StringEquals: { "s3:x-amz-server-side-encryption": "AES256" } } },
+    ] }),
+  });
+
   // 8. Return each ARN only once its policies are attached (same idea as cluster.ts step 3).
   //    WHY: the task definition needs only the ARN, so without this ECS could start the first
   //    task while the role still has no permissions, and it would fail to read the secrets.
@@ -186,6 +205,6 @@ export function createIamRoles(inputs: IamInputs): IamOutputs {
     executionRoleArn: pulumi
       .all([executionRole.arn, executionManaged.id, executionSecrets.id])
       .apply(([arn]) => arn),
-    taskRoleArn: pulumi.all([taskRole.arn, taskExec.id, taskSendJobs.id]).apply(([arn]) => arn),
+    taskRoleArn: pulumi.all([taskRole.arn, taskExec.id, taskSendJobs.id, taskAssets.id]).apply(([arn]) => arn),
   };
 }

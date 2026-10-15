@@ -42,7 +42,10 @@ export function createTicketStorage() {
   //    Business retention/expiry is deferred; there is no fixed-age deletion of issued QR PNGs.
   const lifecycle = new aws.s3.BucketLifecycleConfiguration(`${prefix}-ticket-assets-lifecycle`, {
     bucket: bucket.id, rules: [{ id: "abort-incomplete-ticket-uploads", status: "Enabled", filter: { prefix: "tickets/" },
-      abortIncompleteMultipartUpload: { daysAfterInitiation: 1 } }],
+      abortIncompleteMultipartUpload: { daysAfterInitiation: 1 } },
+      // P4B: rejected/abandoned uploads never become event posters; bound their storage cost.
+      { id: "expire-staged-posters", status: "Enabled", filter: { prefix: "poster-uploads/" },
+        expiration: { days: 1 }, abortIncompleteMultipartUpload: { daysAfterInitiation: 1 } }],
   });
   // 4. RandomBytes is a secret Pulumi output, encrypted in state. Export only the secret ARN;
   //    the runtime fetches its value with GetSecretValue. No automatic rotation in this phase:

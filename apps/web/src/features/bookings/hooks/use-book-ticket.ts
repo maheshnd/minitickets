@@ -29,7 +29,8 @@ export function useBookTicket(eventId: string) {
       // input, so the SAME idempotency key, and the API never books one key twice (lib/booking-retry.ts).
       retry: shouldRetryBooking,
       onSuccess: () =>
-        Promise.all([invalidateSeats(), queryClient.invalidateQueries({ queryKey: trpc.bookings.mine.queryKey() })]),
+        Promise.all([invalidateSeats(), queryClient.invalidateQueries({ queryKey: trpc.bookings.mine.queryKey() }),
+          queryClient.invalidateQueries({ queryKey: trpc.tickets.mine.queryKey() })]),
       onError: (error) => {
         if (error.data?.httpStatus === 409) return invalidateSeats();
       },

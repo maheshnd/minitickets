@@ -17,4 +17,5 @@ export {
 } from "./schemas/bookings";
 export { RevalidateSecretSchema } from "./schemas/revalidate";
 export { BookingConfirmedMessage, CorrelationId } from "./schemas/jobs";
-export { TicketBookingMessage, TicketClaims, TicketRecord } from "./schemas/tickets";
+export { TicketBookingMessage, TicketClaims, TicketRecord, IssuedTicket, TicketBooking, TicketsMineOutput } from "./schemas/tickets";
+export { MAX_POSTER_BYTES, PosterContentType, PosterUploadInput, PosterUploadOutput, CompletePosterInput, CompletePosterOutput } from "./schemas/posters";

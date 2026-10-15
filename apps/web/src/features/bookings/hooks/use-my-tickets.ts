@@ -9,7 +9,12 @@ import { useTRPC } from "@/lib/trpc/client";
 export function useMyTickets() {
   const trpc = useTRPC();
   const router = useRouter();
-  const tickets = useQuery(trpc.bookings.mine.queryOptions());
+  // 1. Poll while the worker catches up, then refresh before the two-minute links expire.
+  //    Focus refetch repairs links after a sleeping/background tab; private data is not SSR'd.
+  const tickets = useQuery(trpc.tickets.mine.queryOptions(undefined, {
+    staleTime: 0, refetchOnWindowFocus: "always",
+    refetchInterval: query => query.state.data?.some(booking => booking.creationStatus === "creating") ? 2000 : 60_000,
+  }));
 
   // 401 means the cookie is there but the session is not valid any more (expired or deleted),
   // which the route guard in proxy.ts cannot see. Send the user to log in again, then back here.

@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // 1. Making an admin needs the make-admin script, which talks to the LOCAL database. Against a
 //    deployed app (E2E_BASE_URL) we cannot do that, so these tests are skipped there.
-test.skip(!!process.env.E2E_BASE_URL, "needs the local database to make an admin");
+test.skip(!!process.env.E2E_BASE_URL && process.env.P4_E2E !== "1", "needs the local database to make an admin");
 
 // 2. Fixed time zone, so the date we type into the datetime-local input means the same moment
 //    on every machine (the input takes the browser's local time).

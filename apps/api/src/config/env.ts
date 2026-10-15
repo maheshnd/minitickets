@@ -44,6 +44,11 @@ const EnvSchema = z.object({
   BOOKING_EVENTS_TOPIC_ARN: z.string().regex(/^arn:aws:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]+$/).optional(),
   // Local Moto only. Unset on AWS so the SDK uses real SNS.
   SNS_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  // P4: names/addresses only. The API can read tickets and manage the separate poster prefix.
+  TICKETS_TABLE: z.string().min(1).optional(),
+  TICKETS_BUCKET: z.string().min(1).optional(),
+  DYNAMODB_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+  S3_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
   // The AWS region the SDK signs requests for (Moto uses us-east-1). us-east-1 is the
   // region of our AWS setup (infra/Pulumi.dev.yaml).
   AWS_REGION: z.string().min(1).default("us-east-1"),
@@ -59,6 +64,9 @@ const EnvSchema = z.object({
   .refine((e) => (e.WEB_INTERNAL_URL === undefined) === (e.REVALIDATE_SECRET === undefined), {
     message: "set both WEB_INTERNAL_URL and REVALIDATE_SECRET, or neither",
     path: ["REVALIDATE_SECRET"],
+  })
+  .refine((e) => (e.TICKETS_TABLE === undefined) === (e.TICKETS_BUCKET === undefined), {
+    message: "set both TICKETS_TABLE and TICKETS_BUCKET, or neither", path: ["TICKETS_BUCKET"],
   });
 
 // 2. Check process.env once, when the API starts: the app settings and the database settings.

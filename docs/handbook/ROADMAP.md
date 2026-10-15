@@ -47,7 +47,8 @@ flowchart LR
   waits for its first CD deploy (bootstrap + email confirmation in `docs/20-deploy-day.md` 3.12).
   **P3 (outbox) is built:** atomic booking + confirmation, API relay with locked batches and retries.
   **P4 Part A is built:** SNS fan-out + idempotent HMAC QR ticket Lambda, private S3/DynamoDB, local emulators and CD; AWS acceptance pending.
-  **Next: P4 Part B**, tickets.mine/presigned reads, My tickets QR/download/pending UI and admin poster uploads.
+  **P4 Part B is built:** owner-scoped tickets.mine, short-lived QR/download URLs and pending UI; admin-only constrained poster uploads. AWS acceptance pending.
+  **Next: P5**, following [the series prompt](prompts/series-2.md).
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

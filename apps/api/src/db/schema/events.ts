@@ -13,6 +13,8 @@ export const events = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     title: text("title").notNull(),
     venue: text("venue").notNull(),
+    // 1b. A private, verified S3 object key. URLs are signed at read time, never persisted.
+    posterKey: text("poster_key"),
     // 2. timestamptz: Postgres stores the moment in UTC. The browser shows it in the user's timezone.
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     totalSeats: integer("total_seats").notNull(),

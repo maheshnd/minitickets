@@ -50,6 +50,13 @@
       "when": 1792103445545,
       "tag": "0006_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792105996448,
+      "tag": "0007_event_poster",
+      "breakpoints": true
     }
   ]
 }

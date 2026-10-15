@@ -17,7 +17,7 @@ const WHY: Record<string, string> = {
   WEB_INTERNAL_URL: "the revalidate hook (with REVALIDATE_SECRET): without it the 2 admin e2e tests fail",
   JOBS_QUEUE_URL: "without it the local email worker cannot read confirmations",
   JOBS_DLQ_URL: "used by pnpm jobs:dlq and pnpm jobs:redrive",
-  DYNAMODB_ENDPOINT: "without it the worker would call REAL AWS DynamoDB instead of the local container",
+  DYNAMODB_ENDPOINT: "without it SDK reads/writes call REAL AWS DynamoDB instead of the local container",
   BOOKING_EVENTS_TOPIC_ARN: "without it the API outbox relay waits instead of publishing",
   SNS_ENDPOINT: "local SNS must use Moto, matching the worker SQS endpoint",
   SQS_ENDPOINT: "without it the SDK would call REAL AWS SQS instead of the local queue container",
@@ -143,7 +143,7 @@ export function checkAgreement(envs: EnvFiles): CheckResult[] {
   }
 
   // 5c. The relay and local setup must agree on the topic and Moto endpoint.
-  for (const key of ["BOOKING_EVENTS_TOPIC_ARN", "SNS_ENDPOINT"]) {
+  for (const key of ["BOOKING_EVENTS_TOPIC_ARN", "SNS_ENDPOINT", "TICKETS_TABLE", "TICKETS_BUCKET", "DYNAMODB_ENDPOINT", "S3_ENDPOINT", "WEB_ORIGIN"]) {
     if (api[key] && worker[key] && api[key] !== worker[key]) {
       problems.push({ status: "fail", title: `${key} differs between api and worker`,
         fix: [`use the same ${key} in apps/api/.env and apps/worker/.env`] });

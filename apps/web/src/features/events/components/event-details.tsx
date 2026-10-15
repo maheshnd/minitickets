@@ -2,6 +2,7 @@
 
 import { useEvent } from "../hooks/use-event";
 import { EventDate } from "./event-date";
+import { PosterUpload } from "./poster-upload";
 
 // The top of the event page: title, when, where, and how many seats are left.
 // A Client Component because it reads the event through a query: the server's data arrives with the
@@ -20,11 +21,17 @@ export function EventDetails({ id }: { id: string }) {
     );
   }
 
-  const { title, venue, startsAt, seatsLeft, totalSeats } = event.data;
+  const { title, venue, startsAt, seatsLeft, totalSeats, posterUrl } = event.data;
   const soldOut = seatsLeft === 0;
 
   return (
     <section aria-labelledby="event-title" className="rounded-lg border border-gray-200 bg-white p-6">
+      {/* 3. Private signed images bypass the shared image optimizer; the API renews on reads. */}
+      {posterUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={posterUrl} alt={`Poster for ${title}`} className="mb-5 max-h-96 w-full rounded-md object-contain"
+          referrerPolicy="no-referrer" />
+      )}
       <div className="flex items-start justify-between gap-3">
         <h1 id="event-title" className="text-2xl font-bold">
           {title}
@@ -43,6 +50,7 @@ export function EventDetails({ id }: { id: string }) {
       <p className="mt-3 text-sm text-gray-600">
         {soldOut ? "No seats left" : `${seatsLeft} of ${totalSeats} seats left`}
       </p>
+      <PosterUpload eventId={id} />
     </section>
   );
 }

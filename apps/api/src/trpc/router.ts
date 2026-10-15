@@ -2,6 +2,8 @@ import { accountRouter } from "../procedures/account";
 import { authRouter } from "../procedures/auth";
 import { bookingsRouter } from "../procedures/bookings";
 import { eventsRouter } from "../procedures/events";
+import { ticketsRouter } from "../procedures/tickets";
+import { postersRouter } from "../procedures/posters";
 import { router } from "./init";
 
 // @concept: rpc-vs-rest
@@ -12,6 +14,8 @@ export const appRouter = router({
   account: accountRouter,
   events: eventsRouter,
   bookings: bookingsRouter,
+  tickets: ticketsRouter,
+  posters: postersRouter,
 });
 
 // @concept: end-to-end-types

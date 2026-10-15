@@ -41,6 +41,8 @@ export interface TaskInputs {
   webOrigin: pulumi.Input<string>;
   trustProxyHops: number;
   bookingEventsTopicArn: pulumi.Input<string>;
+  ticketsTableName: pulumi.Input<string>;
+  assetsBucketName: pulumi.Input<string>;
   // undefined = no Service Connect (entry off): exactly the Step 11e/11g task. One object, not two
   // optional fields, because the api's env check wants BOTH values or neither (config/env.ts).
   serviceConnect?: {
@@ -140,6 +142,8 @@ export function createApiTask(inputs: TaskInputs): TaskOutputs {
           // here (apps/api/src/queues/jobs.ts). Its credentials come from the task role (iam.ts 7b).
           // No SNS_ENDPOINT: the SDK talks to real SNS (Moto is local-only).
           { name: "BOOKING_EVENTS_TOPIC_ARN", value: inputs.bookingEventsTopicArn },
+          { name: "TICKETS_TABLE", value: inputs.ticketsTableName },
+          { name: "TICKETS_BUCKET", value: inputs.assetsBucketName },
         ],
 
         // @concept: secrets-management

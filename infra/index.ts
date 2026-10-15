@@ -46,6 +46,7 @@ import { createBookingEvents } from "./src/jobs/booking-events";
 import { createTicketStorage } from "./src/tickets/storage";
 import { createTicketRole } from "./src/tickets/iam";
 import { createTicketLambda } from "./src/tickets/lambda";
+import { createAssetCors } from "./src/tickets/cors";
 import { createProcessedJobsTable } from "./src/jobs/processed-jobs-table";
 import { createEmail } from "./src/jobs/email";
 import { createWorkerRole } from "./src/jobs/worker-iam";
@@ -288,6 +289,8 @@ const iam =
         redisUrlSecretArn: secrets.redisUrlSecretArn,
         revalidateSecretArn: revalidateSecret?.secretArn,
         bookingEventsTopicArn: bookingEvents.topicArn,
+        ticketsTableArn: ticketStorage.tableArn,
+        assetsBucketArn: ticketStorage.bucketArn,
       })
     : undefined;
 
@@ -360,6 +363,8 @@ const cdn =
 // 18a. The public https address of the app: CloudFront's in CloudFront mode, our own domain in
 //      ALB-only mode, nothing with entry off.
 const appUrlValue = cdn?.appUrl ?? (httpsListener ? `https://${domainName}` : undefined);
+// P4B: the browser PUTs straight to S3, including in ALB-only mode. No wildcard origins.
+if (appUrlValue) createAssetCors(ticketStorage.bucketName, appUrlValue);
 
 // 18b. Service Connect (Step 11h). Needs: the api and web security groups (security), for the two
 //      proxy-port rules. Creates the Cloud Map namespace both services join. Only the entry switch:
@@ -393,6 +398,8 @@ const apiTask =
         webOrigin: appUrlValue ?? "https://placeholder.invalid",
         trustProxyHops: trustedProxyHops({ entryEnabled, cdnEnabled }),
         bookingEventsTopicArn: bookingEvents.topicArn,
+        ticketsTableName: ticketStorage.tableName,
+        assetsBucketName: ticketStorage.bucketName,
         serviceConnect: revalidateSecret
           ? { webInternalUrl: "http://web:3000", revalidateSecretArn: revalidateSecret.secretArn }
           : undefined,

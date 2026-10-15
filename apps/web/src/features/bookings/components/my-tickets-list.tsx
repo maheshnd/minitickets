@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 // timezone; the events feature already solved that, so we reuse its component.
 import { EventDate } from "@/features/events/components/event-date";
 import { useMyTickets } from "../hooks/use-my-tickets";
+import { TicketQr } from "./ticket-qr";
 
 // The logged-in user's bookings, newest first. A Client Component because it uses a query.
 export function MyTicketsList() {
@@ -57,6 +58,14 @@ export function MyTicketsList() {
           <p className="mt-3 text-sm font-medium">
             {ticket.quantity} {ticket.quantity === 1 ? "ticket" : "tickets"} · {ticket.status}
           </p>
+          {/* 5. The booking is confirmed before its QR files exist. Show completed seats as
+              they arrive; polling fills the rest without asking the customer to rebook. */}
+          {ticket.creationStatus === "creating" && <p role="status" className="mt-3 text-sm text-gray-600">
+            Your tickets are being created. They will appear here automatically.
+          </p>}
+          <div className="mt-3 flex flex-wrap gap-3">
+            {ticket.tickets.map(qr => <TicketQr key={qr.ticketId} ticket={qr} refresh={() => void tickets.refetch()} />)}
+          </div>
         </li>
       ))}
     </ul>

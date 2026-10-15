@@ -13,6 +13,7 @@ import * as events from "../queries/events";
 import * as webCache from "../queries/web-cache";
 import { canonicalFilters, canonicalString, type EventFilters } from "./event-filters";
 import { singleFlight } from "./single-flight";
+import { signAssetGet } from "../queries/assets";
 
 // Services: business logic. No HTTP and no SQL in here.
 
@@ -451,7 +452,11 @@ export async function createEvent(input: CreateEventInput, log: Log): Promise<Pu
 export async function getEvent(id: string): Promise<PublicEvent> {
   const row = await events.findById(id);
   if (!row) throw new NotFoundError("Event not found");
-  return toPublicEvent(row);
+  // 18. Only the uncached detail response carries an expiring poster link; list caches keep
+  //     plain event data. No public bucket, hardcoded S3 hostname or permanent signed URL.
+  //     The public route must NEVER turn a corrupt poster key into a private ticket link.
+  if (row.posterKey && !row.posterKey.startsWith(`posters/${row.id}/`)) throw new Error("invalid published poster key");
+  return { ...toPublicEvent(row), posterUrl: row.posterKey ? await signAssetGet(row.posterKey) : null };
 }
 
 // Invalidate every cached events list, after anything that changes them: a new event (createEvent

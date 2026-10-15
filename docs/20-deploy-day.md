@@ -1104,7 +1104,89 @@ the same handlers as Lambda. `stack:reset` now also clears Moto's disposable tic
 and recreates them (owner-run only). The demo uses unique resources and cleans only those.
 Moto's IAM/anonymous-access behaviour is not proof of AWS security; verify the live settings
 above. HTTPS-only policy is AWS-only because the local emulator endpoint uses HTTP.
-Part B (ticket retrieval, presigned URLs, QR UI, poster uploads) is deliberately still pending.
+Part B (ticket retrieval, presigned URLs, QR UI, poster uploads) is covered by §3.15 below.
+
+### 3.15 P4 Part B: ticket reads and constrained poster uploads
+
+**Deploy through the existing CD path.** Migration `0007_event_poster.sql` adds nullable
+`events.poster_key` before the new API image rolls. The same published SHA contains that SQL;
+no extra image, secret, CD job or stack switch. The additive column is compatible with Part A.
+If Part A is not deployed yet, do its one-time deploy-policy bootstrap from §3.14 first.
+
+The API task gets `TICKETS_TABLE=minitickets-dev-tickets` and
+`TICKETS_BUCKET=minitickets-dev-ticket-assets-258237553751`. Its new inline role policy
+`ticket-reads-and-posters` is attached to `minitickets-dev-api-task-role` (ECS trust is unchanged):
+
+- Ticket access: `dynamodb:Query` on the tickets table only and `s3:GetObject` on `tickets/*`
+  only. No Scan, ticket writes, signing-key access or bucket listing. The application queries
+  the session's `userId` partition, follows DynamoDB cursors and checks booking/seat/key identity
+  before signing. IAM cannot distinguish two app users sharing one ECS task role.
+- Poster access is separate: GetObject on `poster-uploads/*` (Head/Get/copy source) and
+  `posters/*` (public event poster signing), PutObject on those two prefixes only, requiring
+  `s3:x-amz-server-side-encryption=AES256`. No DeleteObject or ticket-prefix writes.
+- CORS resource `minitickets-dev-ticket-assets-cors` allows GET/PUT from the current app origin
+  only: `https://minitickets.theversehub.in` in ALB-only mode, or appUrl in CloudFront mode.
+  Headers: content-type, content-length and x-amz-server-side-encryption. CORS is a browser rule,
+  **not authorization**: scripts still need a valid signed capability.
+- S3 lifecycle `expire-staged-posters` expires `poster-uploads/` after one day and aborts its
+  incomplete multipart uploads after one day. Published posters and tickets are retained;
+  automatic cleanup of replaced posters is deferred. No new standing fee; usage/storage grows.
+
+**Ticket flow.** `GET tickets.mine` requires a session and ignores caller-selected ownership.
+Postgres bookings are returned even before their DynamoDB records exist. Only ready records
+receive 120-second signed GET URLs; raw tokens, owner ids and object keys are not response fields.
+The QR and attachment download use separate signed Content-Disposition values and private,
+no-store responses. These URLs are bearer credentials: do not copy them into logs, analytics or
+shared caches. The page polls every two seconds while creating, then every minute to renew links;
+focus refetch handles sleeping tabs, and a failed QR has an explicit Refresh links action. Old
+pre-P4 bookings without QR records remain pending: historical backfill is still not implemented.
+
+**Poster flow and security.** An admin opens an event page, selects PNG/JPEG up to 2 MiB and
+4096 pixels per side (at most 16 million pixels), then uploads. Both API operations re-check the
+current database role. Start generates `poster-uploads/<eventId>/<adminId>/<uploadId>` and a
+120-second presigned PUT. The real SDK signer explicitly binds content-type, exact content-length
+and SSE; the browser supplies Content-Length from its File body. The signer disables optional
+empty-body checksum generation because it does not have the uploaded bytes.
+
+A successful PUT alone does not publish anything. Complete reconstructs that admin/event's
+staging key, checks S3's actual size/type, reads bounded bytes with IfMatch, and checks raster
+headers/dimensions. It copies with CopySourceIfMatch into a new `posters/<eventId>/<uuid>.png|jpg`
+key before saving only that key in Postgres. Reusing a PUT URL cannot overwrite the published
+copy; changing the staging object during validation fails the copy precondition. The public
+event reader refuses ticket/staging/foreign-event keys and signs only its own published poster.
+No arbitrary client filename, object key, public ACL or permanent upload URL is accepted.
+
+**Scanning limit:** header/dimension checks are not a full decoder or malware scanner. JPEG/PNG
+can still be malformed; the UI always renders them in an image context, never as active markup.
+A production upload path should keep staging private, scan in isolation, decode/re-encode with
+bounded resources, then promote only a clean result. SVG/HTML are rejected in this phase. Never
+trust the client's MIME, dimensions or success message as proof that an object is safe. See the
+[SDK presigning options](https://github.com/aws/aws-sdk-js-v3/tree/main/packages/s3-request-presigner#readme)
+and [AWS signed-header rules](https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html).
+
+**Local check:** compare the new API settings with `.env.example` and the worker's resource names.
+Set worker `WEB_ORIGIN` to match the API/browser origin so `pnpm tickets:setup` installs matching
+CORS. Existing services stay running; normal `pnpm dev` applies the migration and setup.
+`pnpm demo:p4-assets` instead uses a disposable local database, topic/queues, tables, bucket/key
+and its own API :4101 / web :3101 / worker. It runs only booking, admin and P4 browser specs,
+without screenshots, and cleans its own resources. Owner servers and environment files are left
+alone. Redis database 15 demo session/cache keys expire by their existing TTL. The optional
+Docker full-app profile is not part of this browser verification.
+
+**Live AWS acceptance (after CD):**
+
+| Console path | Expected | Read-only CLI / app check |
+| --- | --- | --- |
+| IAM → Roles → `minitickets-dev-api-task-role` → Permissions | `ticket-reads-and-posters`: Query only the ticket table; GET only ticket/poster prefixes; PUT only poster prefixes with AES256; no ticket writes | `aws iam get-role-policy --role-name minitickets-dev-api-task-role --policy-name ticket-reads-and-posters` |
+| S3 → `minitickets-dev-ticket-assets-258237553751` → Permissions → CORS | Exact app origin, GET/PUT; no wildcard origin | `aws s3api get-bucket-cors --bucket minitickets-dev-ticket-assets-258237553751` |
+| S3 → bucket → Management → Lifecycle | `poster-uploads/` expires after one day; issued tickets/published posters not expired | `aws s3api get-bucket-lifecycle-configuration --bucket minitickets-dev-ticket-assets-258237553751` |
+| ECS → API → Task definition → Environment | Matching table/bucket names; no endpoint overrides or signing secret | `aws ecs describe-task-definition --task-definition <api-task-definition-arn> --query 'taskDefinition.containerDefinitions[0].environment'` |
+| App → My tickets | Book N seats: pending → N QR codes; PNG attachment download; signed URL expires after 120 s; another account gets no URLs for them | Browser Network: tickets.mine has Cache-Control no-store and no raw token/key; reusing a copied GET after expiry returns 403 |
+| App → event → Event poster (admin) | Direct S3 PUT with exact signed type/length; verified poster survives reload; normal user gets 403 on start and complete; SVG/oversize gets 400 before signing | Browser Network shows S3 PUT then posters.complete; changing a valid PUT's signed Content-Type or body length must get 403 on real S3 |
+
+Moto exercises the same SDK/CORS/data path but does not prove live IAM or signature enforcement.
+Do the live tampered-header/length and expired-GET checks after deployment; no AWS writes were
+performed by the agent. Original Part A acceptance remains required if that stack is still pending.
 
 ## 4. Dependency order
 

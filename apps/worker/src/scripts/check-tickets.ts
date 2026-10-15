@@ -1,5 +1,5 @@
 import { DescribeTableCommand } from "@aws-sdk/client-dynamodb";
-import { GetBucketEncryptionCommand, GetBucketLifecycleConfigurationCommand, GetPublicAccessBlockCommand } from "@aws-sdk/client-s3";
+import { GetBucketCorsCommand, GetBucketEncryptionCommand, GetBucketLifecycleConfigurationCommand, GetPublicAccessBlockCommand } from "@aws-sdk/client-s3";
 import { DescribeSecretCommand } from "@aws-sdk/client-secrets-manager";
 import { GetSubscriptionAttributesCommand, ListSubscriptionsByTopicCommand } from "@aws-sdk/client-sns";
 import { GetQueueAttributesCommand } from "@aws-sdk/client-sqs";
@@ -33,8 +33,12 @@ try {
   assert.equal(encryption.ServerSideEncryptionConfiguration?.Rules?.[0].ApplyServerSideEncryptionByDefault?.SSEAlgorithm, "AES256");
   const lifecycle = await clients.s3.send(new GetBucketLifecycleConfigurationCommand({ Bucket: settings.TICKETS_BUCKET }));
   assert(lifecycle.Rules?.some(rule => rule.Status === "Enabled" && rule.AbortIncompleteMultipartUpload?.DaysAfterInitiation === 1));
+  assert(lifecycle.Rules?.some(rule => rule.Filter?.Prefix === "poster-uploads/" && rule.Expiration?.Days === 1), "staged posters need one-day expiry");
+  const cors = await clients.s3.send(new GetBucketCorsCommand({ Bucket: settings.TICKETS_BUCKET }));
+  assert(cors.CORSRules?.some(rule => rule.AllowedOrigins?.includes(settings.WEB_ORIGIN)
+    && rule.AllowedMethods?.includes("PUT")), "poster PUT CORS must allow the configured web origin");
   await clients.secrets.send(new DescribeSecretCommand({ SecretId: settings.TICKET_SIGNING_SECRET_ID }));
-  console.log("P4: 2 raw subscriptions, 2 queues/DLQs, tickets table + date GSI, private/SSE/lifecycle bucket, signing secret exist");
+  console.log("P4: 2 raw subscriptions, 2 queues/DLQs, tickets table/GSI, private/SSE/lifecycle/CORS bucket, signing secret exist");
 } catch {
   console.error("P4 pipeline check failed: compare .env with .env.example, then run pnpm tickets:setup (emulators must be running)");
   process.exitCode = 1;

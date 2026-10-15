@@ -32,7 +32,8 @@
     "infra:migrate": "bash scripts/run-migrations.sh",
     "infra:graph": "cd infra && pulumi stack graph deps.dot",
     "tickets:setup": "pnpm --filter @minitickets/worker tickets:setup",
-    "demo:tickets": "pnpm --filter @minitickets/worker demo:tickets"
+    "demo:tickets": "pnpm --filter @minitickets/worker demo:tickets",
+    "demo:p4-assets": "pnpm --filter @minitickets/api demo:p4-assets"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

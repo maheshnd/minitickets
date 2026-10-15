@@ -1,8 +1,8 @@
-import { CreateQueueCommand, GetQueueAttributesCommand, SetQueueAttributesCommand, SQSClient } from "@aws-sdk/client-sqs";
-import { CreateTopicCommand, SNSClient, SubscribeCommand, ListSubscriptionsByTopicCommand } from "@aws-sdk/client-sns";
-import { CreateBucketCommand, HeadBucketCommand, PutBucketEncryptionCommand, PutPublicAccessBlockCommand, PutBucketLifecycleConfigurationCommand, S3Client } from "@aws-sdk/client-s3";
-import { CreateSecretCommand, DescribeSecretCommand, ResourceNotFoundException, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import { CreateTableCommand, DynamoDBClient, ResourceInUseException, waitUntilTableExists } from "@aws-sdk/client-dynamodb";
+import { DeleteQueueCommand, CreateQueueCommand, GetQueueAttributesCommand, SetQueueAttributesCommand, SQSClient } from "@aws-sdk/client-sqs";
+import { DeleteTopicCommand, CreateTopicCommand, SNSClient, SubscribeCommand, ListSubscriptionsByTopicCommand } from "@aws-sdk/client-sns";
+import { DeleteBucketCommand, DeleteObjectsCommand, ListObjectsV2Command, CreateBucketCommand, HeadBucketCommand, PutBucketCorsCommand, PutBucketEncryptionCommand, PutPublicAccessBlockCommand, PutBucketLifecycleConfigurationCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteSecretCommand, CreateSecretCommand, DescribeSecretCommand, ResourceNotFoundException, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
+import { DeleteTableCommand, CreateTableCommand, DynamoDBClient, ResourceInUseException, waitUntilTableExists } from "@aws-sdk/client-dynamodb";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 
@@ -22,6 +22,7 @@ export const LocalTicketSettings = z.object({
   TICKETS_TABLE: z.string().regex(/^[a-zA-Z0-9_-]+$/).default("minitickets-tickets"),
   TICKETS_BUCKET: z.string().regex(/^[a-z0-9-]+$/).default("minitickets-ticket-assets"),
   TICKET_SIGNING_SECRET_ID: z.string().min(1).default("minitickets/local/ticket-signing"),
+  WEB_ORIGIN: localUrl.default("http://localhost:3000"),
 }).refine(e => e.SNS_ENDPOINT === e.SQS_ENDPOINT, "SNS and SQS must use the SAME Moto backend (see .env.example)");
 export type LocalTicketSettings = z.infer<typeof LocalTicketSettings>;
 
@@ -82,11 +83,32 @@ export async function setupLocalTickets(settings: LocalTicketSettings, prefix = 
     ServerSideEncryptionConfiguration: { Rules: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: "AES256" } }] } }));
   await s3.send(new PutBucketLifecycleConfigurationCommand({ Bucket: settings.TICKETS_BUCKET,
     LifecycleConfiguration: { Rules: [{ ID: "abort-incomplete-ticket-uploads", Status: "Enabled", Filter: { Prefix: "tickets/" },
-      AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }] } }));
+      AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }, { ID: "expire-staged-posters", Status: "Enabled",
+      Filter: { Prefix: "poster-uploads/" }, Expiration: { Days: 1 }, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }] } }));
+  await s3.send(new PutBucketCorsCommand({ Bucket: settings.TICKETS_BUCKET, CORSConfiguration: { CORSRules: [{
+    AllowedOrigins: [settings.WEB_ORIGIN], AllowedMethods: ["GET", "PUT"],
+    AllowedHeaders: ["content-type", "content-length", "x-amz-server-side-encryption"], ExposeHeaders: ["ETag"], MaxAgeSeconds: 120,
+  }] } }));
   try { await secrets.send(new DescribeSecretCommand({ SecretId: settings.TICKET_SIGNING_SECRET_ID })); }
   catch (err) {
     if (!(err instanceof ResourceNotFoundException)) throw err;
     await secrets.send(new CreateSecretCommand({ Name: settings.TICKET_SIGNING_SECRET_ID, SecretString: randomBytes(32).toString("hex") }));
   }
   return { clients, topicArn, email: queues[0], tickets: queues[1] };
+}
+
+// 4. Demo cleanup is owned by this local-only SDK module, keeping extra AWS SDK packages out
+//    of the API. The caller supplies only resources its own setup created, never shared names.
+export async function cleanupLocalTickets(settings: LocalTicketSettings, stack: Awaited<ReturnType<typeof setupLocalTickets>>, extraTable?: string) {
+  const { s3, dynamo, sns, sqs, secrets } = stack.clients;
+  const objects = await s3.send(new ListObjectsV2Command({ Bucket: settings.TICKETS_BUCKET }));
+  if (objects.Contents?.length) await s3.send(new DeleteObjectsCommand({ Bucket: settings.TICKETS_BUCKET,
+    Delete: { Objects: objects.Contents.map(object => ({ Key: object.Key! })) } }));
+  await s3.send(new DeleteBucketCommand({ Bucket: settings.TICKETS_BUCKET }));
+  await dynamo.send(new DeleteTableCommand({ TableName: settings.TICKETS_TABLE }));
+  if (extraTable) await dynamo.send(new DeleteTableCommand({ TableName: extraTable }));
+  await secrets.send(new DeleteSecretCommand({ SecretId: settings.TICKET_SIGNING_SECRET_ID, ForceDeleteWithoutRecovery: true }));
+  await sns.send(new DeleteTopicCommand({ TopicArn: stack.topicArn }));
+  for (const queue of [stack.email, stack.tickets]) for (const QueueUrl of [queue.url, queue.dlq]) await sqs.send(new DeleteQueueCommand({ QueueUrl }));
+  Object.values(stack.clients).forEach(client => client.destroy());
 }

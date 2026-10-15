@@ -8,6 +8,12 @@ import { events } from "../db/schema/events";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// P4. Attach only a server-generated verified poster key; the service owns validation.
+export async function setPosterKey(id: string, posterKey: string) {
+  const [row] = await db.update(events).set({ posterKey }).where(eq(events.id, id)).returning({ id: events.id });
+  return row ?? null;
+}
+
 // 1. Events that have not started yet, soonest first, at most 50, matching the filters.
 //    `now` is passed in (not read here) so the caller decides what "upcoming" means.
 //    The index events_starts_at_idx (on starts_at) makes this cheap: the filter (> now), the sort
