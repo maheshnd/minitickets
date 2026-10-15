@@ -25,9 +25,29 @@ flowchart LR
 
 ---
 
-## 2026-10-14 · feat(bookings): book a ticket + My tickets, row-locked booking transaction, race demo
+## 2026-10-15 · feat(dev): local stack health: pnpm run doctor, pnpm dev sets up the stack, pnpm stack:reset (series 2, P0)
 
 Commit: filled in by the next handbook commit
+
+Why: Series 2, phase P0. The series asks for `@concept` anchors on new code, so two cards gain an
+anchor line; the series prompt gets its missing history line (`docs:check` failed on it since
+98c1ed1) and says `pnpm run doctor`, because plain `pnpm doctor` is pnpm's own built-in command.
+`pnpm docs:history --since 98c1ed1` lists the files below.
+
+- `concepts/health-checks.md`: "4. Where in our code" gains `scripts/stack/data-checks.ts`
+  (`checkPostgres`, `checkRedis`: the laptop's readiness checks).
+- `concepts/twelve-factor-config.md`: "4. Where in our code" gains `scripts/stack/env-checks.ts`
+  (the env files checked against their `.env.example`, values never printed).
+- `prompts/series-2.md`: history line under the title; "Rules for every phase" and "P0" say
+  `pnpm run doctor` (why: a built-in wins over a script and prints nothing).
+- `ROADMAP.md`: status lines only (S1b done; series 2 sets the order; P0 done, P1 = S1c next).
+- `PENDING.md`: the P0 entry.
+
+---
+
+## 2026-10-14 · feat(bookings): book a ticket + My tickets, row-locked booking transaction, race demo
+
+Commit: e7a3965
 
 Why: Feature 2 starts, and the owner changed the plan: the ticketing + serverless series (F2a, F2b,
 S1-S4) comes next, with all handbook, guide and explorer writing batched until after it. Only the

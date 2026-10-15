@@ -38,7 +38,11 @@ docs/            One file per step, in plain English.
 
 ```
 pnpm install      install everything
-pnpm dev          run web (:3000) and api (:4000) together
+pnpm dev          stack:up (containers, migrations, seed, jobs table, checks), then web (:3000),
+                  api (:4000) and worker together. pnpm dev:apps = only the apps
+pnpm run doctor   check the whole local stack, print exact fixes (only looks). NOT `pnpm doctor`:
+                  that is pnpm's own built-in, which wins over the script and prints nothing
+pnpm stack:reset  empty the queues + jobs table, put the sample events back (deletes their bookings)
 pnpm typecheck    tsc --noEmit in every package
 pnpm docs:check   handbook and code agree (@concept anchors <-> cards <-> concept map)
 pnpm docs:history handbook files with last change (from git); --since <commit> for changed sections

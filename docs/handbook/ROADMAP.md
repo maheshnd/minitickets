@@ -35,10 +35,10 @@ flowchart LR
 
 ## Where things stand now
 
-- **F2a, F2b and S1a are done** (committed).
-- **S1b (failure handling for the jobs) is built locally, not committed yet:** a dead-letter queue
-  (`jobs:dlq`, `jobs:redrive`), retry backoff, an idempotent consumer in DynamoDB Local
-  (`jobs:table`), partial batch failures, `MAILER_FAIL_MODE` for demos.
+- **F2a, F2b, S1a and S1b are done** (committed).
+- **Series 2 ([prompts/series-2.md](prompts/series-2.md)) now sets the order (P0-P11, then D0-D3).
+  P0 (local stack health) is done:** `pnpm run doctor`, `pnpm dev` = `stack:up` + the apps,
+  `pnpm stack:reset`. **Next: P1 = S1c**, the job pipeline on AWS.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
@@ -72,8 +72,8 @@ The ticketing + serverless series. Each item links to its prompt once there is o
 2. **F2b: idempotency key for booking** (done, [prompt](prompts/f2b.md)).
    A retried "Book ticket" request doesn't book twice.
 3. **S1: booking confirmation email.** In parts. **S1a** (done, [prompt](prompts/s1a.md)): the API
-   puts a message on a local queue (ElasticMQ), a worker reads it and logs the email. **S1b** (built
-   locally, awaiting review, [prompt](prompts/s1b.md)): a dead-letter queue (DLQ: where messages go
+   puts a message on a local queue (ElasticMQ), a worker reads it and logs the email. **S1b** (done,
+   [prompt](prompts/s1b.md)): a dead-letter queue (DLQ: where messages go
    after too many failures), retries with backoff, and idempotency in DynamoDB Local (handling the
    same message twice does no harm). **S1c** follows: the same on AWS (SQS, Lambda, SES, DynamoDB).
 4. **S2: a ticket with a QR code**, through SNS fan-out (one message, several subscribers): a

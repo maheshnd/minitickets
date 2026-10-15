@@ -3,7 +3,11 @@
   "private": true,
   "packageManager": "pnpm@10.33.2",
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "dev": "pnpm stack:up && pnpm dev:apps",
+    "dev:apps": "pnpm --parallel --filter \"./apps/*\" dev",
+    "doctor": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/doctor.ts",
+    "stack:up": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stack-up.ts",
+    "stack:reset": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/stack-reset.ts",
     "worker:dev": "pnpm --filter @minitickets/worker dev",
     "jobs:table": "pnpm --filter @minitickets/worker jobs:table",
     "jobs:dlq": "pnpm --filter @minitickets/worker jobs:dlq",

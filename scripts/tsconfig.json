@@ -11,7 +11,11 @@
     // 2. Node runs these files directly by stripping the types, with no build step. It can only
     //    strip syntax that has no runtime effect, so we forbid the rest (enums, namespaces,
     //    constructor parameter properties). tsc then fails BEFORE Node would at run time.
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+
+    // 3. Node only runs an import with its real file name ("./stack/checks.ts"), so the scripts
+    //    write the .ts ending, and tsc must allow it (only possible because tsc emits nothing).
+    "allowImportingTsExtensions": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "stack/*.ts"]
 }

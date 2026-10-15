@@ -31,6 +31,7 @@ flowchart LR
 - Anchor: `apps/api/src/config/env.ts` · `EnvSchema`: every api setting is read from `process.env` and validated.
 - Anchor: `apps/web/Dockerfile` · step 6, `ARG NEXT_PUBLIC_API_URL=""` → `ENV`: the build-time exception.
 - Anchor: `infra/src/compute/task.ts` · `environment` (plain values) and `secrets` (from Secrets Manager).
+- Anchor: `scripts/stack/env-checks.ts` · `checkEnvFile`, `checkRevalidateSecret`, `checkAgreement`, `checkShellOverrides`: `pnpm run doctor` checks the local env files against their `.env.example` (never printing a value).
 
 Step by step:
 

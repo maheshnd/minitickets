@@ -1,5 +1,7 @@
 # Series 2: finish MiniTickets and teach it
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 ## Goal
 Finish MiniTickets so it covers the scenarios senior/lead interviews ask
 about (frontend, backend, database, caching, async, AWS, security,
@@ -49,14 +51,15 @@ very simple English, connected, and checkable (code <-> console <-> CLI).
   Break the code on purpose once to prove each important test catches it.
 - Local dev: the same SDK code paths as AWS, with local emulators in
   docker-compose (simplest reliable option per service; explain why).
-- Finish every phase with: pnpm doctor, typecheck, lint, unit tests, e2e
+- Finish every phase with: pnpm run doctor, typecheck, lint, unit tests, e2e
   on my servers (:3000/:4000), docs:check, actionlint (if workflows
   changed), pulumi preview (if infra changed; paste the summary).
 
 ## Build phases
 
 ### P0 Local stack health
-- `pnpm doctor`: checks every container, env file, migration, queue,
+- `pnpm run doctor` (with "run": plain `pnpm doctor` is pnpm's own
+  built-in, which wins over the script and prints nothing): checks every container, env file, migration, queue,
   table and port the app needs; prints exactly what to fix.
 - `pnpm dev` starts everything needed; `pnpm stack:reset` recreates local
   queues/tables/seed data (DynamoDB Local is in-memory: handle that).
