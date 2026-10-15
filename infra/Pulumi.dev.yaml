@@ -18,3 +18,5 @@ config:
   minitickets:cdnEnabled: "false"
   minitickets:domainName: minitickets.theversehub.in
   minitickets:githubSubjectPrefix: repo:maheshnd@63289193/minitickets@1412723955
+  minitickets:sesTestRecipient:
+    secure: AAABAAuwWabvr1vhom9+jnf81pKCP2Kg0kl0kteyhCXrIz85SrywXLirRFjvgO/WaDWxg0W4XdScSPORxf0=
