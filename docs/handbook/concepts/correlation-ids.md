@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: 🟡 partial (a request id inside the api; not passed between services or returned to the client) · Step doc: [02 errors](../../02-errors.md)
+Area: Observability · Status: 🟡 partial (P2: a UUID per api request, returned in `x-correlation-id` and carried to the worker; the text below predates P2, see PENDING.md) · Step doc: [02 errors](../../02-errors.md)
 
 ## 1. In one line
 
@@ -27,7 +27,10 @@ flowchart LR
 
 ## 4. Where in our code
 
-- Anchor: `apps/api/src/app.ts` · `reqId: req.id` in `onError`, `reqId: request.id` in `setErrorHandler`; Fastify adds `reqId` to every request log line.
+- Anchor: `apps/api/src/app.ts` · `genReqId` + `LogController({ requestIdLogLabel: "correlationId" })` (P2): Fastify adds `correlationId` to every request log line (was `reqId: req-1, …` before P2).
+- Anchor: `apps/api/src/http/correlation-id.ts` · `correlationIdFor`, `addCorrelationIdHeader`: the caller's UUID or a new one; every answer carries `x-correlation-id` (P2).
+- Anchor: `packages/shared/src/schemas/jobs.ts` · `CorrelationId`, `BookingConfirmedMessage.correlationId` (optional, so still version 1): the id travels in the queue message (P2).
+- Anchor: `apps/worker/src/correlation.ts` · `correlationIdOf`: the worker reads it from the message body and writes it on each of its lines for that message (P2).
 
 Step by step:
 

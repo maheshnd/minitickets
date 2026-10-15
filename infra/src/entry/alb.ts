@@ -5,6 +5,7 @@
 // GIVES (outputs):  albArn     -> used by listener
 //                   albDnsName -> used by cdn (its origin) and as a stack output (in ALB-only
 //                                 mode your domain's CNAME points at it)
+//                   albArnSuffix -> observability (P2): CloudWatch names the ALB's metrics by it
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -32,6 +33,7 @@ export interface AlbInputs {
 export interface AlbOutputs {
   albArn: pulumi.Output<string>;
   albDnsName: pulumi.Output<string>;
+  albArnSuffix: pulumi.Output<string>;
 }
 
 // @concept: alb
@@ -69,5 +71,7 @@ export function createAlb(inputs: AlbInputs): AlbOutputs {
     tags: tagsFor(`${prefix}-alb`),
   });
 
-  return { albArn: alb.arn, albDnsName: alb.dnsName };
+  // 2. arnSuffix ("app/minitickets-dev/<id>"): the ALB's name in CloudWatch. Its metrics (requests,
+  //    5xx answers, response time) have the dimension LoadBalancer = this value, not the ARN (P2).
+  return { albArn: alb.arn, albDnsName: alb.dnsName, albArnSuffix: alb.arnSuffix };
 }

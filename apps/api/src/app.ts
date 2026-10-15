@@ -1,9 +1,10 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
-import Fastify, { type FastifyError } from "fastify";
+import Fastify, { LogController, type FastifyError } from "fastify";
 import { env } from "./config/env";
 import { trustProxyHops } from "./config/trust-proxy";
+import { addCorrelationIdHeader, CORRELATION_HEADER, correlationIdFor } from "./http/correlation-id";
 import { addNoStoreDefault } from "./http/no-store";
 import { pingDb, pingRedis } from "./queries/health";
 import { createContext } from "./trpc/context";
@@ -47,7 +48,18 @@ export async function buildApp() {
     //     WHY: real client IPs in the logs now, and per-visitor rate limiting later.
     //     Locally TRUST_PROXY_HOPS is 0, so nothing changes: trust nobody (see ./config/trust-proxy.ts).
     trustProxy: trustProxyHops(env.TRUST_PROXY_HOPS),
+    // @concept: correlation-ids
+    // 1b2. The correlation id (P2, ./http/correlation-id.ts): a UUID per request (the caller's from
+    //      the x-correlation-id header if valid, else a new one). Fastify keeps it as request.id and
+    //      writes it on EVERY log line of the request under the name "correlationId" (instead of
+    //      "reqId"), the same field name the worker uses, so one search covers both services.
+    //      (The label is set through a LogController: Fastify 5.12 deprecated the top-level option.)
+    genReqId: (request) => correlationIdFor(request.headers[CORRELATION_HEADER]),
+    logController: new LogController({ requestIdLogLabel: "correlationId" }),
   });
+
+  // 1b3. Every answer carries the id back in the x-correlation-id header.
+  addCorrelationIdHeader(app);
 
   // 1c. Privacy: "Cache-Control: no-store" on every response by default. tRPC responses can contain
   //     user data, so shared caches (CloudFront, proxies) must never store them. Added FIRST, so it
@@ -72,12 +84,13 @@ export async function buildApp() {
 
     if (statusCode >= 500) {
       // Unexpected: log the real error (message + stack), tell the client nothing.
-      request.log.error({ reqId: request.id, err: error }, "request failed");
+      // request.log already adds the correlationId (1b2), so the line belongs to its request.
+      request.log.error({ err: error }, "request failed");
       return reply.status(500).send({ error: "Something went wrong" });
     }
 
     // The caller's mistake (4xx): a short warning is enough, and the message is safe to show.
-    request.log.warn({ reqId: request.id, code: error.code }, "request rejected");
+    request.log.warn({ code: error.code }, "request rejected");
     return reply.status(statusCode).send({ error: error.message });
   });
 
@@ -108,15 +121,15 @@ export async function buildApp() {
     trpcOptions: {
       router: appRouter,
       createContext,
-      // @concept: correlation-ids
       // onError runs for every failed procedure, after the error is mapped. It only LOGS;
       // the response the client gets is decided by the errorFormatter.
+      // req.log (not app.log): the request's own logger, which adds its correlationId (1b2).
       onError({ path, error, req }) {
         if (error.code === "INTERNAL_SERVER_ERROR") {
           // `error.cause` is the original error (e.g. "db password leaked"), with its stack.
-          app.log.error({ reqId: req.id, path, err: error.cause ?? error }, "procedure crashed");
+          req.log.error({ path, err: error.cause ?? error }, "procedure crashed");
         } else {
-          app.log.warn({ reqId: req.id, path, code: error.code }, "procedure rejected");
+          req.log.warn({ path, code: error.code }, "procedure rejected");
         }
       },
       // `satisfies` asks TypeScript to check these options against our router's types.

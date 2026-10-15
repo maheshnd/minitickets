@@ -1,6 +1,8 @@
 import { ChangeMessageVisibilityCommand, type SQSClient } from "@aws-sdk/client-sqs";
 import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
 import { backoffSeconds } from "./backoff";
+import { correlationIdOf } from "./correlation";
+import type { Log } from "./log";
 
 // @concept: retry-policy
 // BACKOFF FOR FAILED MESSAGES, done by the handler itself, so it works the same on AWS and locally.
@@ -21,13 +23,14 @@ export async function delayFailedMessages(
   response: SQSBatchResponse,
   sqs: Pick<SQSClient, "send">,
   queueUrl: string | undefined,
+  log: Log,
 ): Promise<void> {
   if (response.batchItemFailures.length === 0) return;
 
   // 1. Without the queue's URL we cannot call SQS: the failed messages then come back after the
   //    queue's own visibility timeout (no growing wait, but nothing is lost).
   if (!queueUrl) {
-    console.warn("[worker] JOBS_QUEUE_URL is not set: failed messages retry after the queue's visibility timeout");
+    log.warn("JOBS_QUEUE_URL is not set: failed messages retry after the queue's visibility timeout");
     return;
   }
 
@@ -35,17 +38,19 @@ export async function delayFailedMessages(
   for (const record of event.Records.filter((r) => failedIds.has(r.messageId))) {
     // 2. How long to wait depends on how many times the queue delivered it so far.
     const wait = backoffSeconds(Number(record.attributes?.ApproximateReceiveCount ?? "1"));
+    // 2b. The message's own logger: its lines carry the booking's correlationId (P2).
+    const messageLog = log.child({ correlationId: correlationIdOf(record.body), sqsMessageId: record.messageId });
     try {
       // 3. The receipt handle is THIS delivery's ticket for the message: only the consumer that
       //    received it can change its visibility (or delete it).
       await sqs.send(
         new ChangeMessageVisibilityCommand({ QueueUrl: queueUrl, ReceiptHandle: record.receiptHandle, VisibilityTimeout: wait }),
       );
-      console.log(`[worker] message ${record.messageId} stays in the queue, next try in ${wait} s`);
+      messageLog.info("stays in the queue for a later try", { nextTryInSeconds: wait });
     } catch (err) {
       // 4. Could not set the wait: the message still comes back, just after the queue's default
       //    visibility timeout. Not worth failing anything else for.
-      console.error(`[worker] could not delay message ${record.messageId}:`, err instanceof Error ? err.message : err);
+      messageLog.error("could not delay the next try", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 }

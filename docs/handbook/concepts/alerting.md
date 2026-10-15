@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: 🟡 partial (cost only) · Step doc: [13 security groups + budget](../../13-infra-security-groups.md)
+Area: Observability · Status: 🟡 partial (P2 added health alarms by email; the text below predates P2, see PENDING.md) · Step doc: [13 security groups + budget](../../13-infra-security-groups.md)
 
 ## 1. In one line
 
@@ -24,7 +24,9 @@ flowchart LR
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/budget.ts` · `createBudget`: the only alert: email at 25/50/100% actual and 100% forecast of $20.
+- Anchor: `infra/src/budget.ts` · `createBudget`: the cost alert: email at 25/50/100% actual and 100% forecast of $20.
+- Anchor: `infra/src/observability/alarm-specs.ts` · `alarmSpecs`: the health alarms (P2): DLQ not empty, oldest message age >= 5 min, worker Lambda errors, ALB 5xx >= 5 in 5 min.
+- Anchor: `infra/src/observability/alert-topic.ts` · `createAlertTopic`: SNS topic `minitickets-dev-alerts` (only our CloudWatch alarms may publish) + an email subscription you confirm by hand (P2).
 
 There are no CloudWatch alarms, SNS topics or on-call integrations in our code.
 

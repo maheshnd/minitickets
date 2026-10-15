@@ -47,6 +47,10 @@ import { createEmail } from "./src/jobs/email";
 import { createWorkerRole } from "./src/jobs/worker-iam";
 import { createWorkerLambda } from "./src/jobs/worker-lambda";
 import { createQueueTrigger } from "./src/jobs/queue-trigger";
+import { createAlertTopic } from "./src/observability/alert-topic";
+import { createAlarms } from "./src/observability/alarms";
+import { createDashboard } from "./src/observability/dashboard";
+import { createLogQueries } from "./src/observability/log-queries";
 
 const config = new pulumi.Config();
 
@@ -75,7 +79,9 @@ const security = createSecurityGroups({ vpcId: network.vpcId, cdnEnabled });
 //    other layer: it watches the whole AWS account.
 //    require() stops with a clear error if the email is missing, so we never create a
 //    budget that emails nobody. Set it with: pulumi config set alertEmail you@example.com
-createBudget({ alertEmail: config.require("alertEmail") });
+//    The same address gets the alarm emails (25b, P2).
+const alertEmail = config.require("alertEmail");
+createBudget({ alertEmail });
 
 // 3b. Certificate (Step 11i). Needs: only domainName (0). Always on when domainName is set, NOT
 //     behind the entry switch: it is free, and DNS validation waits for a record you add by hand at
@@ -497,6 +503,36 @@ const webService =
       })
     : undefined;
 
+// 24b. Observability (series 2, P2, src/observability/). Needs: the alert email (3), the queue names
+//      (8c), and, when they exist, the worker function (20b), the api service + cluster (12, 20), the
+//      log groups (11, 20b) and the ALB (14). Each part follows the switch of what it watches.
+//      - alert topic: SNS minitickets-dev-alerts -> email to alertEmail (confirm the email once!)
+//      - alarms: DLQ not empty + oldest message age (always), worker errors (compute), ALB 5xx (entry)
+//      - dashboard minitickets-dev: one page of graphs; saved Logs Insights queries (compute)
+//      Cost: about $0.20/month always on, at most $0.50/month with everything on (alarms.ts).
+const alertTopic = createAlertTopic({ alertEmail });
+const alarms = createAlarms({
+  topicArn: alertTopic.topicArn,
+  jobsQueueName: jobQueues.queueName,
+  dlqName: jobQueues.dlqName,
+  workerFunctionName: worker?.functionName,
+  albArnSuffix: alb?.albArnSuffix,
+});
+const dashboard = createDashboard({
+  alarmArns: alarms.alarmArns,
+  jobsQueueName: jobQueues.queueName,
+  dlqName: jobQueues.dlqName,
+  api:
+    cluster && apiService && logs
+      ? { clusterName: cluster.clusterName, serviceName: apiService.serviceName, logGroupName: logs.logGroupName }
+      : undefined,
+  worker: worker && workerLogs ? { functionName: worker.functionName, logGroupName: workerLogs.logGroupName } : undefined,
+  albArnSuffix: alb?.albArnSuffix,
+});
+if (logs && workerLogs) {
+  createLogQueries({ apiLogGroupName: logs.logGroupName, workerLogGroupName: workerLogs.logGroupName });
+}
+
 // 25. Stack outputs. Network and security are always on.
 export const vpcId = network.vpcId;
 export const publicSubnetIds = network.publicSubnetIds;
@@ -569,6 +605,11 @@ export const sesMailFrom = email?.mailFrom ?? null;
 export const sesDkimRecords = email?.dkimRecords ?? null;
 export const workerFunctionName = worker?.functionName ?? null;
 export const workerTriggerId = workerTrigger?.mappingId ?? null;
+
+// 29c. Observability outputs (P2). alertTopicArn: where the alarms publish (aws sns
+//      list-subscriptions-by-topic --topic-arn ... shows whether the email is confirmed).
+export const alertTopicArn = alertTopic.topicArn;
+export const dashboardName = dashboard.dashboardName;
 
 // 30. Certificate outputs (Step 11i, always on when domainName is set). The validation record is
 //     the CNAME to add at your DNS provider ONCE and keep (ACM renews with it). It is not a secret:

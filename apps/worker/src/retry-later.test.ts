@@ -1,6 +1,7 @@
 import { ChangeMessageVisibilityCommand } from "@aws-sdk/client-sqs";
 import type { SQSEvent, SQSRecord } from "aws-lambda";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createLog } from "./log";
 import { delayFailedMessages } from "./retry-later";
 
 // delayFailedMessages with a fake SQS client: which messages get which wait?
@@ -10,19 +11,22 @@ function record(id: string, receiveCount: string): SQSRecord {
   return { messageId: id, receiptHandle: `handle-${id}`, body: "{}", attributes: { ApproximateReceiveCount: receiveCount } } as SQSRecord;
 }
 
+// The JSON lines it wrote (log.ts), collected instead of printed.
+let lines: Record<string, unknown>[] = [];
+const log = createLog({}, (line) => {
+  lines.push(JSON.parse(line));
+});
+
 describe("delayFailedMessages (backoff on Lambda and locally)", () => {
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    lines = [];
   });
-  afterEach(() => vi.restoreAllMocks());
 
   it("delays ONLY the failed messages, each by its own backoff (try 1 -> 10 s, try 2 -> 40 s)", async () => {
     const send = vi.fn().mockResolvedValue({});
     const event = { Records: [record("a", "1"), record("b", "1"), record("c", "2")] } as SQSEvent;
 
-    await delayFailedMessages(event, { batchItemFailures: [{ itemIdentifier: "b" }, { itemIdentifier: "c" }] }, { send }, QUEUE);
+    await delayFailedMessages(event, { batchItemFailures: [{ itemIdentifier: "b" }, { itemIdentifier: "c" }] }, { send }, QUEUE, log);
 
     expect(send).toHaveBeenCalledTimes(2);
     for (const [command] of send.mock.calls) expect(command).toBeInstanceOf(ChangeMessageVisibilityCommand);
@@ -34,22 +38,22 @@ describe("delayFailedMessages (backoff on Lambda and locally)", () => {
 
   it("no failures: no SQS call", async () => {
     const send = vi.fn();
-    await delayFailedMessages({ Records: [record("a", "1")] } as SQSEvent, { batchItemFailures: [] }, { send }, QUEUE);
+    await delayFailedMessages({ Records: [record("a", "1")] } as SQSEvent, { batchItemFailures: [] }, { send }, QUEUE, log);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("no queue URL: warns and changes nothing (the queue's own timeout applies)", async () => {
     const send = vi.fn();
-    await delayFailedMessages({ Records: [record("a", "1")] } as SQSEvent, { batchItemFailures: [{ itemIdentifier: "a" }] }, { send }, undefined);
+    await delayFailedMessages({ Records: [record("a", "1")] } as SQSEvent, { batchItemFailures: [{ itemIdentifier: "a" }] }, { send }, undefined, log);
     expect(send).not.toHaveBeenCalled();
-    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(lines).toEqual([expect.objectContaining({ level: 40 })]);
   });
 
   it("one ChangeMessageVisibility fails: the others are still delayed, nothing throws", async () => {
     const send = vi.fn().mockRejectedValueOnce(new Error("receipt handle expired")).mockResolvedValue({});
     const event = { Records: [record("a", "1"), record("b", "3")] } as SQSEvent;
 
-    await delayFailedMessages(event, { batchItemFailures: [{ itemIdentifier: "a" }, { itemIdentifier: "b" }] }, { send }, QUEUE);
+    await delayFailedMessages(event, { batchItemFailures: [{ itemIdentifier: "a" }, { itemIdentifier: "b" }] }, { send }, QUEUE, log);
 
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][0].input.VisibilityTimeout).toBe(120);

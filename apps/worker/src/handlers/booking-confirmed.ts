@@ -1,4 +1,5 @@
 import { BookingConfirmedMessage } from "@minitickets/shared";
+import type { Log } from "../log";
 import type { Mailer } from "../mailer";
 import type { ProcessedJobs } from "../processed-jobs";
 
@@ -30,7 +31,9 @@ export type Deps = { mailer: Mailer; processedJobs: ProcessedJobs };
 
 export type HandleResult = { status: "sent" | "skipped-duplicate"; jobKey: string };
 
-export async function handleBookingConfirmed(rawMessage: unknown, deps: Deps): Promise<HandleResult> {
+// `log`: the logger of THIS message (batch.ts makes it, with its correlationId). The handler itself
+// does not log; it only hands the logger to the mailer, so the mailer's line belongs to the booking.
+export async function handleBookingConfirmed(rawMessage: unknown, deps: Deps, log: Log): Promise<HandleResult> {
   // 1. Validate with the shared schema. The queue holds text that anything could have put there,
   //    and it may be an older or newer version. A message that does not match throws (ZodError),
   //    and nothing is sent. The caller (batch.ts) reports it as failed, so after 3 tries the queue
@@ -69,7 +72,7 @@ export async function handleBookingConfirmed(rawMessage: unknown, deps: Deps): P
 
   // 5. Send it. If this throws, so do we, and nothing is recorded: the message comes back and is
   //    tried again later (with backoff, see local.ts).
-  await deps.mailer.send({ to: message.userEmail, subject, body });
+  await deps.mailer.send({ to: message.userEmail, subject, body }, log);
 
   // 6. Record "done" with a CONDITIONAL put (processed-jobs.ts). "already-recorded" means another
   //    worker finished the same job a moment ago (the two-workers window above). The email is sent

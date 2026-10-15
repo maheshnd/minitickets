@@ -1,5 +1,6 @@
 import type { ListEventsInput } from "@minitickets/shared";
 import { dehydrate } from "@tanstack/react-query";
+import { serverLog } from "@/lib/server-log";
 import { getQueryClient, getServerTrpc } from "@/lib/trpc/server";
 import { canonicalListInput } from "../lib/canonical-input";
 import { getCachedEvents } from "./cached-events";
@@ -31,7 +32,9 @@ export async function prefetchEvents(input: ListEventsInput) {
   //    more round trip from the browser); without this line nobody would notice the server failing.
   const query = queryClient.getQueryState(options.queryKey);
   if (query?.status === "error") {
-    console.error("prefetchEvents: events.list failed on the server, the browser will fetch it instead.", query.error);
+    // A JSON line (P2, lib/server-log.ts): only the error's text, not the whole object.
+    const error = query.error instanceof Error ? query.error.message : String(query.error);
+    serverLog("error", "prefetchEvents: events.list failed on the server, the browser will fetch it instead", { error });
   }
 
   // 4. Turn the cache into plain JSON ("dehydrate", like freeze-drying food for transport).

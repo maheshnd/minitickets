@@ -1,6 +1,8 @@
 import type { SQSBatchItemFailure, SQSBatchResponse, SQSEvent } from "aws-lambda";
 import { ZodError } from "zod";
+import { correlationIdOf } from "./correlation";
 import { handleBookingConfirmed, type Deps } from "./handlers/booking-confirmed";
+import type { Log } from "./log";
 
 // One batch of queue messages in, one answer out: WHICH messages failed.
 //
@@ -12,24 +14,32 @@ import { handleBookingConfirmed, type Deps } from "./handlers/booking-confirmed"
 // FunctionResponseTypes = ["ReportBatchItemFailures"] (infra/src/jobs/queue-trigger.ts). Without that setting, Lambda
 // ignores this answer and treats a normal return as "all done", deleting the failed ones too.
 // The local runner (local.ts) honours the same answer.
-export async function handleBatch(event: SQSEvent, deps: Deps): Promise<SQSBatchResponse> {
+export async function handleBatch(event: SQSEvent, deps: Deps, log: Log): Promise<SQSBatchResponse> {
   const batchItemFailures: SQSBatchItemFailure[] = [];
 
   // 1. One message after another. One failure must not stop the others, so each gets its own
   //    try/catch. (One at a time also means two copies of the same booking in one batch are
   //    handled in order: the second one finds the first one's record and is skipped.)
   for (const record of event.Records) {
-    const tries = record.attributes?.ApproximateReceiveCount ?? "?";
+    // 1b. This message's logger (P2): every line about it carries the api request's correlationId
+    //     (correlation.ts), the queue's id for the message, and which try this is. So a search for
+    //     the correlationId finds the api's lines AND these.
+    const messageLog = log.child({
+      correlationId: correlationIdOf(record.body),
+      sqsMessageId: record.messageId,
+      tries: record.attributes?.ApproximateReceiveCount,
+    });
     try {
       // 2. The body is text. Parse it to a value; the handler validates its shape. Bad JSON throws.
-      const result = await handleBookingConfirmed(JSON.parse(record.body), deps);
+      const result = await handleBookingConfirmed(JSON.parse(record.body), deps, messageLog);
       const what = result.status === "sent" ? "email sent" : "skipped, already done";
-      console.log(`[worker] message ${record.messageId} (try ${tries}): ${what} [${result.jobKey}]`);
+      messageLog.info(what, { jobKey: result.jobKey });
     } catch (err) {
       // 3. Any failure (bad JSON, wrong schema, mailer down, DynamoDB down) = this message failed.
       //    A bad message is a failure too: it will fail on every try, so after 3 tries the queue
       //    moves it to the dead-letter queue, where a person can look at it.
-      console.error(`[worker] message ${record.messageId} (try ${tries}) failed: ${describe(err)}`);
+      //    An ERROR line (level 50): the alarms watch the DLQ, and Logs Insights finds these lines.
+      messageLog.error("message failed", { error: describe(err) });
       batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }

@@ -27,6 +27,8 @@ flowchart LR
 ## 4. Where in our code
 
 - Anchor: `apps/api/src/app.ts` · `Fastify({ logger: { redact } })`, `onError`, `setErrorHandler`.
+- Anchor: `apps/worker/src/log.ts` · `createLog`: the worker's JSON lines in the api's (pino's) shape, raw on stdout so Lambda adds no text prefix (P2).
+- Anchor: `apps/web/src/lib/server-log.ts` · `serverLog`: the web server's own lines as JSON (P2).
 
 Step by step:
 

@@ -224,6 +224,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //       - ECR and SSM (10h, 10i): only our 3 repositories and our 2 parameters.
   //       - The job pipeline (10j, 10k, S1c): only queues, tables and functions named minitickets-dev-*,
   //         and SES identities in this account and region.
+  //       - Observability (10m, P2): only the topic, alarms and dashboard named minitickets-dev*.
   //       - TIME: credentials last at most 2 hours (step 9).
   //     WHAT IT DOES NOT STOP (be aware):
   //       - PutRolePolicy cannot be limited by CONTENT: an approved job could write an inline policy
@@ -444,6 +445,33 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Sid: "LambdaMappingsCreateList",
           Effect: "Allow",
           Action: ["lambda:CreateEventSourceMapping", "lambda:ListEventSourceMappings"],
+          Resource: "*",
+        },
+        // 10m. Observability (series 2, P2, src/observability/): Pulumi owns the alert topic, the
+        //      alarms and the dashboard (create, change, delete), but only OURS, by name:
+        //        sns:*         the topic minitickets-dev-alerts and its subscription (a subscription's
+        //                      ARN is the topic's ARN + ":<id>", so the same pattern covers it)
+        //        cloudwatch:*  alarms named minitickets-dev-* and the dashboard minitickets-dev
+        //                      (a dashboard ARN has no region: arn:aws:cloudwatch::<account>:dashboard/...)
+        //      The saved Logs Insights queries are covered by logs:* (10a).
+        //      NEW permissions reach AWS only with a `pulumi up` of THIS policy, and CD's `pulumi up`
+        //      would need them already: bootstrap once (docs/20-deploy-day.md 3.12).
+        {
+          Sid: "Observability",
+          Effect: "Allow",
+          Action: ["sns:*", "cloudwatch:*"],
+          Resource: [
+            pulumi.interpolate`arn:aws:sns:${region}:${accountId}:${prefix}-*`,
+            pulumi.interpolate`arn:aws:cloudwatch:${region}:${accountId}:alarm:${prefix}-*`,
+            pulumi.interpolate`arn:aws:cloudwatch::${accountId}:dashboard/${prefix}`,
+          ],
+        },
+        // 10m2. Reading alarm settings: DescribeAlarms is a listing (read-only); allowed on "*" in case
+        //       AWS checks it against the account rather than the named alarms.
+        {
+          Sid: "ReadAlarms",
+          Effect: "Allow",
+          Action: "cloudwatch:DescribeAlarms",
           Resource: "*",
         },
         // 10l. A DENY beats every Allow above: nothing outside our region. WHY: 10a is broad; this at

@@ -1,6 +1,7 @@
 import type { SQSEvent, SQSRecord } from "aws-lambda";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleBatch } from "./batch";
+import { createLog } from "./log";
 import type { Mailer } from "./mailer";
 import type { ProcessedJobs } from "./processed-jobs";
 
@@ -38,19 +39,22 @@ function memoryStore(): ProcessedJobs {
   };
 }
 
+// The JSON lines the batch wrote (log.ts), collected instead of printed.
+let lines: Record<string, unknown>[] = [];
+const log = createLog({}, (line) => {
+  lines.push(JSON.parse(line));
+});
+
 describe("handleBatch (partial batch failures)", () => {
-  // The batch logs one line per message; keep the test output quiet.
   beforeEach(() => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    lines = [];
   });
-  afterEach(() => vi.restoreAllMocks());
 
   it("all succeed: an empty failure list", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const event = { Records: [1, 2, 3].map((n) => record(`sqs-${n}`, JSON.stringify(message(n)))) } as SQSEvent;
 
-    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() });
+    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() }, log);
 
     expect(response).toEqual({ batchItemFailures: [] });
     expect(send).toHaveBeenCalledTimes(3);
@@ -66,7 +70,7 @@ describe("handleBatch (partial batch failures)", () => {
     const store = memoryStore();
     const event = { Records: [1, 2, 3].map((n) => record(`sqs-${n}`, JSON.stringify(message(n)))) } as SQSEvent;
 
-    const response = await handleBatch(event, { mailer, processedJobs: store });
+    const response = await handleBatch(event, { mailer, processedJobs: store }, log);
 
     expect(response).toEqual({ batchItemFailures: [{ itemIdentifier: "sqs-2" }] });
     expect(mailer.send).toHaveBeenCalledTimes(3);
@@ -87,7 +91,7 @@ describe("handleBatch (partial batch failures)", () => {
       ],
     } as SQSEvent;
 
-    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() });
+    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() }, log);
 
     expect(response.batchItemFailures).toEqual([{ itemIdentifier: "sqs-2" }, { itemIdentifier: "sqs-3" }]);
     expect(send).toHaveBeenCalledTimes(2);
@@ -98,7 +102,7 @@ describe("handleBatch (partial batch failures)", () => {
     const body = JSON.stringify(message(1));
     const event = { Records: [record("sqs-1", body), record("sqs-2", body)] } as SQSEvent;
 
-    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() });
+    const response = await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() }, log);
 
     expect(response.batchItemFailures).toEqual([]);
     expect(send).toHaveBeenCalledTimes(1);
@@ -110,9 +114,59 @@ describe("handleBatch (partial batch failures)", () => {
       Records: [record("sqs-1", JSON.stringify(message(1))), record("sqs-2", JSON.stringify(message(2, { version: 9 })))],
     } as SQSEvent;
 
-    await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() });
+    await handleBatch(event, { mailer: { send }, processedJobs: memoryStore() }, log);
 
-    const logged = [...vi.mocked(console.log).mock.calls, ...vi.mocked(console.error).mock.calls].flat().join("\n");
-    expect(logged).not.toContain("@example.com");
+    expect(lines.length).toBeGreaterThan(0);
+    expect(JSON.stringify(lines)).not.toContain("@example.com");
+  });
+});
+
+// P2: one booking can be followed from the api to the worker by its correlation id.
+describe("handleBatch logs (P2: structured, with the correlation id)", () => {
+  const CORRELATION_ID = "9b2f4c1d-7e3a-4f6b-8c5d-1a2b3c4d5e6f";
+
+  beforeEach(() => {
+    lines = [];
+  });
+
+  it("every line about a message carries ITS correlation id (also the mailer's line)", async () => {
+    const event = {
+      Records: [
+        record("sqs-1", JSON.stringify(message(1, { correlationId: CORRELATION_ID }))),
+        record("sqs-2", JSON.stringify(message(2))),
+      ],
+    } as SQSEvent;
+    // The real LogMailer, so its own line is checked too.
+    const { LogMailer } = await import("./mailer");
+
+    await handleBatch(event, { mailer: new LogMailer(), processedJobs: memoryStore() }, log);
+
+    const first = lines.filter((line) => line.sqsMessageId === "sqs-1");
+    expect(first.map((line) => line.msg)).toEqual(["would send email (LogMailer)", "email sent"]);
+    for (const line of first) expect(line.correlationId).toBe(CORRELATION_ID);
+    // A message without one (sent before P2) still works; its lines just have no correlationId.
+    const second = lines.filter((line) => line.sqsMessageId === "sqs-2");
+    expect(second.length).toBe(2);
+    for (const line of second) expect(line).not.toHaveProperty("correlationId");
+  });
+
+  it("a failure is an ERROR line (level 50) with the id, the try and the reason", async () => {
+    const send = vi.fn().mockRejectedValue(new Error("mail server down"));
+    const failing = { ...record("sqs-1", JSON.stringify(message(1, { correlationId: CORRELATION_ID }))) };
+    failing.attributes.ApproximateReceiveCount = "2";
+
+    await handleBatch({ Records: [failing] } as SQSEvent, { mailer: { send }, processedJobs: memoryStore() }, log);
+
+    expect(lines).toEqual([
+      expect.objectContaining({ level: 50, msg: "message failed", correlationId: CORRELATION_ID, tries: "2", error: "mail server down" }),
+    ]);
+  });
+
+  it("an invalid message keeps its correlation id on the failure line (find the request that sent it)", async () => {
+    const event = { Records: [record("sqs-1", JSON.stringify(message(1, { version: 9, correlationId: CORRELATION_ID })))] } as SQSEvent;
+
+    await handleBatch(event, { mailer: { send: vi.fn() }, processedJobs: memoryStore() }, log);
+
+    expect(lines[0]).toMatchObject({ level: 50, correlationId: CORRELATION_ID, error: "invalid message, wrong fields: version" });
   });
 });

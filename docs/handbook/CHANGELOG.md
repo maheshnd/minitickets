@@ -25,9 +25,32 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · feat(jobs): booking emails on AWS: SQS + DLQ, worker Lambda, DynamoDB, SES; pnpm stack:check (series 2, P1 = S1c)
+## 2026-10-15 · feat(observability): correlation id end to end, JSON logs, CloudWatch alarms + SNS email + dashboard (series 2, P2 = S1d)
 
 Commit: filled in by the next handbook commit
+
+Why: Series 2, phase P2 (S1d). The series asks for `@concept` anchors on new code, so 5 existing
+cards gain anchor lines, and their status notes say the card text predates P2 (the full rewrite is
+the D3 catch-up's job). `pnpm docs:history --since 5fc1dee` lists the files below. (5fc1dee, the CD
+deploy guard, changed only PENDING.md and a ROADMAP status line: no entry needed.)
+
+- `concepts/correlation-ids.md`: status note; "4. Where in our code": the app.ts line now says
+  `genReqId` + `LogController` (`correlationId`, was `reqId`), plus `apps/api/src/http/correlation-id.ts`,
+  `packages/shared/src/schemas/jobs.ts`, `apps/worker/src/correlation.ts`.
+- `concepts/structured-logging.md`: "4. Where in our code" gains the worker's `log.ts` and the web
+  server's `server-log.ts`.
+- `concepts/alerting.md`: status note; "4. Where in our code" gains `alarm-specs.ts` and `alert-topic.ts`.
+- `concepts/metrics.md`: "4. Where in our code" gains `dashboard-body.ts`.
+- `concepts/cloudwatch-logs.md`: "4. Where in our code" gains `log-queries.ts`.
+- `concept-map.md`: "Observability" rows for structured logs, correlation ids, metrics and alerting
+  point at the P2 code.
+- `ROADMAP.md`, `PENDING.md`: status line and the P2 entry (no entry needed on their own).
+
+---
+
+## 2026-10-15 · feat(jobs): booking emails on AWS: SQS + DLQ, worker Lambda, DynamoDB, SES; pnpm stack:check (series 2, P1 = S1c)
+
+Commit: 44e2c93
 
 Why: Series 2, phase P1 (S1c): the job pipeline runs on AWS. The series asks for `@concept` anchors
 on new code with stub cards allowed, so 5 stub cards are added and 7 cards gain an anchor line. Also

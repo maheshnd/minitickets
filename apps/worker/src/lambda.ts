@@ -1,10 +1,11 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
 import { SQSClient } from "@aws-sdk/client-sqs";
-import type { SQSBatchResponse, SQSEvent } from "aws-lambda";
+import type { Context, SQSBatchResponse, SQSEvent } from "aws-lambda";
 import { handleBatch } from "./batch";
 import { env } from "./config";
 import { FaultyMailer } from "./faulty-mailer";
+import { createLog } from "./log";
 import { LogMailer, type Mailer } from "./mailer";
 import { DynamoProcessedJobs } from "./processed-jobs";
 import { delayFailedMessages } from "./retry-later";
@@ -33,6 +34,9 @@ const dynamo = new DynamoDBClient({ region: env.AWS_REGION, endpoint: env.DYNAMO
 //    SQS_ENDPOINT is set locally (ElasticMQ) and unset on AWS.
 const sqs = new SQSClient({ region: env.AWS_REGION, endpoint: env.SQS_ENDPOINT, requestHandler });
 
+// 3b. The process's logger: JSON lines (log.ts, P2). Each call and each message get a child of it.
+const log = createLog();
+
 // 4. The mailer: SES on AWS (MAILER=ses + MAIL_FROM, set by infra), LogMailer locally.
 //    MAILER_FAIL_MODE wraps it in the demo-only FaultyMailer (config.ts refuses that in production).
 function chooseMailer(): Mailer {
@@ -40,17 +44,22 @@ function chooseMailer(): Mailer {
     ? new SesMailer(new SESv2Client({ region: env.AWS_REGION, requestHandler }), env.MAIL_FROM)
     : new LogMailer();
   if (env.MAILER_FAIL_MODE === "off") return real;
-  console.warn(`[worker] MAILER_FAIL_MODE=${env.MAILER_FAIL_MODE}: the mailer fails ON PURPOSE (demo only)`);
+  log.warn("the mailer fails ON PURPOSE (MAILER_FAIL_MODE, demo only)", { mailerFailMode: env.MAILER_FAIL_MODE });
   return new FaultyMailer(real, env.MAILER_FAIL_MODE);
 }
 
 const deps = { mailer: chooseMailer(), processedJobs: new DynamoProcessedJobs(dynamo, env.PROCESSED_JOBS_TABLE) };
 
-export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
-  // 5. Handle the batch: { batchItemFailures } lists ONLY the failed messages (see batch.ts).
-  const response = await handleBatch(event, deps);
-  // 6. Give each failed message a growing wait before its next try (retry-later.ts), THEN answer.
+// context: Lambda's information about THIS call. Locally (local.ts) there is none.
+export async function handler(event: SQSEvent, context?: Pick<Context, "awsRequestId">): Promise<SQSBatchResponse> {
+  // 5. This call's logger (P2). awsRequestId = Lambda's id for the call: it is also on Lambda's own
+  //    START / END / REPORT lines, so our lines can be matched with the call's duration and memory.
+  //    Each message then gets its own child with the booking's correlationId (batch.ts 1b).
+  const callLog = log.child({ awsRequestId: context?.awsRequestId });
+  // 6. Handle the batch: { batchItemFailures } lists ONLY the failed messages (see batch.ts).
+  const response = await handleBatch(event, deps, callLog);
+  // 7. Give each failed message a growing wait before its next try (retry-later.ts), THEN answer.
   //    Lambda (or local.ts) deletes the others and leaves the failed ones in the queue.
-  await delayFailedMessages(event, response, sqs, env.JOBS_QUEUE_URL);
+  await delayFailedMessages(event, response, sqs, env.JOBS_QUEUE_URL, callLog);
   return response;
 }

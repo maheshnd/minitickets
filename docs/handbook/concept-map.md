@@ -270,11 +270,11 @@ queue -> worker Lambda. The rows below are updated in full in the D3 catch-up (s
 
 | Concept | Status | Where in our code | Card |
 | ------- | ------ | ----------------- | ---- |
-| Structured JSON logs (Fastify's logger, pino) | ✅ | `api/app.ts` → `Fastify({ logger })`, `onError` | [`structured-logging`](concepts/structured-logging.md) |
-| Request IDs and correlation IDs | 🟡 | `api/app.ts` → `reqId: request.id` (per request; not passed between services) | [`correlation-ids`](concepts/correlation-ids.md) |
+| Structured JSON logs (Fastify's logger, pino) | ✅ | `api/app.ts` → `Fastify({ logger })`, `onError`; since P2 also `worker/src/log.ts` → `createLog`, `web/src/lib/server-log.ts` (same JSON shape) | [`structured-logging`](concepts/structured-logging.md) |
+| Request IDs and correlation IDs | 🟡 | `api/http/correlation-id.ts` → `correlationIdFor` (P2: UUID per request, `x-correlation-id` header, carried in the queue message to the worker, `worker/src/correlation.ts`) | [`correlation-ids`](concepts/correlation-ids.md) |
 | CloudWatch Logs: log groups, streams, retention | ✅ | `infra/compute/logs.ts` → `createLogs`; `infra/compute/task.ts` → `logConfiguration` | [`cloudwatch-logs`](concepts/cloudwatch-logs.md) |
-| Metrics | 🟡 | `infra/compute/cluster.ts` → `containerInsights: "disabled"` (only ECS basic metrics) | [`metrics`](concepts/metrics.md) |
-| Alerting | 🟡 | `infra/budget.ts` → `createBudget` (cost only; no health alarms) | [`alerting`](concepts/alerting.md) |
+| Metrics | 🟡 | `infra/compute/cluster.ts` → `containerInsights: "disabled"` (only basic AWS metrics); P2 dashboard `infra/src/observability/dashboard-body.ts` → `dashboardBody` | [`metrics`](concepts/metrics.md) |
+| Alerting | 🟡 | `infra/budget.ts` → `createBudget` (cost); P2 health alarms `infra/src/observability/alarm-specs.ts` → `alarmSpecs` + SNS email `alert-topic.ts` | [`alerting`](concepts/alerting.md) |
 | Distributed tracing | 📖 | Explain-only | `distributed-tracing` · P5 |
 | OpenTelemetry | 📖 | Explain-only | `opentelemetry` · P5 |
 | SLIs, SLOs and error budgets | 📖 | Explain-only | `slos` · P5 |

@@ -869,6 +869,106 @@ pulumi up \
 4. **Let CD rebuild the rest:** Actions -> CD -> Run workflow on main (or push), approve. Its `pulumi up` creates whatever is still missing.
 5. **Check:** `pulumi preview` from main says `0 to create / update / delete` (only unchanged), and the S1c checks in 3.10 ("Verify") pass.
 
+### 3.12 Observability: follow one booking, alarms, dashboard (P2)
+
+**What it is.** Three things that tell you what the app is doing and when it is broken. Code: `apps/api/src/http/correlation-id.ts`, `apps/worker/src/log.ts`, `infra/src/observability/`.
+
+- **Correlation id.** Every api request gets a UUID (or keeps the caller's `x-correlation-id`, if it is a valid UUID). Every api log line of that request carries it as `correlationId`, the answer carries it in the `x-correlation-id` header, and the booking's queue message carries it to the worker, whose lines carry it too.
+- **Structured JSON logs.** api, worker and the web server write one JSON object per line, in the same shape (`level` 30/40/50, `time`, `msg`, fields). CloudWatch Logs Insights reads every field by itself.
+- **Alarms + dashboard.** 4 CloudWatch alarms email you through the SNS topic `minitickets-dev-alerts`; one dashboard `minitickets-dev` shows everything on one page.
+
+```mermaid
+flowchart LR
+    b["browser"] -->|"POST bookings.create"| api["api<br/>correlationId 7f3c…"]
+    api -->|"message with<br/>correlationId"| q["SQS jobs"]
+    q --> w["worker Lambda<br/>correlationId 7f3c…"]
+    api --> lg["/minitickets/dev/api"]
+    w --> lw["/minitickets/dev/worker"]
+    lg --> li["Logs Insights:<br/>filter correlationId = 7f3c…"]
+    lw --> li
+```
+
+```mermaid
+flowchart LR
+    m["SQS / Lambda / ALB<br/>metrics"] --> a["CloudWatch alarms<br/>minitickets-dev-*"]
+    a -->|"ALARM / OK"| t["SNS topic<br/>minitickets-dev-alerts"]
+    t -->|"email"| you["you<br/>(alertEmail)"]
+```
+
+Real-life comparison: the correlation id is a parcel's tracking number that every depot writes in its book; the alarms are smoke detectors wired to your phone; the dashboard is the control-room wall.
+
+**The 4 alarms** (`infra/src/observability/alarm-specs.ts`):
+
+| Alarm | Fires when | Usually means |
+| --- | --- | --- |
+| `minitickets-dev-jobs-dlq-not-empty` | 1+ message in the DLQ | a booking email failed 3 times |
+| `minitickets-dev-jobs-oldest-message-age` | a message waited >= 5 min | nothing reads the queue (Lambda off/broken/throttled, trigger disabled) |
+| `minitickets-dev-worker-errors` (compute on) | 1+ Lambda error in 5 min | the worker crashed or timed out (a failed MESSAGE is not an error: see the DLQ alarm) |
+| `minitickets-dev-alb-5xx` (entry on) | >= 5 answers 5xx in 5 min (apps + ALB) | api/web failing, or no healthy task |
+
+**One time, before the first deploy that contains P2.** The deploy role needs its new permissions (`cicd.ts` 10m: SNS, CloudWatch alarms and dashboard) BEFORE CD's `pulumi up` creates them. If 3.11's bootstrap was not done yet, this one command does both (from `infra/`, committed config):
+
+```bash
+pulumi up \
+  --target 'urn:pulumi:dev::minitickets::aws:ssm/parameter:Parameter::minitickets-dev-deployed-commit' \
+  --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-deploy-policy'
+```
+
+**Expect:** `+ 1 to create, ~ 1 to update` (or only `~ 1 to update` if the parameter exists already). Then push and approve the CD deploy. **Expect** in its phase A: `+ 11` (topic, topic policy, email subscription, 4 alarms, dashboard, 3 saved queries).
+
+**Then confirm the email subscription.** AWS sends "AWS Notification - Subscription Confirmation" to `alertEmail`. Click **Confirm subscription**. Nothing is delivered before that, and an unconfirmed subscription expires after 3 days (lost the email: SNS console -> Subscriptions -> select it -> **Request confirmation**).
+
+```bash
+aws sns list-subscriptions-by-topic --topic-arn "$(cd infra && pulumi stack output alertTopicArn)" \
+  --query 'Subscriptions[].SubscriptionArn'
+```
+
+**Expect:** an ARN ending in a UUID. `PendingConfirmation` = not clicked yet.
+
+**Verify: follow one booking.** Book a ticket in the app. In the browser's network tab, open the `bookings.create` request: its response header `x-correlation-id` is the id (or take `correlationId` from any api log line). Then CloudWatch -> Logs Insights -> **Saved queries** -> `minitickets-dev/follow-one-request`, paste the id, Run. Or from the CLI:
+
+```bash
+ID=<the x-correlation-id>
+Q=$(aws logs start-query --log-group-names /minitickets/dev/api /minitickets/dev/worker \
+  --start-time $(( $(date +%s) - 900 )) --end-time $(date +%s) \
+  --query-string "fields @timestamp, @log, msg | filter correlationId = \"$ID\" | sort @timestamp asc" \
+  --query queryId --output text)
+aws logs get-query-results --query-id "$Q"   # run again if "status" is still "Running"
+```
+
+**Expect** (in this order): api `incoming request` (`/trpc/bookings.create`), `published booking.confirmed …`, `request completed` (200); worker `SES accepted email` (`recipientDomain` only, never the address), `email sent` (`jobKey booking.confirmed:<bookingId>`). Measured locally: 3 api lines + 3 worker lines (incl. the local runner's `deleted`), request to `email sent` 115 ms.
+
+**Verify: an alarm, end to end.** Book with an account whose address is NOT verified in SES (3.10, "The DLQ, live"). After ~3 minutes the message is in the DLQ; within ~1-2 minutes more **Expect** an email "ALARM: "minitickets-dev-jobs-dlq-not-empty" in US East (N. Virginia)". Purge the DLQ (SQS console -> `minitickets-dev-jobs-dlq` -> Purge): **Expect** an "OK" email a few minutes later.
+
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix minitickets-dev- \
+  --query 'MetricAlarms[].[AlarmName,StateValue]' --output table
+```
+
+**Expect:** each alarm `OK` (or `INSUFFICIENT_DATA` for the DLQ alarm until its queue has had any activity: it keeps its last state when SQS sends no numbers, on purpose).
+
+**Console tour.**
+
+| Where | Look at | It shows |
+| --- | --- | --- |
+| **CloudWatch** -> Dashboards -> `minitickets-dev` | alarms box; ALB, api, queue, DLQ, worker graphs; newest errors (table) | everything on one page |
+| **CloudWatch** -> Alarms -> All alarms | the 4 `minitickets-dev-*` alarms, their state and **History** tab | when each fired and resolved |
+| **CloudWatch** -> Logs Insights -> Saved queries | `minitickets-dev/follow-one-request`, `/errors`, `/worker-durations` | one-click questions |
+| **SNS** -> Topics -> `minitickets-dev-alerts` | **Subscriptions** (Confirmed?), **Access policy** (only `cloudwatch.amazonaws.com`, only our alarms) | who gets told, who may publish |
+
+**Troubleshooting.**
+
+| You see | Usually means |
+| --- | --- |
+| No alarm email, alarm is `ALARM` | the subscription is still `PendingConfirmation`, or the email went to spam |
+| Logs Insights finds the api lines but no worker lines | the message was sent before P2 (no `correlationId`), or the worker image is older than P2 (check its tag, 3.10) |
+| `filter correlationId = …` finds nothing at all | wrong time range (Logs Insights searches only the range you pick), or the id came from a request that failed before the api (e.g. a 502 from the ALB) |
+| Deploy fails `AccessDenied … cloudwatch:PutMetricAlarm` or `sns:CreateTopic` | the one-time bootstrap above was not done |
+
+**Cost.** Alarms: $0.10 per alarm metric per month = $0.20 always on, up to $0.50 with everything on. Dashboard: free (first 3). SNS email: free up to 1,000 a month. Logs Insights: $0.005 per GB scanned per query (our dev logs are a few MB). Saved queries: free.
+
+**Not built (explain-only, see PENDING.md P2):** tracing (OpenTelemetry / X-Ray), SLOs and error budgets.
+
 ## 4. Dependency order
 
 ```mermaid
@@ -945,6 +1045,7 @@ See [00-architecture.md](00-architecture.md) for the whole picture.
 9. **What does ACM's DNS validation prove, and why create the certificate days early?** That you control the domain's DNS (only you can add the record ACM asks for). Validation waits for you and for DNS, so it is done before the meter runs; ACM then renews by itself while the record stays.
 10. **Why must the trusted proxy count match the path exactly?** Each of our proxies appends the address it saw to X-Forwarded-For. Trusting one hop too many reads an address the client wrote itself, so anyone can fake their IP. With only an ALB in front that number is 1, with CloudFront + ALB it is 2.
 11. **An old deploy was approved late and deleted newer infrastructure. How do you prevent it?** Record what was deployed (SSM `deployed-commit`) and refuse any commit that is an ancestor of it; refuse superseded runs. Keep app rollbacks separate from infra rollbacks: an app rollback changes only the image tag and keeps the newest infrastructure code; an infra rollback is a deliberate, flagged action.
+12. **A customer says they never got their booking email. How do you find out why?** Take the booking's correlation id (the `x-correlation-id` response header, or from the api log by bookingId) and run one Logs Insights query over the api and worker log groups: it shows the publish, each try, and the failure reason. If it failed 3 times it is in the DLQ (and the DLQ alarm emailed you); fix the cause, then redrive.
 
 ## 8. Check yourself
 

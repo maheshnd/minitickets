@@ -24,7 +24,9 @@ function toPublicBooking(booking: { id: string; eventId: string; quantity: numbe
 
 // Book tickets for the logged-in user (protectedProcedure already checked the session).
 // Idempotent per (user, idempotency key): sending the same booking again returns the first one.
-export async function bookTicket(userId: string, input: BookTicketInput, log: Log): Promise<Booking> {
+// correlationId: this request's id (P2, apps/api/src/http/correlation-id.ts). `log` already writes it
+// on our own lines; the confirmation message carries it on to the worker (step 4).
+export async function bookTicket(userId: string, input: BookTicketInput, log: Log, correlationId: string): Promise<Booking> {
   // 1. The whole booking is ONE database transaction with a row lock (queries/bookings.ts,
   //    createBookingTx). It throws NotFoundError (404), BadRequestError (400, already started) or
   //    ConflictError (409, not enough seats); we let them pass: the errorMapper turns them into
@@ -66,7 +68,7 @@ export async function bookTicket(userId: string, input: BookTicketInput, log: Lo
   // 4. Tell the background worker to send the confirmation email. Only here: a NEW booking got this
   //    far; a replay returned in step 2 and sends nothing, so a retry never means a second email.
   //    We do not wait for the email, only for the queue to accept the message (a few ms).
-  await publishConfirmation(userId, input.quantity, result, log);
+  await publishConfirmation(userId, input.quantity, result, log, correlationId);
 
   // 5. Pick the public fields by hand (no userId, no idempotency key: the client has its key).
   return toPublicBooking(result.booking);
@@ -86,6 +88,7 @@ async function publishConfirmation(
   quantity: number,
   created: Extract<bookings.CreateBookingResult, { kind: "created" }>,
   log: Log,
+  correlationId: string,
 ): Promise<void> {
   // 1. Publishing is off when JOBS_QUEUE_URL is not set (startup warning in server.ts).
   if (!jobs.jobsEnabled) return;
@@ -93,7 +96,9 @@ async function publishConfirmation(
     // 2. The email address lives on the user, not on the booking: one lookup by primary key.
     const user = await users.findById(userId);
     if (!user) throw new Error("user not found");
-    // 3. Build the message with everything the email needs (see packages/shared/src/schemas/jobs.ts).
+    // 3. Build the message with everything the email needs (see packages/shared/src/schemas/jobs.ts),
+    //    plus this request's correlation id (P2), so the worker's log lines can be found together
+    //    with this request's lines: one search follows the booking end to end.
     const message = {
       type: "booking.confirmed" as const,
       version: 1 as const,
@@ -105,6 +110,7 @@ async function publishConfirmation(
       eventStartsAt: created.event.startsAt.toISOString(),
       quantity,
       occurredAt: new Date().toISOString(),
+      correlationId,
     };
     await jobs.publishBookingConfirmed(message);
     // 4. Log ids only, never the message: it holds an email address (personal data).

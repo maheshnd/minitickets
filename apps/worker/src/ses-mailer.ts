@@ -1,4 +1,5 @@
 import { SendEmailCommand, type SESv2Client } from "@aws-sdk/client-sesv2";
+import type { Log } from "./log";
 import type { Email, Mailer } from "./mailer";
 
 // @concept: ses-email
@@ -23,7 +24,7 @@ export class SesMailer implements Mailer {
     this.from = from;
   }
 
-  async send(email: Email): Promise<void> {
+  async send(email: Email, log: Log): Promise<void> {
     // 1. A "Simple" email: SES builds the MIME message (headers, encoding) for us from a subject and
     //    a text body. UTF-8, so event titles with accents arrive intact.
     //    If SES refuses (sandbox recipient, throttled, identity not verified yet), send() throws and
@@ -43,7 +44,8 @@ export class SesMailer implements Mailer {
 
     // 2. Log SES's id for this email (to find it in SES's own records), and only the DOMAIN of the
     //    recipient, never the address (same rule as LogMailer).
+    //    `log` is the message's logger (its correlationId is on the line, P2).
     const domain = email.to.split("@")[1] ?? "unknown";
-    console.log(`[mailer] SES accepted email ${result.MessageId ?? "?"} to *@${domain}: "${email.subject}"`);
+    log.info("SES accepted email", { sesMessageId: result.MessageId, recipientDomain: domain, subject: email.subject });
   }
 }

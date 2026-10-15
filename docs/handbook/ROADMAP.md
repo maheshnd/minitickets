@@ -42,7 +42,10 @@ flowchart LR
   waits for its first CD deploy (manual steps in [PENDING.md](PENDING.md), P1). **CD deploy guard**
   (after an old approved run deleted newer resources): CD refuses infra code older than the deployed
   commit (SSM) and superseded runs; one-time bootstrap in `docs/20-deploy-day.md` 3.11.
-  **Next: P2 = S1d**, observability.
+  **P2 = S1d (observability) is built:** correlation id from api request to worker, JSON logs in all
+  three apps, 4 CloudWatch alarms emailing through SNS, a dashboard, saved Logs Insights queries;
+  waits for its first CD deploy (bootstrap + email confirmation in `docs/20-deploy-day.md` 3.12).
+  **Next: P3**, the outbox pattern.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

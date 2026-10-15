@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createLog } from "../log";
 import type { ProcessedJobs } from "../processed-jobs";
 import { handleBookingConfirmed } from "./booking-confirmed";
 
@@ -17,6 +18,8 @@ const valid = {
   occurredAt: "2026-10-14T10:00:00.000Z",
 };
 const jobKey = "booking.confirmed:00000000-0000-4000-8000-0000000000b1";
+// The handler only hands its logger to the mailer; a silent one is enough here.
+const log = createLog({}, () => {});
 
 // A store where nothing is done yet (or the given keys are), and recording succeeds.
 function fakeStore(doneKeys: string[] = []) {
@@ -30,7 +33,7 @@ describe("handleBookingConfirmed", () => {
   it("valid message: sends ONE email with the right recipient, subject and body", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
 
-    await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: fakeStore() });
+    await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: fakeStore() }, log);
 
     expect(send).toHaveBeenCalledTimes(1);
     const email = send.mock.calls[0][0];
@@ -44,7 +47,7 @@ describe("handleBookingConfirmed", () => {
 
   it("says '1 ticket' for a single ticket", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
-    await handleBookingConfirmed({ ...valid, quantity: 1 }, { mailer: { send }, processedJobs: fakeStore() });
+    await handleBookingConfirmed({ ...valid, quantity: 1 }, { mailer: { send }, processedJobs: fakeStore() }, log);
     expect(send.mock.calls[0][0].body).toContain("1 ticket for");
   });
 
@@ -58,7 +61,7 @@ describe("handleBookingConfirmed", () => {
     const send = vi.fn();
     const store = fakeStore();
 
-    await expect(handleBookingConfirmed(message, { mailer: { send }, processedJobs: store })).rejects.toThrow();
+    await expect(handleBookingConfirmed(message, { mailer: { send }, processedJobs: store }, log)).rejects.toThrow();
     expect(send).not.toHaveBeenCalled();
     expect(store.markDone).not.toHaveBeenCalled();
   });
@@ -67,7 +70,7 @@ describe("handleBookingConfirmed", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const store = fakeStore();
 
-    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store });
+    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store }, log);
 
     expect(result).toEqual({ status: "sent", jobKey });
     expect(send).toHaveBeenCalledTimes(1);
@@ -82,7 +85,7 @@ describe("handleBookingConfirmed", () => {
     const send = vi.fn();
     const store = fakeStore([jobKey]);
 
-    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store });
+    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store }, log);
 
     expect(result).toEqual({ status: "skipped-duplicate", jobKey });
     expect(send).not.toHaveBeenCalled();
@@ -96,6 +99,7 @@ describe("handleBookingConfirmed", () => {
     const result = await handleBookingConfirmed(
       { ...valid, messageId: "11111111-2222-4333-8444-555555555555" },
       { mailer: { send }, processedJobs: store },
+      log,
     );
 
     expect(result.status).toBe("skipped-duplicate");
@@ -107,7 +111,7 @@ describe("handleBookingConfirmed", () => {
     const store = fakeStore();
     store.markDone.mockResolvedValue("already-recorded");
 
-    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store });
+    const result = await handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store }, log);
 
     expect(result.status).toBe("sent");
     expect(send).toHaveBeenCalledTimes(1);
@@ -117,7 +121,7 @@ describe("handleBookingConfirmed", () => {
     const send = vi.fn().mockRejectedValue(new Error("mail server down"));
     const store = fakeStore();
 
-    await expect(handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store })).rejects.toThrow("mail server down");
+    await expect(handleBookingConfirmed(valid, { mailer: { send }, processedJobs: store }, log)).rejects.toThrow("mail server down");
     expect(store.markDone).not.toHaveBeenCalled();
   });
 });

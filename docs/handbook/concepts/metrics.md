@@ -27,6 +27,7 @@ flowchart LR
 ## 4. Where in our code
 
 - Anchor: `infra/src/compute/cluster.ts` · `containerInsights: "disabled"`: no per-task metrics.
+- Anchor: `infra/src/observability/dashboard-body.ts` · `dashboardBody`: the CloudWatch dashboard `minitickets-dev` (alarms, ALB, api CPU/memory, jobs queue + DLQ, worker Lambda, newest errors) (P2).
 
 What we have:
 

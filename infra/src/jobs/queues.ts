@@ -6,6 +6,7 @@
 //                                jobs/queue-trigger (Lambda's event source)
 //                   queueUrl  -> compute/task (api's JOBS_QUEUE_URL), jobs/worker-lambda (backoff)
 //                   dlqUrl    -> stack output (look at failed messages)
+//                   queueName, dlqName -> observability (alarms + dashboard name the queues, P2)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
@@ -27,6 +28,8 @@ const prefix = "minitickets-dev";
 const DAY = 24 * 60 * 60;
 
 export interface JobQueuesOutputs {
+  queueName: pulumi.Output<string>;
+  dlqName: pulumi.Output<string>;
   queueArn: pulumi.Output<string>;
   queueUrl: pulumi.Output<string>;
   dlqArn: pulumi.Output<string>;
@@ -89,5 +92,5 @@ export function createJobQueues(): JobQueuesOutputs {
     redriveAllowPolicy: pulumi.jsonStringify({ redrivePermission: "byQueue", sourceQueueArns: [queue.arn] }),
   });
 
-  return { queueArn: queue.arn, queueUrl: queue.url, dlqArn: dlq.arn, dlqUrl: dlq.url };
+  return { queueName: queue.name, dlqName: dlq.name, queueArn: queue.arn, queueUrl: queue.url, dlqArn: dlq.arn, dlqUrl: dlq.url };
 }

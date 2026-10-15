@@ -37,7 +37,9 @@ const KEY = "5f0c6a3e-2b7d-4c1e-9a8f-0d3b6e4c2a11";
 // 1. A context as createContext would build it: logged in as u1 (or logged out with null).
 function callerFor(session: { userId: string } | null) {
   const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
-  const ctx = { req: { log }, res: {}, sessionId: session ? "sid-1" : undefined, session } as unknown as Context;
+  // req.id = the request's correlation id (app.ts 1b2), which the procedure hands to the service.
+  const req = { log, id: "9b2f4c1d-7e3a-4f6b-8c5d-1a2b3c4d5e6f" };
+  const ctx = { req, res: {}, sessionId: session ? "sid-1" : undefined, session } as unknown as Context;
   return createCallerFactory(bookingsRouter)(ctx);
 }
 

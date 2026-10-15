@@ -1,5 +1,6 @@
 import type { ListEventsInput } from "@minitickets/shared";
 import { revalidateTag, unstable_cache } from "next/cache";
+import { serverLog } from "@/lib/server-log";
 import { makeServerTrpcClient } from "@/lib/trpc/server";
 
 // The web server's own cache of events.list answers: the Next.js DATA CACHE.
@@ -47,11 +48,11 @@ const EVENTS_TAG = "events";
 //      BACKGROUND refresh fails, Next logs it and keeps serving the old copy.
 //    - The cache lives in this web server process (memory, plus .next/cache on its disk). A second
 //      web server has its own, and the revalidate hook reaches only the one it was sent to.
-//    - The console line runs only when the function runs, i.e. on a MISS (or a refresh): that is
+//    - The log line runs only when the function runs, i.e. on a MISS (or a refresh): that is
 //      how the web server's log tells a hit (no line, and no request in the API log) from a miss.
 export const getCachedEvents = unstable_cache(
   async (canonicalInput: ListEventsInput) => {
-    console.info(`next data cache miss: events.list ${JSON.stringify(canonicalInput)}`);
+    serverLog("info", "next data cache miss: events.list", { input: canonicalInput });
     return makeServerTrpcClient().events.list.query(canonicalInput);
   },
   ["events.list"],

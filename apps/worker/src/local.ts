@@ -1,7 +1,9 @@
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient, type Message } from "@aws-sdk/client-sqs";
 import type { SQSEvent, SQSRecord } from "aws-lambda";
 import { env } from "./config";
+import { correlationIdOf } from "./correlation";
 import { handler } from "./lambda";
+import { createLog } from "./log";
 
 // The LOCAL runner (`pnpm worker:dev`). On AWS, Lambda reads the queue for us and calls
 // handler(event). Locally nothing does that, so this file plays Lambda's part: it reads the queue,
@@ -16,6 +18,8 @@ if (!queueUrl) {
 }
 
 const sqs = new SQSClient({ region: env.AWS_REGION, endpoint: env.SQS_ENDPOINT });
+// The runner's own lines are JSON too (log.ts, P2), like the handler's: the same shape as on AWS.
+const log = createLog();
 let stopping = false;
 
 // 1. Turn a queue message into the record shape Lambda would give the handler (only the fields we
@@ -30,7 +34,7 @@ function toRecord(message: Message): SQSRecord {
 }
 
 async function poll() {
-  console.log(`[worker] listening on ${queueUrl}`);
+  log.info("listening", { queueUrl });
   while (!stopping) {
     try {
       // 2. LONG POLLING: WaitTimeSeconds 20 makes the request wait up to 20 s for a message and
@@ -47,7 +51,7 @@ async function poll() {
       );
       const messages = result.Messages ?? [];
       if (messages.length === 0) continue;
-      console.log(`[worker] received a batch of ${messages.length} message(s)`);
+      log.info("received a batch", { messages: messages.length });
 
       // 3. The same call Lambda makes. Its answer lists the messages that FAILED. If the handler
       //    itself throws (it should not), treat the whole batch as failed, like Lambda would.
@@ -56,7 +60,7 @@ async function poll() {
         const response = await handler({ Records: messages.map(toRecord) } as SQSEvent);
         failedIds = new Set(response.batchItemFailures.map((failure) => failure.itemIdentifier));
       } catch (err) {
-        console.error("[worker] the handler crashed, the whole batch will be retried:", err instanceof Error ? err.message : err);
+        log.error("the handler crashed, the whole batch will be retried", { error: err instanceof Error ? err.message : String(err) });
         failedIds = new Set(messages.map((message) => message.MessageId ?? ""));
       }
 
@@ -69,12 +73,12 @@ async function poll() {
 
         // 5. DELETE ONLY AFTER SUCCESS (a skipped duplicate is a success too).
         await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }));
-        console.log(`[worker] message ${message.MessageId} deleted`);
+        log.info("deleted", { correlationId: correlationIdOf(message.Body ?? ""), sqsMessageId: message.MessageId });
       }
     } catch (err) {
       // 6. The queue itself is unreachable: say so, wait a little, and try again (do not spin).
       //    Any message not deleted yet simply comes back after its visibility timeout.
-      console.error("[worker] cannot read the queue:", err instanceof Error ? err.message : err);
+      log.error("cannot read the queue", { error: err instanceof Error ? err.message : String(err) });
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
   }

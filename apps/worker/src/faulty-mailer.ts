@@ -1,3 +1,4 @@
+import type { Log } from "./log";
 import type { Email, Mailer } from "./mailer";
 
 // FAULT INJECTION, for demos only. This exists to SHOW the failure handling working (retries with
@@ -19,12 +20,12 @@ export class FaultyMailer implements Mailer {
     else this.failuresLeft = 0;
   }
 
-  async send(email: Email): Promise<void> {
+  async send(email: Email, log: Log): Promise<void> {
     // 2. Still failing? Use one failure up and throw, like a mail server that is down would.
     if (this.failuresLeft > 0) {
       this.failuresLeft -= 1;
       throw new Error("mail server unavailable (MAILER_FAIL_MODE, injected on purpose)");
     }
-    await this.inner.send(email);
+    await this.inner.send(email, log);
   }
 }

@@ -105,7 +105,10 @@ export function createWorkerLambda(inputs: WorkerLambdaInputs): WorkerLambdaOutp
     // @concept: cloudwatch-logs
     // 2g. Logs go to OUR log group /minitickets/dev/worker (7-day retention, compute/logs.ts), not to
     //     the default /aws/lambda/<name>, which Lambda would create itself with NO retention (kept
-    //     forever, billed forever). Text format: the handler's lines as they are.
+    //     forever, billed forever). Text format: the handler's lines as they are. Since P2 those lines
+    //     are JSON written straight to stdout (apps/worker/src/log.ts), so they arrive as pure JSON
+    //     and Logs Insights reads their fields; only console.* output would get Lambda's text prefix.
+    //     ("JSON" format would wrap console output in Lambda's own JSON instead; not needed.)
     loggingConfig: { logFormat: "Text", logGroup: inputs.logGroupName },
 
     tags: tagsFor(`${prefix}-worker`),
