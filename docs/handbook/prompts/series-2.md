@@ -51,9 +51,25 @@ very simple English, connected, and checkable (code <-> console <-> CLI).
   Break the code on purpose once to prove each important test catches it.
 - Local dev: the same SDK code paths as AWS, with local emulators in
   docker-compose (simplest reliable option per service; explain why).
-- Finish every phase with: pnpm stack:check, typecheck, lint, unit tests, e2e
-  on my servers (:3000/:4000), docs:check, actionlint (if workflows
-  changed), pulumi preview (if infra changed; paste the summary).
+- Finish every phase with the checks listed in "Economy mode" below.
+  
+  ### Economy mode (default; overrides the heavier rules above)
+- Read only: CLAUDE.md, AGENTS.md, and the CURRENT phase section of this
+  file (plus these rules). Don't read the whole spec, PENDING.md, the
+  handbook or unrelated code unless the phase needs it.
+- Checks per phase: typecheck, lint, unit tests, and ONLY the e2e specs
+  related to the phase. Run full e2e, docs:check, actionlint and
+  pulumi preview only when the phase touches those areas.
+- No headless screenshots and no "break it on purpose" checks, except
+  ONE check when the phase is about concurrency or security.
+- Demos: one short run; report only the key numbers.
+- Reports: max ~25 lines: what was built, key numbers, checks, not
+  verified, manual steps for me, AWS acceptance checklist (short),
+  commit message. No file lists unless asked.
+- PENDING.md: max ~10 lines per phase.
+- No sub-agents.
+- If a phase is large, stop at a natural halfway point, commit, and
+  report "Part 2 remaining" instead of continuing.
 
 ## Build phases
 
