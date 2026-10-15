@@ -30,5 +30,8 @@ export const events = pgTable(
     // 4. A B-tree index on starts_at, the one column listUpcoming filters AND sorts on.
     //    Without it Postgres reads every row and sorts them; with it, it jumps to "now" and reads 50 rows.
     index("events_starts_at_idx").on(table.startsAt),
+    // 5. Tuple ordering supports deep pages; GIN accelerates contains searches of title/venue.
+    index("events_search_order_idx").on(table.startsAt, table.id),
+    index("events_search_trgm_idx").using("gin", sql`(${table.title} || ' ' || ${table.venue}) gin_trgm_ops`),
   ],
 );

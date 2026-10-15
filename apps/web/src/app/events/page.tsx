@@ -13,12 +13,8 @@ import { prefetchEvents } from "@/features/events/server/prefetch-events";
 // @concept: csr-vs-ssr
 // The /events route. It is rendered on the server: the first HTML already contains the events.
 
-// 1. The PAGE is rendered fresh on every request: no build-time HTML, no cached HTML.
-//    The DATA inside it is cached since Step 9a: prefetchEvents reads the Next.js data cache
-//    (features/events/server/cached-events.ts), so most renders make no call to the API.
-//    Two different caches: this line is about the finished HTML; the data cache is about one
-//    function's answer. The filters come from the URL anyway, so a cached page would need one
-//    copy per URL; caching the data (per canonical filter) is simpler and enough.
+// 1. Render this page per request; P7 prefetches one bounded search page directly from the API.
+//    Search text/cursors bypass the old Redis/Next list caches to avoid multiplying cache keys.
 export const dynamic = "force-dynamic";
 
 // 2. The browser tab title. It becomes "Upcoming events | MiniTickets" through the layout's template.
@@ -31,7 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
 // 3. The part that WAITS for data. An async Server Component: it runs only on the server.
 //    a. prefetchEvents(input) calls the API (server to server) and returns the cache as plain JSON.
 //    b. HydrationBoundary sends that JSON to the browser with the HTML and puts it into the
-//       browser's QueryClient, so EventList's useEvents finds the data and makes no request.
+//       browser's QueryClient, so EventList's useEventSearch finds the data and makes no request.
 //    c. EventList is the same Client Component as before: rendered to HTML here, made interactive
 //       ("hydrated") in the browser.
 //    The SAME `input` object goes to prefetchEvents AND to EventList: the query key includes the

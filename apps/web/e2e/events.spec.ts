@@ -14,6 +14,7 @@ test("/events shows upcoming seeded events, not past ones, and the sold out badg
 
   // 3. The sold out event has the badge; an event with seats left does not.
   const soldOut = main.getByRole("listitem").filter({ hasText: "Sold Out Gala Dinner" });
+  await soldOut.scrollIntoViewIfNeeded();
   await expect(soldOut.getByText("Sold out", { exact: true })).toBeVisible();
   const available = main.getByRole("listitem").filter({ hasText: "Indie Rock Showcase" });
   await expect(available.getByText("Sold out", { exact: true })).toHaveCount(0);
@@ -44,13 +45,13 @@ test.describe("with JavaScript disabled", () => {
 });
 
 // @concept: hydration
-test("the browser makes no events.list request: hydration reuses the server's data", async ({ page }) => {
+test("the browser makes no events.search request: hydration reuses the server's data", async ({ page }) => {
   // 1. Record every request the BROWSER sends. (The web server's own call to the API happens on
   //    the server, so Playwright never sees it.) The tRPC client batches, so a browser fetch would
-  //    show up as /trpc/events.list or /trpc/auth.me,events.list: matching "events.list" catches both.
+  //    show up as /trpc/events.search or /trpc/auth.me,events.search: matching "events.search" catches both.
   const eventsCalls: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("events.list")) eventsCalls.push(request.url());
+    if (request.url().includes("events.search")) eventsCalls.push(request.url());
   });
 
   // 2. Load the page and wait for the header's auth.me call. It is sent by a query after React has
@@ -81,11 +82,11 @@ test("filter by venue: only matching events; reload keeps the filter (server-ren
   for (const card of await main.getByRole("listitem").all()) await expect(card).toContainText(/the foundry/i);
 
   // 3. Reload. The SERVER renders the filtered list: its HTML has the matching event and not the
-  //    others. And the browser asks for no events.list: hydration found the server's data under the
+  //    others. And the browser asks for no events.search: hydration found the server's data under the
   //    key that includes the filter (same as the unfiltered hydration test above).
   const eventsCalls: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("events.list")) eventsCalls.push(request.url());
+    if (request.url().includes("events.search")) eventsCalls.push(request.url());
   });
   const authMe = page.waitForResponse((response) => response.url().includes("auth.me"));
   const response = await page.reload();
@@ -108,7 +109,7 @@ test("filter by venue: only matching events; reload keeps the filter (server-ren
 });
 
 // The old test "a failing API shows the error message and a Retry button" was removed in Step 22.
-// It made the BROWSER's events.list call fail with page.route(), but the browser no longer makes
+// It made the BROWSER's events.search call fail with page.route(), but the browser no longer makes
 // that call (the test above proves it), and Playwright cannot reach the web server's call to the
 // API. The failure paths (API down -> the browser fetches itself; missing API_INTERNAL_URL ->
 // app/events/error.tsx) were checked by hand on a separate server; see docs/22-events-ssr.md.

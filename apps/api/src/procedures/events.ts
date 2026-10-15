@@ -1,9 +1,15 @@
+import { SearchEventsInput, SearchEventsOutput } from "@minitickets/shared";
+import { searchEvents } from "../services/event-search";
 import { CreateEventInput, EventSchema, GetEventInput, ListEventsInput, ListEventsOutput } from "@minitickets/shared";
 import * as eventsService from "../services/events";
 import { adminProcedure, publicProcedure, router } from "../trpc/init";
 
 // Procedures: validate input, call a service, return. No logic here.
 export const eventsRouter = router({
+  // 1. Search has its own bounded contract; the original cached list stays compatible.
+  search: publicProcedure.input(SearchEventsInput).output(SearchEventsOutput)
+    .query(({ input }) => searchEvents(input)),
+
   // @concept: validation-at-boundaries
   // 1. Public: anyone may browse events, so no login check.
   //    Optional filters (venue, from, to), checked with the shared schema: a bad date, from > to or

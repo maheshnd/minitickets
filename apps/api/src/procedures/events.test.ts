@@ -10,6 +10,8 @@ import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify"
 //    - the session store (Redis) knows the session "sid-1" (the visitor is logged in);
 //    - the user lookup (Postgres) always FAILS, like a stopped database;
 //    - the events service answers with a cached copy, like stale-if-error does.
+const searchEvents = vi.fn();
+vi.mock("../services/event-search", () => ({ searchEvents: (...args: unknown[]) => searchEvents(...args) }));
 const getSession = vi.fn();
 vi.mock("../queries/sessions", () => ({ get: (id: string) => getSession(id) }));
 
@@ -43,6 +45,7 @@ async function callerFor(cookies: Record<string, string>) {
 }
 
 beforeEach(() => {
+  searchEvents.mockReset();
   getSession.mockReset().mockResolvedValue({ userId: "u1" });
   findById.mockReset().mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:5432"));
   listUpcomingEvents.mockReset().mockResolvedValue({ events: cachedList, cache: "stale-if-error" });
@@ -73,4 +76,14 @@ describe("events.create (admin only) DOES depend on the user lookup", () => {
     expect(findById).toHaveBeenCalledWith("u1");
     expect(createEvent).not.toHaveBeenCalled();
   });
+});
+
+// Search validates its separate contract before calling business logic.
+it("search rejects an oversized page and exposes validated public output", async () => {
+  const caller = await callerFor({});
+  await expect(caller.search({ limit: 101 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect(searchEvents).not.toHaveBeenCalled();
+  searchEvents.mockResolvedValue({ items: cachedList, nextCursor: null });
+  await expect(caller.search({ q: " Soon " })).resolves.toEqual({ items: cachedList, nextCursor: null });
+  expect(searchEvents).toHaveBeenCalledWith({ q: "Soon", limit: 50 });
 });

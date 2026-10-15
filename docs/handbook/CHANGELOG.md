@@ -25,9 +25,19 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · feat(bookings): persist confirmations in a transactional outbox (series 2, P3)
+## 2026-10-15 · feat(events): add indexed search and virtualized keyset lists (P7)
 
 Commit: filled in by the next handbook commit
+
+Why: narrow the remaining builds to P7, P8 and P10, with deferred features taught through D2 scenarios.
+
+- `prompts/series-2.md`: P5/P6/P9/Lighthouse CI become explain-only; reduce P8, move vitals/axe to P10, record build/document order.
+- `ROADMAP.md`: mirror that scope and record P7 completion / P8 next.
+- `PENDING.md`: P7 implementation, measured checks, API design decisions and interview angles for later teaching.
+
+## 2026-10-15 · feat(bookings): persist confirmations in a transactional outbox (series 2, P3)
+
+Commit: 8b4cb33
 
 Why: P3 permits anchor stubs so new code stays discoverable without writing the deferred guides.
 

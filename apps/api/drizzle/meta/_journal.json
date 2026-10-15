@@ -57,6 +57,13 @@
       "when": 1792105996448,
       "tag": "0007_event_poster",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792107238738,
+      "tag": "0008_lethal_amazoness",
+      "breakpoints": true
     }
   ]
 }

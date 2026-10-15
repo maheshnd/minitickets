@@ -6,13 +6,15 @@ import { EventDate } from "./event-date";
 // The title links to the event's own page (/events/<id>), where tickets are booked.
 // The date is its own small component (EventDate), because it must render the same text on the
 // server and in the browser during hydration, then switch to the viewer's timezone.
-export function EventCard({ event }: { event: Event }) {
+export function EventCard({ event, position }: { event: Event; position?: { top: number; index: number; total: number } }) {
   const soldOut = event.seatsLeft === 0;
 
   return (
-    <li className="rounded-lg border border-gray-200 bg-white p-5">
+    <li className="rounded-lg border border-gray-200 bg-white p-5"
+      aria-posinset={position ? position.index + 1 : undefined} aria-setsize={position?.total}
+      style={position ? { position: "absolute", top: position.top, height: 192, width: "100%", overflow: "auto" } : undefined}>
       <div className="flex items-start justify-between gap-3">
-        <h2 className="text-lg font-semibold">
+        <h2 className="line-clamp-2 text-lg font-semibold">
           <Link href={`/events/${event.id}`} className="hover:text-indigo-700 hover:underline">
             {event.title}
           </Link>

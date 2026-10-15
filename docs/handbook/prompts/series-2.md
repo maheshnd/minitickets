@@ -129,19 +129,17 @@ only; deploy + publish roles updated. CD builds/deploys the worker image
   type and size limits, shown on the event page. Explain upload security
   (validation, scanning, never trusting the client).
 
-### P5 (S3) Reminder the day before
-- EventBridge Scheduler (daily) -> reminder Lambda: reads the tickets GSI
-  for tomorrow (no VPC, no Postgres) -> reminder jobs on the email queue.
-  Idempotent per ticket per day. Scheduler role may invoke only that
-  Lambda.
+### P5 (S3) Reminders — EXPLAIN-ONLY
+- Not built. D2 fully covers daily EventBridge Scheduler -> reminder Lambda ->
+  email queue, ticket date GSI, per-ticket/day idempotency and least-privilege
+  invocation, including "where it would go in MiniTickets".
 
-### P6 (S4) Door check-in
-- API Gateway REST API (usage plan, API key, throttling; why REST not
-  HTTP API here) -> check-in Lambda: verify the HMAC signature, then a
-  DynamoDB CONDITIONAL update valid -> used.
-- /scanner page (paste or camera-scan; staff enter the API key; never in
-  the bundle). Demo: 2 scans of one ticket at once -> 1 success, 1
-  "already used at <time>".
+### P6 (S4) Door check-in — EXPLAIN-ONLY
+- Not built. D2 fully covers REST API Gateway usage plans/API keys/throttling,
+  HMAC verification, conditional valid -> used updates and concurrent scans,
+  including "where it would go in MiniTickets" (staff scanner + check-in Lambda),
+  why REST instead of HTTP API, staff API key kept out of the bundle, and two
+  concurrent scans -> one success / one "already used at <time>".
 
 ### P7 Search + big lists
 - Search as you type: pg_trgm GIN index, events.search with keyset
@@ -161,15 +159,15 @@ only; deploy + publish roles updated. CD builds/deploys the worker image
   out", DB stays the source of truth, give back on DB failure,
   reconciliation job). Explain-only: waiting room, queue-based booking,
   seat holds with expiry.
-- ECS service autoscaling (target tracking on CPU / ALB requests per
-  target, min 1 max 3) with a cost note.
-- Load test (autocannon or k6): one hot event, N users; throughput,
-  p50/p95/p99, DB lock waits, with vs without the gate.
+- Explain-only in D2: ECS target-tracking autoscaling (CPU / ALB requests,
+  min/max, cost and where it would go in MiniTickets). No autoscaling built.
+- Short load test: one hot event, bounded users; throughput, p50/p95/p99
+  and with vs without the gate. Build only rate limiting + Redis inventory gate.
 
-### P9 Real-time seat updates
-- Seats left updates live on the event page via Server-Sent Events;
-  Redis pub/sub so it works with several API tasks; fallback to polling.
-  Explain SSE vs WebSockets vs polling, and ALB idle timeouts.
+### P9 Real-time seat updates — EXPLAIN-ONLY
+- Not built. D2 fully covers SSE vs WebSockets vs polling, Redis pub/sub across
+  API tasks, polling fallback and ALB idle timeouts, including "where it would
+  go in MiniTickets" (event page + API stream + Redis channel).
 
 ### P10 Security hardening
 - CSRF Origin / Sec-Fetch-Site check on all mutations; security headers
@@ -177,12 +175,16 @@ only; deploy + publish roles updated. CD builds/deploys the worker image
   change; "log out everywhere"; DB connection timeout + statement_timeout
   (fail-fast); CI: Trivy image scan (fail on CRITICAL) + dependency audit.
 
-### P11 Web performance + quality
-- Real Core Web Vitals (LCP, INP, CLS, TTFB, FCP) via useReportWebVitals
-  -> endpoint -> structured log (CloudWatch metric filter on AWS).
-- Lighthouse CI on a production build with budgets (why INP needs real
-  users); bundle analysis + one measured improvement.
-- Accessibility checks (axe) in e2e.
+- Small extra: useReportWebVitals (LCP, INP, CLS, TTFB, FCP) -> validated
+  endpoint -> structured log, plus axe accessibility checks in related e2e.
+
+### P11 Lighthouse CI — EXPLAIN-ONLY
+- Not built. D2 fully covers production-build Lighthouse CI budgets, lab vs
+  real-user metrics (especially INP), bundle analysis and "where it would go
+  in MiniTickets" (CI quality job). Web-vitals reporting and axe move to P10.
+
+Remaining build order: **P7 -> P8 -> P10**, then **D0 -> D1 -> D2 -> D3**.
+D2 must fully cover every explain-only topic above as MiniTickets scenarios.
 
 ### Extras (only when I ask)
 - PX1 CloudFront on (when AWS approves): cdnEnabled=true, HTTPS from

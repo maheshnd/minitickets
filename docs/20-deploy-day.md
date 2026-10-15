@@ -1188,6 +1188,31 @@ Moto exercises the same SDK/CORS/data path but does not prove live IAM or signat
 Do the live tampered-header/length and expired-GET checks after deployment; no AWS writes were
 performed by the agent. Original Part A acceptance remains required if that stack is still pending.
 
+### 3.16 P7: indexed search and big lists
+
+The existing CD migration task applies `0008_lethal_amazoness.sql` before API rollout:
+`CREATE EXTENSION IF NOT EXISTS pg_trgm`, a GIN index on `(title || ' ' || venue)`
+and a B-tree on `(starts_at, id)`. No new AWS resources, IAM permissions, secrets or env.
+The migration role must be allowed to install the trusted `pg_trgm` extension in this database.
+Index creation is transactional and can block event writes while it runs; plan a quiet window.
+For a much larger live table, use an operator-managed concurrent-index rollout instead.
+
+Acceptance through an approved SQL connection to RDS: `SELECT extname FROM
+pg_extension WHERE extname = 'pg_trgm';` returns one row; `SELECT indexname FROM pg_indexes
+WHERE tablename = 'events' AND indexname LIKE 'events_search_%';` returns the two indexes.
+Use `EXPLAIN (ANALYZE, BUFFERS)` on a selective title/venue substring query: GIN is eligible,
+though the planner can prefer a sequential scan for small tables or broad/short searches.
+Open `/events`, type a title, load another page and scroll; HTTPS through the ALB works
+with `cdnEnabled=false`. API `events.search` remains `no-store`.
+
+Rollback: roll back the API/web images together through existing CD; leave the additive
+extension/indexes in place. Never drop them as part of an app rollback. The legacy
+`events.list` stays compatible; P7 search does not use its Redis/Next data caches.
+Run `pnpm demo:search` locally for a disposable 10k seed, real pagination and browser
+checks (requires existing local Postgres/Redis and free :3101/:4101; cleans its own DB/PIDs).
+Cursor traversal is not a snapshot: deleting a row is safe, but changing start times can
+move rows across the boundary; new inserts before the cursor appear on a fresh search.
+
 ## 4. Dependency order
 
 ```mermaid

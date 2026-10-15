@@ -1,47 +1,41 @@
 "use client";
 
+import { useState } from "react";
 import type { ListEventsInput } from "@minitickets/shared";
 import { Button } from "@/components/ui/button";
-import { useEvents } from "../hooks/use-events";
-import { EventCard } from "./event-card";
+import { Input } from "@/components/ui/input";
+import { useEventSearch } from "../hooks/use-event-search";
 import { EventListSkeleton } from "./event-list-skeleton";
+import { VirtualEventList } from "./virtual-event-list";
 
-// The events page content. A Client Component because it uses a query.
-// When the server already fetched the events (app/events/page.tsx), the data is in the cache from
-// the first render, so it goes straight to step 4, on the server AND in the browser.
-// `input` is the filters (from the URL), `filtered` says whether any is set (for the empty text).
+// @concept: ui-error-handling
 export function EventList({ input, filtered }: { input: ListEventsInput; filtered: boolean }) {
-  const events = useEvents(input);
-
-  // 1. Loading: only when the browser has to fetch by itself (the server could not).
-  if (events.isPending) {
-    return <EventListSkeleton />;
+  const [text, setText] = useState("");
+  const events = useEventSearch(input, text);
+  const items = events.data?.pages.flatMap(page => page.items) ?? [];
+  // 1. Previous results remain visible during a new search, but cannot load pages of the old key.
+  const busy = events.isFetching || events.typing;
+  function more() {
+    if (events.hasNextPage && !busy && !events.isPlaceholderData) void events.fetchNextPage();
   }
-
-  // @concept: ui-error-handling
-  // 2. Failure: a general message (never raw internals) and a way to try again.
-  if (events.isError) {
-    return (
-      <div role="alert" className="space-y-3">
-        <p className="text-red-700">Something went wrong. Please try again.</p>
-        <Button variant="secondary" onClick={() => events.refetch()} disabled={events.isFetching}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  // 3. Success, but nothing to show (with filters: nothing MATCHES, which is a different message).
-  if (events.data.length === 0) {
-    return <p className="text-gray-600">{filtered ? "No upcoming events match these filters" : "No upcoming events"}</p>;
-  }
-
-  // 4. Success: one card per event.
   return (
-    <ul className="space-y-4">
-      {events.data.map((event) => (
-        <EventCard key={event.id} event={event} />
-      ))}
-    </ul>
+    <section aria-label="Search events" className="space-y-4">
+      <Input id="event-search" label="Search title or venue" maxLength={200} value={text}
+        onChange={event => setText(event.target.value)} />
+      <p role="status" className="text-sm text-gray-600">{busy ? "Updating events…" : `${items.length} events loaded`}</p>
+      {events.isPending ? <EventListSkeleton /> : null}
+      {events.isError ? <div role="alert">
+        <p>Something went wrong. Please try again.</p>
+        <Button onClick={() => events.refetch()} disabled={events.isFetching}>Retry</Button>
+      </div> : null}
+      {!events.isPending && !events.isError && items.length === 0 ? <p className="text-gray-600">
+        {filtered || text.trim() ? "No upcoming events match these filters" : "No upcoming events"}
+      </p> : null}
+      {/* 2. Reset the viewport at each debounced search, including searches sharing the first row. */}
+      <VirtualEventList key={events.searchKey} items={items} onEnd={more} />
+      {events.hasNextPage ? <Button variant="secondary" onClick={more} disabled={busy || events.isPlaceholderData}>
+        {events.isFetchingNextPage ? "Loading more…" : "Load more events"}
+      </Button> : null}
+    </section>
   );
 }

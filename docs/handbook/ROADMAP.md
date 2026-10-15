@@ -36,7 +36,7 @@ flowchart LR
 ## Where things stand now
 
 - **F2a, F2b, S1a and S1b are done** (committed).
-- **Series 2 ([prompts/series-2.md](prompts/series-2.md)) now sets the order (P0-P11, then D0-D3).
+- **Series 2 ([prompts/series-2.md](prompts/series-2.md)) now sets the order (remaining builds P7 -> P8 -> P10, then D0-D3).
   P0 (local stack health) is done:** `pnpm stack:check` (was `pnpm run doctor`), `pnpm dev` =
   `stack:up` + the apps, `pnpm stack:reset`. **P1 = S1c (the job pipeline on AWS) is built** and
   waits for its first CD deploy (manual steps in [PENDING.md](PENDING.md), P1). **CD deploy guard**
@@ -48,7 +48,10 @@ flowchart LR
   **P3 (outbox) is built:** atomic booking + confirmation, API relay with locked batches and retries.
   **P4 Part A is built:** SNS fan-out + idempotent HMAC QR ticket Lambda, private S3/DynamoDB, local emulators and CD; AWS acceptance pending.
   **P4 Part B is built:** owner-scoped tickets.mine, short-lived QR/download URLs and pending UI; admin-only constrained poster uploads. AWS acceptance pending.
-  **Next: P5**, following [the series prompt](prompts/series-2.md).
+  P5 reminders, P6 check-in, P9 live seats and P11 Lighthouse CI are **EXPLAIN-ONLY**, fully covered in D2 with "where it would go in MiniTickets".
+  P8 builds rate limiting + Redis inventory gate + short load test; autoscaling is explain-only in D2. P10 includes web-vitals reporting + axe.
+  **P7 is built:** indexed title/venue search, stable keyset pages, debounced stale-safe UI and virtualized 10k lists; 387 unit / 7 related e2e tests pass.
+  **Next: P8**, following [the series prompt](prompts/series-2.md).
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
