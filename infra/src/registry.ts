@@ -5,12 +5,13 @@
 // GIVES (outputs):  apiRepoUrl -> used by task (image), and the push script
 //                   webRepoUrl -> used by web-task (image) and the push script
 //                   workerRepoUrl -> used by jobs/worker-lambda (image) and the push script
-//                   apiRepoArn, webRepoArn, workerRepoArn -> used by cicd (the only repos CD may
-//                     push to / tag)
+//                   repoArns (all repos, in image-repos.ts order) -> used by cicd (the only repos
+//                     CD may push to / tag)
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { imageServices, repoName, type ImageService } from "./image-repos";
 
 // The registry layer: private shelves in AWS where our Docker images are stored.
 // See docs/16-infra-ecr.md for the explanation.
@@ -61,8 +62,8 @@ const lifecyclePolicy = JSON.stringify({
 
 // @concept: ecr
 // 2. Helper that builds one repository plus its lifecycle policy, so the repos are not copy-pasted.
-function createRepo(service: "api" | "web" | "worker") {
-  const name = `${prefix}-${service}`;
+function createRepo(service: ImageService) {
+  const name = repoName(service);
 
   // @concept: immutable-image-tags
   // @concept: image-scanning
@@ -138,21 +139,22 @@ function allowLambdaPull(repo: aws.ecr.Repository) {
 }
 
 export function createRegistry() {
-  // 4. One repository per service: the api, web and worker images are built and deployed separately.
-  const api = createRepo("api");
-  const web = createRepo("web");
-  const worker = createRepo("worker");
-  const workerPull = allowLambdaPull(worker);
+  // 4. One repository per service in image-repos.ts: the api, web and worker images are built and
+  //    deployed separately. Same resource names as before the list existed, so nothing is replaced.
+  const repos = {} as Record<ImageService, aws.ecr.Repository>;
+  for (const service of imageServices) {
+    repos[service] = createRepo(service);
+  }
+  const workerPull = allowLambdaPull(repos.worker);
 
   // 5. URLs are for docker (where to push/pull); ARNs are for IAM policies (what a role may touch).
   //    workerRepoUrl only once the pull policy exists (same idea as compute/iam.ts step 8): the
   //    Lambda reads the URL, so it is created after the policy that lets it pull.
+  //    repoArns: built from the SAME list, so a new repository reaches the CD roles by itself.
   return {
-    apiRepoUrl: api.repositoryUrl,
-    webRepoUrl: web.repositoryUrl,
-    workerRepoUrl: pulumi.all([worker.repositoryUrl, workerPull.id]).apply(([url]) => url),
-    apiRepoArn: api.arn,
-    webRepoArn: web.arn,
-    workerRepoArn: worker.arn,
+    apiRepoUrl: repos.api.repositoryUrl,
+    webRepoUrl: repos.web.repositoryUrl,
+    workerRepoUrl: pulumi.all([repos.worker.repositoryUrl, workerPull.id]).apply(([url]) => url),
+    repoArns: imageServices.map((service) => repos[service].arn),
   };
 }

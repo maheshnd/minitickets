@@ -128,7 +128,7 @@ const registry = createRegistry();
 //     of which image tag is deployed. Pulumi only creates it; CD writes its value (src/release.ts).
 const release = createRelease();
 
-// 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: the three repo ARNs (registry), because
+// 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: every repo ARN (registry), because
 //     the roles may push to / tag exactly those, the parameter ARN (release, 8a), the only parameter
 //     the deploy role may write, and which GitHub repo may use them (config). Always on: IAM is free.
 //     require() stops with a clear error if it is missing: a wrong or empty value would
@@ -138,9 +138,7 @@ const release = createRelease();
 //       pulumi config set githubSubjectPrefix <sub_claim_prefix>
 const cicd = createCicd({
   githubSubjectPrefix: config.require("githubSubjectPrefix"),
-  apiRepoArn: registry.apiRepoArn,
-  webRepoArn: registry.webRepoArn,
-  workerRepoArn: registry.workerRepoArn,
+  repoArns: registry.repoArns,
   imageTagParameterArn: release.parameterArn,
 });
 

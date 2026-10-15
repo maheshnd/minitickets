@@ -1,7 +1,7 @@
 // LAYER: cicd
 // NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish / deploy)
-//                   apiRepoArn, webRepoArn, workerRepoArn <- from registry (the ONLY repos it may
-//                                            push to / tag)
+//                   repoArns                <- from registry: every repo in image-repos.ts (the
+//                                            ONLY repos it may push to / tag)
 //                   imageTagParameterArn    <- from release (the ONLY parameter CD may write)
 // CREATES:          1 IAM OIDC provider (trust GitHub's login tokens),
 //                   1 role "minitickets-dev-gh-publish" + its inline permission policy,
@@ -13,6 +13,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { publishPolicyDocument } from "./publish-policy";
 
 // The CI/CD layer: lets GitHub Actions push images to ECR WITHOUT any stored AWS keys.
 // Always on: IAM roles and OIDC providers cost nothing.
@@ -43,9 +44,9 @@ const githubOidcHost = "token.actions.githubusercontent.com";
 
 export interface CicdInputs {
   githubSubjectPrefix: string;
-  apiRepoArn: pulumi.Input<string>;
-  webRepoArn: pulumi.Input<string>;
-  workerRepoArn: pulumi.Input<string>;
+  // The ARN of every ECR repository (registry.ts builds it from image-repos.ts). One list, so both
+  // roles below always cover the same repositories and a new one cannot be forgotten here.
+  repoArns: pulumi.Input<string>[];
   imageTagParameterArn: pulumi.Input<string>;
 }
 
@@ -137,52 +138,19 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
     tags: tagsFor(`${prefix}-gh-publish`),
   });
 
-  // 6. The permission policy: exactly what `docker login` + `docker push` to our 3 repos need.
-  // DEPENDS ON: publishRole, plus the three repo ARNs (from the registry layer).
+  // 6. The permission policy: exactly what `docker login` + `docker push` to our repos need
+  //    (the statements and their WHY: publish-policy.ts). It lists EVERY repo in inputs.repoArns,
+  //    for the check/pull actions AND the push actions alike.
+  //    WHY that matters: cd.yml's "check which images already exist" step reads each repo
+  //    (BatchGetImage) BEFORE it pushes anything, so a repo missing here fails the whole publish.
+  //    LESSON (S1c): the worker repo's ARN reached AWS only with the next `pulumi up`, and the CD
+  //    run that was already on its way got "not authorized ... BatchGetImage on minitickets-dev-
+  //    worker". A new repo needs this policy applied BEFORE the push that publishes to it.
+  // DEPENDS ON: publishRole, plus the repo ARNs (from the registry layer).
   const publishPolicy = new aws.iam.RolePolicy(`${prefix}-gh-publish-ecr`, {
     name: "push-images",
     role: publishRole.id,
-    policy: pulumi.jsonStringify({
-      Version: "2012-10-17",
-      Statement: [
-        // 6a. Log in to ECR.
-        //     WHAT: ecr:GetAuthorizationToken returns the 12-hour password for `docker login`.
-        //     WHY Resource "*": this action is not tied to one repository (the login is for
-        //     the whole registry), so AWS only accepts "*" here. It grants no access by itself:
-        //     what the login may then do is decided by statement 6b.
-        {
-          Sid: "EcrLogin",
-          Effect: "Allow",
-          Action: "ecr:GetAuthorizationToken",
-          Resource: "*",
-        },
-        // 6b. Push and pull, on ONLY our three repositories (the worker's since S1c).
-        //     PULL side (read):
-        //       BatchCheckLayerAvailability: "do you already have this layer?" (push skips it)
-        //       BatchGetImage:               read a manifest (cd.yml checks if a tag exists)
-        //       GetDownloadUrlForLayer:      download a layer or config (part of reading)
-        //     PUSH side (write):
-        //       InitiateLayerUpload, UploadLayerPart, CompleteLayerUpload: upload one layer
-        //       PutImage: write the manifest + tag (the moment the image becomes visible)
-        //     WHY only these two ARNs: least privilege. Even with these credentials, nobody
-        //     can touch another repository, delete images (no BatchDeleteImage), change
-        //     lifecycle rules, or call ECS, IAM or anything else.
-        {
-          Sid: "PushPullMiniticketsRepos",
-          Effect: "Allow",
-          Action: [
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:BatchGetImage",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:InitiateLayerUpload",
-            "ecr:UploadLayerPart",
-            "ecr:CompleteLayerUpload",
-            "ecr:PutImage",
-          ],
-          Resource: [inputs.apiRepoArn, inputs.webRepoArn, inputs.workerRepoArn],
-        },
-      ],
-    }),
+    policy: pulumi.jsonStringify(publishPolicyDocument(inputs.repoArns)),
   });
 
   // ---------- Deploy role (Step 12b) ----------
@@ -395,7 +363,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
             },
           },
         },
-        // 10h. ECR, only our 3 repositories. Everything there, because Pulumi owns them (create,
+        // 10h. ECR, only our repositories (the same list as the publish role). Everything there, because Pulumi owns them (create,
         //      lifecycle policy, the worker's repository policy, delete). cd.yml uses: DescribeImages
         //      (does the tag exist?), BatchGetImage + PutImage (add the tag "deployed-<sha>" to an
         //      existing image). Creating the worker Lambda also reads its image with the CALLER's
@@ -405,7 +373,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Sid: "OurEcrRepos",
           Effect: "Allow",
           Action: "ecr:*",
-          Resource: [inputs.apiRepoArn, inputs.webRepoArn, inputs.workerRepoArn],
+          Resource: inputs.repoArns,
         },
         // 10i. SSM, only our one parameter (release.ts): Pulumi manages it, cd.yml reads and writes
         //      its value. GetParametersByPath is checked against the PATH (/minitickets/dev): that is
