@@ -27,6 +27,7 @@
     "demo:stampede": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=apps/api/.env scripts/stampede-demo.ts",
     "demo:booking-race": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=apps/api/.env scripts/booking-race-demo.ts",
     "demo:idempotency": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=apps/api/.env scripts/idempotency-demo.ts",
+    "demo:outbox": "pnpm --filter @minitickets/api demo:outbox",
     "images:push": "bash scripts/push-images.sh",
     "infra:migrate": "bash scripts/run-migrations.sh",
     "infra:graph": "cd infra && pulumi stack graph deps.dot"

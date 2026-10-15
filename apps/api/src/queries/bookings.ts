@@ -1,7 +1,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { BookingConfirmedMessage } from "@minitickets/shared";
+import { randomUUID } from "node:crypto";
 import { db } from "../db/client";
 import { bookings } from "../db/schema/bookings";
 import { events } from "../db/schema/events";
+import { outbox } from "../db/schema/outbox";
+import { users } from "../db/schema/users";
 import { BadRequestError, ConflictError, NotFoundError } from "../errors";
 
 // THE PROBLEM IDEMPOTENCY KEYS SOLVE (step F2b)
@@ -51,14 +55,12 @@ function isPgConstraintError(err: unknown, code: string, constraint: string): bo
 type BookingRow = typeof bookings.$inferSelect;
 
 // What createBookingTx did:
-// - "created":  a new booking, seats taken, committed. It also carries the event's title, venue and
-//   start time, which the transaction had already read (step 1): the confirmation message needs
-//   them (services/bookings.ts), and this saves a second query;
+// - "created": a new booking, seats taken AND its confirmation saved in the outbox, committed;
 // - "existing": this user already has a booking with this key (made by an earlier copy of the same
 //   request, or by a different request that reused the key). NOTHING was written this time.
 //   The service compares it with the request: same event + quantity = a replay, else a 409.
 export type CreateBookingResult =
-  | { kind: "created"; booking: BookingRow; event: { title: string; venue: string; startsAt: Date } }
+  | { kind: "created"; booking: BookingRow }
   | { kind: "existing"; booking: BookingRow };
 
 // The booking this user made with this key, if any. Served by the unique index of the constraint
@@ -72,6 +74,7 @@ async function findByKey(executor: Pick<typeof db, "select">, userId: string, id
   return existing;
 }
 
+// @concept: outbox
 // Book `quantity` seats of one event for one user, in ONE transaction, at most ONCE per
 // (user, idempotency key). Returns the new booking, or the one this key already has.
 //
@@ -106,6 +109,7 @@ export async function createBookingTx(
   userId: string,
   quantity: number,
   idempotencyKey: string,
+  correlationId: string,
 ): Promise<CreateBookingResult> {
   try {
     const booking = await db.transaction(async (tx): Promise<CreateBookingResult> => {
@@ -164,7 +168,17 @@ export async function createBookingTx(
       //    If another transaction has (or is just inserting) a booking with this user + key, this
       //    INSERT fails with 23505 (see "WHY A DUPLICATE IS HARMLESS" above) and step 6 takes over.
       const [created] = await tx.insert(bookings).values({ eventId, userId, quantity, idempotencyKey }).returning();
-      return { kind: "created", booking: created, event: { title: event.title, venue: event.venue, startsAt: event.startsAt } };
+      // 5b. Snapshot the confirmation in the SAME transaction: booking, seats and message commit
+      //     together or all roll back. Even an unconfigured/down queue cannot lose the message.
+      //     This is data mapping here because it needs the booking id and the locked event row.
+      const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId));
+      const message = BookingConfirmedMessage.parse({
+        type: "booking.confirmed", version: 1, messageId: randomUUID(), bookingId: created.id,
+        userEmail: user.email, eventTitle: event.title, eventVenue: event.venue,
+        eventStartsAt: event.startsAt.toISOString(), quantity, occurredAt: created.createdAt.toISOString(), correlationId,
+      });
+      await tx.insert(outbox).values({ id: message.messageId, bookingId: created.id, payload: message });
+      return { kind: "created", booking: created };
     });
     return booking;
   } catch (err) {

@@ -25,9 +25,21 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · feat(observability): correlation id end to end, JSON logs, CloudWatch alarms + SNS email + dashboard (series 2, P2 = S1d)
+## 2026-10-15 · feat(bookings): persist confirmations in a transactional outbox (series 2, P3)
 
 Commit: filled in by the next handbook commit
+
+Why: P3 permits anchor stubs so new code stays discoverable without writing the deferred guides.
+
+- `concepts/outbox.md`: minimal anchor stub; the full teaching card and story placement wait for D3.
+- `concept-map.md`: transactional outbox row points to the implemented transaction and relay.
+- `ROADMAP.md`, `PENDING.md`: P3 status and measured results (no entry needed on their own).
+
+---
+
+## 2026-10-15 · feat(observability): correlation id end to end, JSON logs, CloudWatch alarms + SNS email + dashboard (series 2, P2 = S1d)
+
+Commit: ed2ec59
 
 Why: Series 2, phase P2 (S1d). The series asks for `@concept` anchors on new code, so 5 existing
 cards gain anchor lines, and their status notes say the card text predates P2 (the full rewrite is

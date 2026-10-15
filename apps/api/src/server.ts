@@ -2,6 +2,7 @@ import { buildApp } from "./app";
 import { env } from "./config/env";
 import { pool } from "./db/client";
 import { redis } from "./redis/client";
+import { startOutboxRelay } from "./services/outbox";
 
 // Entry point of the API (run by `pnpm dev`).
 
@@ -25,8 +26,11 @@ if (!env.WEB_INTERNAL_URL) {
 
 // 2c. Same for the jobs queue (config/env.ts): without JOBS_QUEUE_URL no confirmation messages are sent.
 if (!env.JOBS_QUEUE_URL) {
-  app.log.warn("JOBS_QUEUE_URL is not set: publishing to the jobs queue is off (no booking confirmation emails)");
+  app.log.warn("JOBS_QUEUE_URL is not set: outbox delivery is paused (booking confirmations remain in Postgres)");
 }
+
+// 2d. Each API task relays committed messages; Postgres row locks divide work between tasks.
+const stopOutboxRelay = startOutboxRelay(app.log);
 
 // @concept: graceful-shutdown
 // 3. Graceful shutdown: on Ctrl+C (SIGINT) or `kill` (SIGTERM), finish cleanly instead of dying mid-request.
@@ -41,6 +45,8 @@ async function shutdown(signal: string) {
   try {
     // 3a. Stop accepting new requests and wait for in-flight ones to finish.
     await app.close();
+    // 3a2. Finish the relay's current batch before closing the database it is still using.
+    await stopOutboxRelay();
     // 3b. Only then close the data stores (requests may still need them until they finish).
     //     redis.quit() sends QUIT and waits for pending replies, so nothing is cut off.
     await pool.end();

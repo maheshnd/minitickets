@@ -969,6 +969,60 @@ aws cloudwatch describe-alarms --alarm-name-prefix minitickets-dev- \
 
 **Not built (explain-only, see PENDING.md P2):** tracing (OpenTelemetry / X-Ray), SLOs and error budgets.
 
+### 3.13 Durable booking confirmations (P3 outbox)
+
+**Before deploying:** migration `apps/api/drizzle/0006_outbox.sql` must run before the new API
+tasks serve bookings. The existing CD migration task runs the SQL from the same published SHA
+image before updating the API service. Keep using that path; no new AWS resource, IAM permission,
+environment variable or infrastructure switch is needed. The API task still needs its existing
+`sqs:SendMessage` permission on `minitickets-dev-jobs`.
+
+Every new booking now saves its confirmation in Postgres in the same transaction as its seats.
+Each API process relays batches of up to 10 due rows. `FOR UPDATE SKIP LOCKED` divides work between
+tasks; each task holds the selected locks through publishing and marking sent. Failed messages
+retry after 1, 2, 4, 8, 16, 32, then 60 seconds (capped, no retry limit). Database failures also
+back off. SQS calls time out after 2 seconds (`throwOnRequestTimeout: true` makes the installed SDK
+reject instead of merely warning). Shutdown waits for the active batch before closing the pool.
+
+**Verify after deploy:** book once at `https://minitickets.theversehub.in`. In CloudWatch → Log
+groups → `/minitickets/dev/api`, expect `outbox message accepted by queue` with `messageId`,
+`bookingId` and `correlationId`; in `/minitickets/dev/worker`, follow that correlation id to the
+email result. Read the same logs from the CLI (after `export AWS_PROFILE=ticketlite`):
+
+```bash
+aws logs tail /minitickets/dev/api --since 5m --filter-pattern '"outbox"'
+aws logs tail /minitickets/dev/worker --since 5m
+```
+
+**If email stalls:** `outbox delivery failed; retry scheduled` means the message stays in
+Postgres. Check the existing SQS queue, the task's queue URL, task role and network access. Do not
+rebook or delete pending rows. Without `JOBS_QUEUE_URL`, the API warns that delivery is paused;
+bookings still save confirmations and a correctly configured API task can drain them later.
+The SQS oldest-message alarm cannot see messages still in Postgres. From an authorised database
+session, this read-only query shows the backlog (no payloads/email addresses):
+
+```sql
+SELECT count(*) AS pending, min(created_at) AS oldest_pending,
+       max(attempts) AS most_attempts
+FROM outbox WHERE sent_at IS NULL;
+```
+
+**Limits:** a crash after SQS accepts a message but before the transaction commits can publish
+that same message again. Its original `messageId` is preserved for the existing worker's duplicate
+protection. Sent rows remain in Postgres; retention is not automated in this phase. The foreign
+key cascades only when a booking is explicitly deleted (local demo cleanup / `stack:reset`; the
+app has no booking deletion). Old bookings are not backfilled. A rollback to the old API leaves
+the additive table intact, but that API resumes its old direct-publish behaviour and cannot drain
+pending rows. Restore P3 to drain them. Added cost is database storage and polling/writes within
+the existing RDS/API tasks; this phase creates no separately billed AWS resource.
+
+**Local proof:** `pnpm demo:outbox --e2e` creates a disposable local database and ElasticMQ queue,
+uses API ports 4101/4102 and web port 3101, and simulates downtime at its own proxy on 19326. It
+checks rollback on an outbox insert failure, recovery after restarting one API, and 24 deliveries
+with two relays. It cleans up its processes, database, queue and login session; no Docker service
+is stopped. It needs the existing local Postgres, Redis and ElasticMQ. It uses Redis database 15;
+event cache keys there expire normally. Omit `--e2e` for only the short relay demo.
+
 ## 4. Dependency order
 
 ```mermaid

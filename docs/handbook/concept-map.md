@@ -168,7 +168,7 @@ queue -> worker Lambda. The rows below are updated in full in the D3 catch-up (s
 | Event sourcing | 📖 | Explain-only | `event-sourcing` · P5 |
 | CQRS | 📖 | Explain-only | `cqrs` · P5 |
 | Saga pattern | 📖 | Explain-only | `saga` · P5 |
-| Transactional outbox | 📖 | Explain-only | `outbox` · P5 |
+| Transactional outbox | 📋 | P3 built: `queries/bookings.ts` → `createBookingTx`; `services/outbox.ts` → `startOutboxRelay` (stub card) | [`outbox`](concepts/outbox.md) |
 | Eventual consistency | 📖 | Explain-only | `eventual-consistency` · P5 |
 
 ## Reliability

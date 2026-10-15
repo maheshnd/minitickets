@@ -10,19 +10,13 @@ import type { Context } from "../trpc/context";
 // message of each business error.
 const createBookingTx = vi.fn();
 vi.mock("../queries/bookings", () => ({
-  createBookingTx: (eventId: string, userId: string, quantity: number, idempotencyKey: string) =>
-    createBookingTx(eventId, userId, quantity, idempotencyKey),
+  createBookingTx: (eventId: string, userId: string, quantity: number, idempotencyKey: string, correlationId: string) =>
+    createBookingTx(eventId, userId, quantity, idempotencyKey, correlationId),
   listByUser: vi.fn(),
 }));
 
 const invalidateEventLists = vi.fn();
 vi.mock("../services/events", () => ({ invalidateEventLists: () => invalidateEventLists() }));
-
-// Step S1a: the booking service also reads the user (queries/users) and publishes to the jobs queue
-// (queues/jobs). Both are stubs here: the queue is "off", so no message is built. What the service
-// does with them is checked in services/bookings.test.ts.
-vi.mock("../queries/users", () => ({ findById: vi.fn() }));
-vi.mock("../queues/jobs", () => ({ jobsEnabled: false, publishBookingConfirmed: vi.fn() }));
 
 // trpc/init.ts imports the users service (for adminProcedure's role lookup), which would open a real
 // database pool. Booking never asks for a role, so a stub is enough.
@@ -107,7 +101,7 @@ describe("bookings.create: checks before the service runs", () => {
     await expect(callerFor({ userId: "u1" }).create({ eventId: EVENT_ID, quantity: 3, idempotencyKey: KEY })).resolves.toMatchObject({
       quantity: 3,
     });
-    expect(createBookingTx).toHaveBeenCalledWith(EVENT_ID, "u1", 3, KEY);
+    expect(createBookingTx).toHaveBeenCalledWith(EVENT_ID, "u1", 3, KEY, "9b2f4c1d-7e3a-4f6b-8c5d-1a2b3c4d5e6f");
   });
 
   it("no idempotency key, or one that is not a UUID -> 400, and no transaction (step F2b)", async () => {

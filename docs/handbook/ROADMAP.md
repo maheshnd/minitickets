@@ -45,7 +45,8 @@ flowchart LR
   **P2 = S1d (observability) is built:** correlation id from api request to worker, JSON logs in all
   three apps, 4 CloudWatch alarms emailing through SNS, a dashboard, saved Logs Insights queries;
   waits for its first CD deploy (bootstrap + email confirmation in `docs/20-deploy-day.md` 3.12).
-  **Next: P3**, the outbox pattern.
+  **P3 (outbox) is built:** atomic booking + confirmation, API relay with locked batches and retries.
+  **Next: P4**, tickets with QR codes + file uploads.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
@@ -92,11 +93,8 @@ The ticketing + serverless series. Each item links to its prompt once there is o
    series recorded in [PENDING.md](PENDING.md), plus the older chapters listed under "Coming next"
    in [the guide](guides/infra-build-along.md#coming-next).
 
-**Later step, the outbox pattern:** today the booking commit and the queue publish are two separate
-steps, so a message can be lost (publish fails, or the process crashes right after the commit). The
-fix: write the message into an `outbox` table in the SAME transaction as the booking, and let a
-relay publish it from there. See the comment in `publishConfirmation`
-(`apps/api/src/services/bookings.ts`).
+**P3 outbox pattern is built:** confirmations commit with bookings and API relays publish them
+with `FOR UPDATE SKIP LOCKED`; queue failures retry from Postgres (details in [PENDING.md](PENDING.md)).
 
 **Optional, later:** a waitlist, cancelling a booking, uploading an event poster, a payment saga
 with Step Functions.

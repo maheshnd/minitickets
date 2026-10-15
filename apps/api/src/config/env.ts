@@ -40,8 +40,8 @@ const EnvSchema = z.object({
   // whole API from starting there, for a feature that only makes lists fresher.
   WEB_INTERNAL_URL: z.url({ protocol: /^https?$/ }).optional(),
   REVALIDATE_SECRET: RevalidateSecretSchema.optional(),
-  // The jobs queue (queues/jobs.ts). OPTIONAL: without JOBS_QUEUE_URL publishing is turned off (a
-  // warning at startup), so tests and setups without a queue still work.
+  // The jobs queue (queues/jobs.ts). OPTIONAL: without JOBS_QUEUE_URL the outbox relay is paused;
+  // confirmations are still saved with bookings and delivered when the queue is configured.
   // JOBS_QUEUE_URL: the queue's URL (local: the ElasticMQ container, on AWS: the SQS queue's URL).
   JOBS_QUEUE_URL: z.url({ protocol: /^https?$/ }).optional(),
   // SQS_ENDPOINT: LOCAL ONLY. Points the AWS SDK at the ElasticMQ container instead of real SQS.
