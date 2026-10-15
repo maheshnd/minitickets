@@ -801,6 +801,74 @@ aws dynamodb get-item --table-name minitickets-dev-processed-jobs \
 
 **Cost.** Idle: about $0. SQS bills per request (first 1 million a month free, then about $0.40 per million), DynamoDB on demand per read/write, Lambda per millisecond, SES about $0.10 per 1,000 emails. One thing runs while compute is on: the trigger's pollers long-poll the queue all the time, and those receives count as SQS requests (watch the queue's `NumberOfEmptyReceives` metric in CloudWatch; expected to stay inside the free tier). Turning compute off removes the Lambda and its trigger; the queues, table and identities stay.
 
+### 3.11 The deploy guard: never deploy old infrastructure code
+
+**What it is.** A check at the start of every CD deploy job, before any `pulumi` command (`cd.yml` step 28b, logic in `scripts/deploy-guard.sh`). It refuses a run whose infrastructure code is **older** than the commit CD applied last, and a run started by CI that has been **superseded** by a newer commit on main. The commit CD applied last is stored in SSM `/minitickets/dev/deployed-commit` (written at the end of each deploy, step 38b).
+
+**Why: the incident (2026-10-15).** A CD run for commit `6ea9575` waited days for approval. Meanwhile newer commits (S1c) had added resources. The old run was approved, checked out `6ea9575`, and ran `pulumi up` with that commit's code. Pulumi makes AWS match the code it is given, so it **deleted 10 newer resources**. The approval page showed which commit it was, but nothing said "this one is old".
+
+```mermaid
+flowchart LR
+    old["old run<br/>(commit 6ea9575)<br/>waits days"] -->|"approved"| pu["pulumi up<br/>with OLD code"]
+    pu -->|"AWS must match<br/>the old code"| del["10 newer<br/>resources deleted"]
+```
+
+Real-life comparison: a builder arrives with last month's blueprint and rebuilds the house to match it, tearing down the room you added last week. The guard is the site manager who checks the blueprint's date before letting anyone in.
+
+```mermaid
+flowchart TB
+    start["deploy job, after approval"] --> ci{"started by CI and main<br/>has a newer commit?"}
+    ci -->|"yes"| stop1["refuse: superseded"]
+    ci -->|"no"| older{"commit OLDER than<br/>SSM deployed-commit?"}
+    older -->|"no (newer or same)"| go["pulumi up ..."]
+    older -->|"yes"| allow{"manual run with<br/>allow_older_infra?"}
+    allow -->|"no"| stop2["refuse: older code"]
+    allow -->|"yes"| go
+    go --> rec["record this commit in SSM"]
+```
+
+**What it does NOT block.** An app rollback (Run workflow with `image_tag`) checks out main's **newest** commit, so its infrastructure code is never older: it passes. A deliberate infra rollback needs a manual run with **allow_older_infra** ticked; the run then shows a warning and deletes what newer commits added.
+
+**One time, before the first deploy that contains the guard** (a targeted `pulumi up`, only these 2 resources). WHY: the deploy role may read the new parameter only once its policy says so, and the guard runs BEFORE `pulumi up`, so CD cannot grant this to itself. With the committed config, from `infra/`:
+
+```bash
+pulumi up \
+  --target 'urn:pulumi:dev::minitickets::aws:ssm/parameter:Parameter::minitickets-dev-deployed-commit' \
+  --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-deploy-policy'
+```
+
+**Expect:** `+ 1 to create, ~ 1 to update`, nothing else. Then `aws ssm get-parameter --name /minitickets/dev/deployed-commit --query Parameter.Value` says `"none"`. The next approved deploy passes the guard ("No deployed commit recorded yet") and records its commit. Without this step the guard stops the deploy with `Cannot read SSM /minitickets/dev/deployed-commit: … AccessDeniedException`.
+
+**Runs that were already waiting.** A run keeps the workflow file from the moment it started, so a run that was waiting for approval BEFORE the guard reached main has no guard. **Reject** every such run (Actions -> the run -> Review deployments -> Reject) and approve only the newest.
+
+**Reading a refusal** (the guard step's log, and the job summary):
+
+| The guard says | What to do |
+| --- | --- |
+| `Superseded: main already has a newer commit …` | Approve the newest CD run instead (or Actions -> CD -> Run workflow on main). |
+| `Commit … is OLDER than the deployed commit …` | You approved an old run: reject it. For an app rollback use `image_tag`. Only for a deliberate infra rollback: Run workflow with `allow_older_infra`. |
+| `… are on separate lines of history` / `… not in this history` | main was rewritten (force push). Check what is deployed (`pulumi preview` from main), then decide; `allow_older_infra` overrides it. |
+| `Cannot read SSM /minitickets/dev/deployed-commit` | The one-time step above was not done (or the deploy policy lost the permission). |
+
+**Recovery: what to do when old code already deleted resources** (what was done on 2026-10-15). Never repair with `pulumi up` from an old commit or with uncommitted config.
+
+1. **Stop the bleeding.** Reject every other waiting CD run. Check out main's newest commit, clean working tree (`git status`).
+2. **See the damage**, read-only, from `infra/`: `pulumi preview`. **Expect:** the deleted resources as `+ create`, and the CD roles' policies as `~ update` (the old code had put their older versions back).
+3. **Repair what CD itself needs, first, with a targeted `pulumi up`**: the publish role's policy (so publish may push to every repository), the deploy role's policy (so `pulumi up` in CD may create the job pipeline again) and the worker repository with its two policies (the publish job pushes the worker image BEFORE the deploy job runs):
+
+   ```bash
+   pulumi up \
+     --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-publish-ecr' \
+     --target 'urn:pulumi:dev::minitickets::aws:iam/rolePolicy:RolePolicy::minitickets-dev-gh-deploy-policy' \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/repository:Repository::minitickets-dev-worker' \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/lifecyclePolicy:LifecyclePolicy::minitickets-dev-worker-lifecycle' \
+     --target 'urn:pulumi:dev::minitickets::aws:ecr/repositoryPolicy:RepositoryPolicy::minitickets-dev-worker-lambda-pull'
+   ```
+
+   A deleted ECR repository loses its images. Tags pushed before are gone, so the next publish must build the worker image again (it does: "not in ECR yet").
+4. **Let CD rebuild the rest:** Actions -> CD -> Run workflow on main (or push), approve. Its `pulumi up` creates whatever is still missing.
+5. **Check:** `pulumi preview` from main says `0 to create / update / delete` (only unchanged), and the S1c checks in 3.10 ("Verify") pass.
+
 ## 4. Dependency order
 
 ```mermaid
@@ -844,6 +912,7 @@ flowchart TB
 | Path B: forgot to update the `minitickets` CNAME     | The domain points at last deploy day's (deleted) ALB: "can't find server" |
 | Changing `cdnEnabled` with entry on                  | `pulumi up` fails: "A listener already exists on this port" (both paths use port 80) |
 | `TRUST_PROXY_HOPS` too high for the path             | Anyone can choose the IP the api logs (and later rate-limits) by sending X-Forwarded-For |
+| Approving an OLD waiting CD run (no guard)           | `pulumi up` with old code deletes what newer commits added (the 2026-10-15 incident, 3.11) |
 
 ## 6. How this connects
 
@@ -875,6 +944,7 @@ See [00-architecture.md](00-architecture.md) for the whole picture.
 8. **Why turn dev infrastructure off every night?** Load balancers, databases and running tasks cost money every hour they exist, even with no users. Infrastructure as code makes "off" and "on" one command each.
 9. **What does ACM's DNS validation prove, and why create the certificate days early?** That you control the domain's DNS (only you can add the record ACM asks for). Validation waits for you and for DNS, so it is done before the meter runs; ACM then renews by itself while the record stays.
 10. **Why must the trusted proxy count match the path exactly?** Each of our proxies appends the address it saw to X-Forwarded-For. Trusting one hop too many reads an address the client wrote itself, so anyone can fake their IP. With only an ALB in front that number is 1, with CloudFront + ALB it is 2.
+11. **An old deploy was approved late and deleted newer infrastructure. How do you prevent it?** Record what was deployed (SSM `deployed-commit`) and refuse any commit that is an ancestor of it; refuse superseded runs. Keep app rollbacks separate from infra rollbacks: an app rollback changes only the image tag and keeps the newest infrastructure code; an infra rollback is a deliberate, flagged action.
 
 ## 8. Check yourself
 

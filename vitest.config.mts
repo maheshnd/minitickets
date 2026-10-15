@@ -7,9 +7,16 @@ import { defineConfig } from "vitest/config";
 // *.spec.ts in apps/web/e2e, so this pattern never picks them up.
 // infra/src: only its pure helpers have tests (e.g. entry/mode.ts); Pulumi resources are checked
 // with `pulumi preview` instead. scripts/stack: the pure parts of `pnpm stack:check` (env-checks.ts, ...).
+// scripts/*.test.ts: the CD deploy guard (deploy-guard.sh, run against a throw-away git repo).
 export default defineConfig({
   test: {
-    include: ["apps/*/src/**/*.test.ts", "packages/*/src/**/*.test.ts", "infra/src/**/*.test.ts", "scripts/stack/*.test.ts"],
+    include: [
+      "apps/*/src/**/*.test.ts",
+      "packages/*/src/**/*.test.ts",
+      "infra/src/**/*.test.ts",
+      "scripts/*.test.ts",
+      "scripts/stack/*.test.ts",
+    ],
   },
   // The web app imports its own files as "@/..." (apps/web/tsconfig.json "paths"). Next.js knows
   // that; Vitest needs to be told. "@" only matches "@" and "@/...", never "@minitickets/...".

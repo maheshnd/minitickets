@@ -2,7 +2,8 @@
 // NEEDS (inputs):   githubSubjectPrefix     <- from Pulumi config (which GitHub repo may publish / deploy)
 //                   repoArns                <- from registry: every repo in image-repos.ts (the
 //                                            ONLY repos it may push to / tag)
-//                   imageTagParameterArn    <- from release (the ONLY parameter CD may write)
+//                   imageTagParameterArn    <- from release (one of the TWO parameters CD may write)
+//                   deployedCommitParameterArn <- from release (the other one: the deploy guard's record)
 // CREATES:          1 IAM OIDC provider (trust GitHub's login tokens),
 //                   1 role "minitickets-dev-gh-publish" + its inline permission policy,
 //                   1 role "minitickets-dev-gh-deploy" + its inline permission policy (Step 12b)
@@ -48,6 +49,7 @@ export interface CicdInputs {
   // roles below always cover the same repositories and a new one cannot be forgotten here.
   repoArns: pulumi.Input<string>[];
   imageTagParameterArn: pulumi.Input<string>;
+  deployedCommitParameterArn: pulumi.Input<string>;
 }
 
 export interface CicdOutputs {
@@ -158,8 +160,9 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //   a GitHub Actions job of our repo that runs in the GitHub ENVIRONMENT "dev" (step 8b). That
   //   environment has a required reviewer, so only a job a human approved gets that far.
   // PERMISSION POLICY (what it can do): whatever `pulumi up` needs for OUR stack (it creates,
-  //   changes and deletes everything from the VPC to CloudFront), plus: write the deployed tag to
-  //   SSM, add the "deployed-<sha>" tag in ECR, run + watch the migration task. See step 10.
+  //   changes and deletes everything from the VPC to CloudFront), plus: write the deployed tag and
+  //   the deployed commit to SSM, add the "deployed-<sha>" tag in ECR, run + watch the migration
+  //   task. See step 10.
   // USED BY: .github/workflows/cd.yml, job "deploy", step "Configure AWS credentials".
 
   // 8. The trust policy. Same shape as step 4, with a different "sub".
@@ -218,7 +221,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //       - IAM (the dangerous one, 10c-10g): only roles named minitickets-dev-*, only passed to ECS
   //         tasks or Lambda, and only one AWS managed policy may be attached.
   //       - Secrets (10b): only minitickets/* and the RDS-managed rds!* secrets.
-  //       - ECR and SSM (10h, 10i): only our 3 repositories and our 1 parameter.
+  //       - ECR and SSM (10h, 10i): only our 3 repositories and our 2 parameters.
   //       - The job pipeline (10j, 10k, S1c): only queues, tables and functions named minitickets-dev-*,
   //         and SES identities in this account and region.
   //       - TIME: credentials last at most 2 hours (step 9).
@@ -375,12 +378,18 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Action: "ecr:*",
           Resource: inputs.repoArns,
         },
-        // 10i. SSM, only our one parameter (release.ts): Pulumi manages it, cd.yml reads and writes
-        //      its value. GetParametersByPath is checked against the PATH (/minitickets/dev): that is
-        //      how Pulumi reads the value (release.ts step 3). DescribeParameters only lists names and
-        //      AWS accepts nothing but "*" for it.
+        // 10i. SSM, only our two parameters (release.ts): Pulumi manages them, cd.yml reads and
+        //      writes their values:
+        //        /minitickets/dev/image-tag        which image tag is deployed (phase B)
+        //        /minitickets/dev/deployed-commit  which commit's infrastructure code CD applied last.
+        //          cd.yml's deploy guard READS it before any `pulumi` command and refuses older code
+        //          (scripts/deploy-guard.sh); its last step WRITES it. Added after the incident of
+        //          2026-10-15 (an old approved run deleted newer resources). Nothing else may touch it.
+        //      GetParametersByPath is checked against the PATH (/minitickets/dev): that is how Pulumi
+        //      reads the image tag (release.ts step 3). DescribeParameters only lists names and AWS
+        //      accepts nothing but "*" for it.
         {
-          Sid: "OurImageTagParameter",
+          Sid: "OurReleaseParameters",
           Effect: "Allow",
           Action: [
             "ssm:GetParameter",
@@ -391,7 +400,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
             "ssm:RemoveTagsFromResource",
             "ssm:ListTagsForResource",
           ],
-          Resource: inputs.imageTagParameterArn,
+          Resource: [inputs.imageTagParameterArn, inputs.deployedCommitParameterArn],
         },
         {
           Sid: "ReadOurParameterPath",

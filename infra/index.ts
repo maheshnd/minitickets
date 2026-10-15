@@ -126,11 +126,14 @@ const registry = createRegistry();
 
 // 8a. Release (Step 12b). Needs: nothing. Always on (a standard SSM parameter is free). The ONE record
 //     of which image tag is deployed. Pulumi only creates it; CD writes its value (src/release.ts).
+//     Since the CD guard fix also a second record: which commit's infrastructure code CD applied last
+//     (/minitickets/dev/deployed-commit; cd.yml refuses to deploy code older than it).
 const release = createRelease();
 
 // 8b. CI/CD (GitHub OIDC + publish role + deploy role). Needs: every repo ARN (registry), because
-//     the roles may push to / tag exactly those, the parameter ARN (release, 8a), the only parameter
-//     the deploy role may write, and which GitHub repo may use them (config). Always on: IAM is free.
+//     the roles may push to / tag exactly those, the two parameter ARNs (release, 8a), the only
+//     parameters the deploy role may write, and which GitHub repo may use them (config). Always on:
+//     IAM is free.
 //     require() stops with a clear error if it is missing: a wrong or empty value would
 //     trust the wrong repo (or none). The prefix holds the owner and repo names AND their IDs
 //     (GitHub's immutable subject format, see cicd.ts step 3). Find and set it with:
@@ -140,6 +143,7 @@ const cicd = createCicd({
   githubSubjectPrefix: config.require("githubSubjectPrefix"),
   repoArns: registry.repoArns,
   imageTagParameterArn: release.parameterArn,
+  deployedCommitParameterArn: release.deployedCommitParameterArn,
 });
 
 // 8c. The job pipeline, always-on part (S1c, src/jobs/). Needs: nothing but config. Always on,

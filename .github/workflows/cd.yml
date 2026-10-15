@@ -20,6 +20,8 @@
 #   ┌─ JOB deploy (GitHub environment "dev") ───────────────────────────────────────────┐
 #   │ ⏸ waits until YOU click "Approve" in the Actions tab                               │
 #   │ 1. log in to AWS as the deploy role (OIDC: no stored password, keys last 2 h)      │
+#   │ 1b. GUARD: older infra code than the deployed commit (SSM), or superseded by a     │
+#   │     newer commit on main?  yes ──▶ fail (nothing changed)                          │
 #   │ 2. <tag> in all 3 ECR repos?  no ──▶ fail (nothing changed)                        │
 #   │ 3. committed Pulumi.dev.yaml says computeEnabled false?                            │
 #   │      yes ──▶ pulumi up (this is how "everything off/on" works), summary, END       │
@@ -32,7 +34,8 @@
 #   │    worker Lambda (its image tag) and its queue trigger (Enabled)                   │
 #   │      (first time web exists: restart the api once, so it can find "web")           │
 #   │ 8. smoke test: GET / and /trpc/events.list ── fail ──▶ print ECS events, fail      │
-#   │ 9. job summary: tag, migration, URL, how to roll back                              │
+#   │ 9. SSM deployed-commit = this commit (once its `pulumi up` has started)            │
+#   │ 10. job summary: tag, migration, URL, how to roll back                             │
 #   └────────────────────────────────────────────────────────────────────────────────────┘
 #
 # Build once, then promote: publish builds each commit's images ONCE. deploy runs THOSE exact
@@ -75,6 +78,14 @@ on:
         type: string
         required: false
         default: ""
+      # allow_older_infra: the deploy guard (28b) refuses infrastructure code OLDER than the commit
+      #   CD applied last. Tick it ONLY for a deliberate infra rollback (it deletes what newer commits
+      #   added). An app rollback never needs it: image_tag keeps main's newest infrastructure code.
+      allow_older_infra:
+        description: "Deliberate INFRA rollback: allow infrastructure code older than the deployed commit (deletes newer resources)."
+        type: boolean
+        required: false
+        default: false
 
 # 3. What the run's GitHub key (GITHUB_TOKEN, given to every run) may do. Not listed = not allowed.
 #    id-token: write -> the job may ask GitHub for an OIDC token: a short-lived, signed ID card that
@@ -99,6 +110,9 @@ env:
   # 6. The SSM parameter (a named value stored in AWS) that says which image tag is deployed
   #    (infra/src/release.ts). The deploy role may write ONLY this one.
   IMAGE_TAG_PARAMETER: /minitickets/dev/image-tag
+  # 6b. The SSM parameter with the commit whose infrastructure code CD applied last (release.ts 2b).
+  #     The deploy guard (28b) reads it; the end of the deploy (38b) writes it.
+  DEPLOYED_COMMIT_PARAMETER: /minitickets/dev/deployed-commit
 
 jobs:
   # CHAPTER 3: publish = build the api, web and worker images ONCE and store them in ECR.
@@ -421,10 +435,13 @@ jobs:
       #     workflow_run: the commit CI tested (= the commit the image was built from).
       #     manual run: main's newest commit. For a rollback that means: TODAY's infrastructure and
       #       switches, with an OLDER app image. That is what "roll back the app" should mean.
+      #     fetch-depth 0: the WHOLE history, not just this one commit. The deploy guard (28b) must
+      #       ask git "is this commit older than the deployed one?", which needs both in the history.
       - name: Check out the code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
 
       # 26. Node + pnpm, and the infra package's libraries (the Pulumi program is TypeScript).
       #     ORDER MATTERS: installing libraries runs other people's code (their install scripts).
@@ -457,6 +474,47 @@ jobs:
           role-session-name: gh-deploy-${{ github.run_id }}
           role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
+
+      # 28b. THE DEPLOY GUARD: never apply OLD infrastructure code. Before ANY `pulumi` command.
+      #      INCIDENT (2026-10-15): a run for commit 6ea9575 waited days for approval. Approved later,
+      #        it ran `pulumi up` with that commit's OLD infrastructure code, and Pulumi (which makes
+      #        AWS match the code it is given) deleted 10 resources that newer commits had added.
+      #        Repair: targeted local `pulumi up`s (docs/20-deploy-day.md, 3.11).
+      #      WHAT it checks (scripts/deploy-guard.sh; tests in scripts/deploy-guard.test.ts):
+      #        a. runs CI started: is this still main's NEWEST commit? No = "superseded", refuse.
+      #           (GitHub reads cd.yml from main, but each run keeps the commit it was started for.)
+      #        b. every run: is this commit OLDER than SSM /minitickets/dev/deployed-commit (an
+      #           ancestor of it in git)? Yes = refuse, unless a manual run sets allow_older_infra.
+      #      App rollbacks keep working: they check out main's newest commit (25), never older code.
+      #      FAILS CLOSED: if SSM cannot be read (no permission, network), the deploy stops. Only a
+      #        parameter that does not exist yet counts as "nothing recorded" (the guard lets it pass).
+      #      git fetch: main's newest commit NOW (after the approval, which may be days after the start).
+      #      The guard script itself comes from THAT commit, not from the checked-out one: an old
+      #        commit carries an old guard, or none at all (6ea9575 has no scripts/deploy-guard.sh).
+      - name: "Deploy guard: refuse old or superseded infrastructure code"
+        id: guard
+        env:
+          IS_CI_RUN: ${{ github.event_name == 'workflow_run' }}
+          ALLOW_OLDER: ${{ inputs.allow_older_infra == true }}
+        run: |
+          CHECKED="$(git rev-parse HEAD)"
+          git fetch --quiet --no-tags origin main
+          git show FETCH_HEAD:scripts/deploy-guard.sh > "$RUNNER_TEMP/deploy-guard.sh"
+          MAIN_TIP=""
+          if [ "$IS_CI_RUN" = "true" ]; then MAIN_TIP="$(git rev-parse FETCH_HEAD)"; fi
+
+          if ! RECORDED="$(aws ssm get-parameter --name "$DEPLOYED_COMMIT_PARAMETER" --query Parameter.Value --output text 2>&1)"; then
+            if [[ "$RECORDED" == *ParameterNotFound* ]]; then
+              RECORDED=none
+            else
+              echo "::error::Cannot read SSM $DEPLOYED_COMMIT_PARAMETER: $RECORDED"
+              echo "::error::First deploy with the guard? Bootstrap the parameter + deploy policy once (docs/20-deploy-day.md, 3.11)."
+              exit 1
+            fi
+          fi
+
+          CHECKED="$CHECKED" MAIN_TIP="$MAIN_TIP" RECORDED="$RECORDED" ALLOW_OLDER="$ALLOW_OLDER" \
+            bash "$RUNNER_TEMP/deploy-guard.sh"
 
       # 29. Log in to Pulumi Cloud (where Pulumi keeps its records of what it built, and its lock)
       #     and pick the dev stack (our one copy of the infrastructure).
@@ -767,6 +825,29 @@ jobs:
             done
           done
 
+      # 38b. Record this commit as the deployed one (SSM /minitickets/dev/deployed-commit), for the
+      #      deploy guard (28b) of every LATER run.
+      #      WHEN: as soon as this commit's `pulumi up` has STARTED (the compute-off apply, or phase A),
+      #        and also if a later step failed or the run was cancelled (`always()`). WHY not only
+      #        after full success: from the first `pulumi up` on, AWS may already hold resources of
+      #        this commit (phase A applies all infrastructure changes BEFORE the migration). If a
+      #        failed run did not record itself, an older run approved next would pass the guard and
+      #        delete them: the incident again. Recording a newer commit is always safe: it only
+      #        means "older code than this may not run".
+      #      NOT recorded when the guard refused or a check before phase A failed: nothing changed.
+      #      "Started" is spelled out as the three outcomes of a step that RAN (success, failure,
+      #        cancelled), so a step that never ran (skipped, or no outcome at all) never records.
+      - name: Record the deployed commit
+        id: record_commit
+        if: >-
+          always() &&
+          (contains(fromJSON('["success","failure","cancelled"]'), steps.apply_off.outcome) ||
+           contains(fromJSON('["success","failure","cancelled"]'), steps.phase_a.outcome))
+        run: |
+          COMMIT="$(git rev-parse HEAD)"
+          aws ssm put-parameter --name "$DEPLOYED_COMMIT_PARAMETER" --value "$COMMIT" --overwrite > /dev/null
+          echo "SSM $DEPLOYED_COMMIT_PARAMETER = $COMMIT"
+
       # CHAPTER 10: report = say what happened (and, after a failure, why).
       # 39. Only when something above FAILED (and compute is on): print the latest ECS service events.
       #     WHY: they say WHY containers do not start or stay healthy ("CannotPullContainerError",
@@ -791,12 +872,14 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           CURRENT: ${{ steps.state.outputs.current_tag }}
           COMPUTE: ${{ steps.state.outputs.compute_enabled }}
+          GUARD: ${{ steps.guard.outcome }}
           APPLY_OFF: ${{ steps.apply_off.outcome }}
           PHASE_A: ${{ steps.phase_a.outcome }}
           MIGRATE: ${{ steps.migrate.outcome }}
           PHASE_B: ${{ steps.phase_b.outcome }}
           WAIT: ${{ steps.wait.outcome }}
           SMOKE: ${{ steps.smoke.outcome }}
+          RECORD: ${{ steps.record_commit.outcome == 'success' && 'recorded this commit' || 'not changed' }}
           APP_URL: ${{ steps.smoke.outputs.app_url }}
           ALB: ${{ steps.smoke.outputs.alb }}
           DNS_TARGET: ${{ steps.smoke.outputs.dns_target }}
@@ -806,7 +889,9 @@ jobs:
             echo
             echo "Image tag: \`$TAG\` (before this run: \`${CURRENT:-unknown}\`)"
             echo
-            if [ "$COMPUTE" != "true" ]; then
+            if [ "$GUARD" = "failure" ]; then
+              echo "**The deploy guard refused this run** (older infrastructure code than the deployed commit, or superseded by a newer commit on main). Nothing in AWS changed. The reason is in the guard step's log."
+            elif [ "$COMPUTE" != "true" ]; then
               echo "computeEnabled is **false** in the committed \`infra/Pulumi.dev.yaml\`: ran \`pulumi up\` to match it (**$APPLY_OFF**). No image was deployed; SSM still says \`${CURRENT:-?}\`."
             else
               echo "| Step | Result |"
@@ -832,9 +917,13 @@ jobs:
               fi
             fi
             echo
+            echo "Deployed commit (SSM, for the deploy guard): **$RECORD**"
+            echo
             echo "### Roll back"
             echo "Actions -> CD -> **Run workflow** (branch main) -> image_tag = an older tag (e.g. \`${CURRENT:-<sha>}\`)."
             echo "It skips the build, runs that image's migrations (already applied = nothing to do) and rolls the services back."
+            echo "It keeps main's newest infrastructure code, so the deploy guard lets it through. Older infrastructure"
+            echo "code is refused unless you tick **allow_older_infra** (a deliberate infra rollback: it deletes newer resources)."
             echo
             echo "A rollback runs OLD code against the database the NEW code migrated. It is only safe because migrations"
             echo "are **backward compatible** (expand/contract): first ADD (new column, nullable or with a default) and"

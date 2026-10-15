@@ -1,7 +1,10 @@
 // LAYER: release
 // NEEDS (inputs):   nothing
 // CREATES:          1 SSM parameter /minitickets/dev/image-tag (the tag that is DEPLOYED right now)
-// GIVES (outputs):  parameterName, parameterArn -> cicd (the deploy role may write ONLY this one)
+//                   1 SSM parameter /minitickets/dev/deployed-commit (the commit whose infrastructure
+//                     code CD applied last: the deploy guard compares against it)
+// GIVES (outputs):  parameterName, parameterArn,
+//                   deployedCommitParameterArn  -> cicd (the deploy role may write ONLY these two)
 //                   readDeployedImageTag()      -> index.ts (which tag the services run)
 //
 import * as pulumi from "@pulumi/pulumi";
@@ -32,9 +35,15 @@ const prefix = "minitickets-dev";
 export const imageTagParameterName = "/minitickets/dev/image-tag";
 const parameterPath = "/minitickets/dev";
 
+// 1b. The deploy guard's record (after the incident of 2026-10-15, scripts/deploy-guard.sh): the
+//     full git commit whose infrastructure code CD applied last. Same path, so the deploy role's
+//     path rule (cicd.ts 10i) covers it.
+export const deployedCommitParameterName = "/minitickets/dev/deployed-commit";
+
 export interface ReleaseOutputs {
   parameterName: pulumi.Output<string>;
   parameterArn: pulumi.Output<string>;
+  deployedCommitParameterArn: pulumi.Output<string>;
 }
 
 export function createRelease(): ReleaseOutputs {
@@ -59,7 +68,31 @@ export function createRelease(): ReleaseOutputs {
     { ignoreChanges: ["insecureValue"] },
   );
 
-  return { parameterName: parameter.name, parameterArn: parameter.arn };
+  // 2b. The deployed commit (1b). Same settings and the same two owners as the image tag (2):
+  //     Pulumi creates it once with "none" (= nothing recorded yet, the guard then lets the deploy
+  //     through), and cd.yml writes the value at the end of a deploy ("Record the deployed commit").
+  //     ignoreChanges: the same reason as in 2; without it every `pulumi up` would write "none" back
+  //     and switch the guard off.
+  //     WHO reads it: only cd.yml (scripts/deploy-guard.sh). Pulumi itself never reads the value.
+  // DEPENDS ON: nothing.
+  const deployedCommit = new aws.ssm.Parameter(
+    `${prefix}-deployed-commit`,
+    {
+      name: deployedCommitParameterName,
+      description: "Git commit whose infrastructure code CD applied last (dev). Written by CD; read by its deploy guard.",
+      type: "String",
+      tier: "Standard",
+      insecureValue: NO_TAG_YET,
+      tags: tagsFor(`${prefix}-deployed-commit`),
+    },
+    { ignoreChanges: ["insecureValue"] },
+  );
+
+  return {
+    parameterName: parameter.name,
+    parameterArn: parameter.arn,
+    deployedCommitParameterArn: deployedCommit.arn,
+  };
 }
 
 // 3. Read the CURRENT value from AWS (not from Pulumi's state, which still says "none": see 2).

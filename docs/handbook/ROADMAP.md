@@ -39,8 +39,10 @@ flowchart LR
 - **Series 2 ([prompts/series-2.md](prompts/series-2.md)) now sets the order (P0-P11, then D0-D3).
   P0 (local stack health) is done:** `pnpm stack:check` (was `pnpm run doctor`), `pnpm dev` =
   `stack:up` + the apps, `pnpm stack:reset`. **P1 = S1c (the job pipeline on AWS) is built** and
-  waits for its first CD deploy (manual steps in [PENDING.md](PENDING.md), P1). **Next: P2 = S1d**,
-  observability.
+  waits for its first CD deploy (manual steps in [PENDING.md](PENDING.md), P1). **CD deploy guard**
+  (after an old approved run deleted newer resources): CD refuses infra code older than the deployed
+  commit (SSM) and superseded runs; one-time bootstrap in `docs/20-deploy-day.md` 3.11.
+  **Next: P2 = S1d**, observability.
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").
