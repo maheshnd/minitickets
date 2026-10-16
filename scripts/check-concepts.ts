@@ -32,6 +32,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { checkExplorerContent } from "./explorer-content.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const HANDBOOK = path.join(ROOT, "docs/handbook");
@@ -280,6 +281,8 @@ function checkGuides() {
   }
 
   const ids = new Set<string>();
+  // Content belongs to the piece the reader clicked: require complete, unique explanations and service-correct tools.
+  problems.push(...checkExplorerContent(data.components).map(problem => `${explorerName}: ${problem}`));
   for (const component of data.components) {
     if (ids.has(component.id)) problems.push(`${explorerName}: component id "${component.id}" is used twice`);
     ids.add(component.id);

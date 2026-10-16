@@ -25,9 +25,20 @@ flowchart LR
 
 ---
 
-## 2026-10-16 · fix(security): patch runtime images and gate fixable criticals
+## 2026-10-16 · docs(handbook): audit explorer content and integrate the city map
 
 Commit: filled in by the next handbook commit
+
+Why: make each component teach its own implementation, keep managed services in the same city, and make chapter Fit views readable.
+
+- `generated/explorer-v3.json`: replace copied component and tour prose with source-specific settings, Console paths, CLI inspections and failure explanations.
+- `guides/infra-explorer.html`: synchronize component data; draw managed-service districts outside the VPC, fit built chapter geometry, and center a piece when selected.
+- `explorer-quality-review.md`: preserve ten reproducibly sampled component ledgers and the measured screenshot/content checks for owner review.
+- `CHANGELOG.md`: record this quality pass and fill in the preceding handbook commit.
+
+## 2026-10-16 · fix(security): patch runtime images and gate fixable criticals
+
+Commit: 67dfee6
 
 Why: keep generated source tours current after runtime image hardening, the fixable-critical CI gate and the scoped esbuild security update.
 
