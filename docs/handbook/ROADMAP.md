@@ -54,7 +54,8 @@ flowchart LR
   **P8 is built:** Redis token buckets with 429/Retry-After; advisory inventory debits/refunds, safe reconciliation and bounded load comparison. AWS acceptance pending.
   **P10 is built:** origin/metadata CSRF checks, nonce CSP/private HTML, session rotation/revocation, DB deadlines, CI scanners, anonymous vitals and axe. Local production acceptance passed; live AWS/CI image scans pending.
   **D0 is built:** generated offline code tours; docs:check rejects stale snippets.
-  **Next: D1 -> D2 -> D3**, following [the series prompt](prompts/series-2.md).
+  **D1 is built:** 25 infra chapters, 36 offline map/code tours, connection ledger, concept index and saved checks.
+  **Next: D2 -> D3**, following [the series prompt](prompts/series-2.md).
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

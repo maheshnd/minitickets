@@ -266,8 +266,10 @@ function checkGuides() {
   }
   type Explorer = {
     chapters: { n: number; title: string; status: string }[];
-    components: { id: string; code?: { file: string; symbol?: string }[] }[];
-    connections: { id: string; from: string; to: string }[];
+    components: { id: string; name: string; lifecycle?: string; code?: { file: string; symbol?: string }[] }[];
+    connections: { id: string; from: string; to: string; label: string; kind: string }[];
+    codePieces: { id: string; name: string; file: string; symbol: string }[];
+    tours: { id: string; steps: { title: string; pieces: string[]; console: { path: string; expect: string; question: string }; cli: string }[] }[];
   };
   let data: Explorer;
   try {
@@ -294,6 +296,40 @@ function checkGuides() {
     for (const end of [connection.from, connection.to]) {
       if (!ids.has(end)) problems.push(`${explorerName}: connection "${connection.id}" joins "${end}", which is not a component`);
     }
+  }
+
+  // 8g. Tours must stay usable when the map grows: labels, targets and coverage are required.
+  const catalogue = path.join(HANDBOOK, "generated/explorer-v3.json");
+  if (!existsSync(catalogue) || JSON.stringify(JSON.parse(readFileSync(catalogue, "utf8"))) !== JSON.stringify(data)) {
+    problems.push(`${explorerName}: generated/explorer-v3.json differs from city-data`);
+  }
+  const validLabel = (label: string | undefined) => !!label?.trim() && !label.includes("undefined");
+  for (const piece of [...data.components, ...data.codePieces]) {
+    if (!validLabel(piece.name)) problems.push(`${explorerName}: missing label for ${piece.id}`);
+  }
+  for (const piece of data.codePieces) {
+    ids.add(piece.id);
+    const full = path.join(ROOT, piece.file);
+    if (!existsSync(full) || !readFileSync(full, "utf8").includes(piece.symbol)) {
+      problems.push(`${explorerName}: invalid code piece ${piece.id}: ${piece.file} → ${piece.symbol}`);
+    }
+  }
+  for (const connection of data.connections) {
+    if (!validLabel(connection.label) || !validLabel(connection.kind)) problems.push(`${explorerName}: missing connection label ${connection.id}`);
+  }
+  const covered = new Set<string>();
+  for (const tour of data.tours) {
+    if (tour.id.startsWith("chapter-") && (tour.steps.length < 5 || tour.steps.length > 10)) problems.push(`${explorerName}: ${tour.id} needs 5–10 steps`);
+    for (const step of tour.steps) {
+      if (![step.title, step.console.path, step.console.expect, step.console.question, step.cli].every(validLabel)) problems.push(`${explorerName}: incomplete tour step in ${tour.id}`);
+      for (const id of step.pieces) {
+        if (!ids.has(id)) problems.push(`${explorerName}: ${tour.id} points at missing piece ${id}`);
+        covered.add(id);
+      }
+    }
+  }
+  for (const component of data.components) {
+    if (component.lifecycle !== "explain-only" && !covered.has(component.id)) problems.push(`${explorerName}: built piece ${component.id} is in no tour`);
   }
 
   const guidePath = path.join(GUIDES, BUILD_ALONG_FILE);

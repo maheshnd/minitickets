@@ -22,7 +22,7 @@ map chapter by chapter, just like this guide.
 | [1. AWS basics](#chapter-1-aws-basics) | The land (account), the country (region), the districts (AZs), name plates (tags), the planner (Pulumi), the treasurer (budget) | written |
 | [2. The network (VPC)](#chapter-2-the-network-vpc) | The city wall, neighborhoods, the city gate and road signs | written |
 | [Map so far](#map-so-far) | Everything up to here, with the real console names | written |
-| [Coming next](#coming-next) | Chapters 3-15 | planned |
+| [Chapter index](#chapter-index) | Chapters 3-24, including explain-only alternatives | written |
 
 Every chapter has the same 13 parts: last time and the problem, in the city, the picture, how it
 really works, our code, how it connects, code → console → CLI, a console mission, follow one thing,
@@ -949,9 +949,1410 @@ we let a single visitor in, each door needs a guard with a guest list.
 
 ---
 
+## Chapter 3: Security groups
+
+### 1. Last time and the problem
+
+The roads exist. Guards now decide which building door accepts which visitor. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Security groups"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+ALB reaches web:3000 and API:4000; API reaches DB:5432 and Valkey:6379. Rules reference source groups rather than changing task IPs. SGs are stateful; a route and an allowed port are separate requirements.
+
+### 5. Our code
+
+`infra/src/security.ts` → `createSecurityGroups`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/security.ts` → `createSecurityGroups` | EC2 → Security Groups → minitickets-dev-*-sg → Inbound rules; compare configured name/settings with the code. Explain-only resources should be absent. | `aws ec2 describe-security-groups --filters Name=tag:Project,Values=minitickets` |
+
+### 8. Console mission
+
+Open **EC2 → Security Groups → minitickets-dev-*-sg → Inbound rules**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A task can have a route and still time out at a closed building door. Compare source SG, destination port and task ENI before blaming the password.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+ALB reaches web:3000 and API:4000; API reaches DB:5432 and Valkey:6379. Rules reference source groups rather than changing task IPs. SGs are stateful; a route and an allowed port are separate requirements. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 4: Public IPs and network interfaces
+
+### 1. Last time and the problem
+
+A worker needs an address as well as a guest-list entry. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Public IPs and network interfaces"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Fargate awsvpc gives each task an ENI with private address and attached groups. Public-subnet tasks use a public IP for outbound image/secrets access; that does not open inbound ports. Private data has no public entry. No NAT gateway is built.
+
+### 5. Our code
+
+`infra/src/compute/service.ts` → `createApiService`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/compute/service.ts` → `createApiService` | ECS → Clusters → minitickets-dev → Tasks → Networking → ENI; compare configured name/settings with the code. Explain-only resources should be absent. | `aws ec2 describe-network-interfaces --filters Name=tag:Project,Values=minitickets` |
+
+### 8. Console mission
+
+Open **ECS → Clusters → minitickets-dev → Tasks → Networking → ENI**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A public subnet alone does not give a worker internet access. Check route, public-IP assignment and egress; public IPv4 and NAT have different running costs.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Fargate awsvpc gives each task an ENI with private address and attached groups. Public-subnet tasks use a public IP for outbound image/secrets access; that does not open inbound ports. Private data has no public entry. No NAT gateway is built. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 5: The database and cache
+
+### 1. Last time and the problem
+
+Workers need durable records and a shared short-term memory behind the walls. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["The database and cache"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Postgres is the booking source of truth; Valkey holds sessions, cached event lists, token buckets and advisory inventory. A cache may evict data; SQL transactions and CHECK/unique constraints still protect seats. Data switches and retained backups are independent of compute.
+
+### 5. Our code
+
+`infra/src/data/postgres.ts` → `createPostgres`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/data/postgres.ts` → `createPostgres` | RDS → Databases → minitickets-dev-db; ElastiCache → Valkey caches; compare configured name/settings with the code. Explain-only resources should be absent. | `aws rds describe-db-instances --db-instance-identifier minitickets-dev-db` |
+
+### 8. Console mission
+
+Open **RDS → Databases → minitickets-dev-db; ElastiCache → Valkey caches**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Follow the API ENI to private data subnets. Reach means route + SG, Allowed means the relevant service policy where used, Password means DB/Redis credentials and TLS. Never test by printing secret values.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Postgres is the booking source of truth; Valkey holds sessions, cached event lists, token buckets and advisory inventory. A cache may evict data; SQL transactions and CHECK/unique constraints still protect seats. Data switches and retained backups are independent of compute. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 6: Secrets
+
+### 1. Last time and the problem
+
+The worker needs a key safe, not passwords written on its name plate. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Secrets"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+RDS manages the DB master secret; Valkey/revalidation/origin/signing secrets have distinct purposes and permissions. ECS execution roles inject selected secret fields at task start; application roles fetch only what runtime code needs. Secret ARNs are not secret values.
+
+### 5. Our code
+
+`infra/src/data/secrets.ts` → `createSecrets`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/data/secrets.ts` → `createSecrets` | Secrets Manager → Secrets → minitickets/dev/… → Overview (metadata only); compare configured name/settings with the code. Explain-only resources should be absent. | `aws secretsmanager list-secrets --query "SecretList[].Name"` |
+
+### 8. Console mission
+
+Open **Secrets Manager → Secrets → minitickets/dev/… → Overview (metadata only)**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A task can reach the safe but lack its badge, or have a badge and use the wrong secret field. Rotation needs coordinated credentials and consumer restart/key-ring behavior; automatic ticket key rotation is not built.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+RDS manages the DB master secret; Valkey/revalidation/origin/signing secrets have distinct purposes and permissions. ECS execution roles inject selected secret fields at task start; application roles fetch only what runtime code needs. Secret ARNs are not secret values. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 7: ECR
+
+### 1. Last time and the problem
+
+Workers must fetch an immutable packed app from the warehouse. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The warehouse: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["ECR"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+API, web and worker have separate repositories. Publish builds a git-SHA image once per service, then deployment uses that tag through SSM. Lifecycle policies preserve deployed/recent artifacts; latest is not the release authority. No registry password is committed.
+
+### 5. Our code
+
+`infra/src/registry.ts` → `createRegistry`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/registry.ts` → `createRegistry` | ECR → Private repositories → minitickets-dev-api / web / worker → Images; compare configured name/settings with the code. Explain-only resources should be absent. | `aws ecr describe-repositories --query "repositories[].repositoryName"` |
+
+### 8. Console mission
+
+Open **ECR → Private repositories → minitickets-dev-api / web / worker → Images**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A successful push does not mean a task can pull. Compare image URI/architecture, execution-role ECR permissions and network egress.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+API, web and worker have separate repositories. Publish builds a git-SHA image once per service, then deployment uses that tag through SSM. Lifecycle policies preserve deployed/recent artifacts; latest is not the release authority. No registry password is committed. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 8: ECS
+
+### 1. Last time and the problem
+
+A manager must keep the right packed workers running and replace unhealthy ones. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["ECS"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Fargate arm64 tasks run API and web as separate services; task definitions pin image/env/secrets/roles. Readiness checks data dependencies; liveness only proves a process answers. A dedicated minitickets-dev-migrate task applies SQL before rollout, not inside every API task.
+
+### 5. Our code
+
+`infra/src/compute/task.ts` → `createApiTask`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/compute/task.ts` → `createApiTask` | ECS → Clusters → minitickets-dev → Services / Tasks; CloudWatch → Log groups; compare configured name/settings with the code. Explain-only resources should be absent. | `aws ecs list-services --cluster minitickets-dev` |
+
+### 8. Console mission
+
+Open **ECS → Clusters → minitickets-dev → Services / Tasks; CloudWatch → Log groups**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A stopped task has a stoppedReason, exit code and log stream. A service Event often explains image-pull, secret, ENI or health-check failures faster than restarting it.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Fargate arm64 tasks run API and web as separate services; task definitions pin image/env/secrets/roles. Readiness checks data dependencies; liveness only proves a process answers. A dedicated minitickets-dev-migrate task applies SQL before rollout, not inside every API task. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 9: IAM roles
+
+### 1. Last time and the problem
+
+The manager, workers and publisher need different staff badges. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The staff badge: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["IAM roles"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Trust says who may assume a role; permissions say which actions on which resource ARNs; attachment says which task/function/job uses it. ECS execution roles pull/log/inject secrets; the API task role publishes SNS, queries tickets and signs constrained S3 access; Lambda roles receive their own queue and touch their own outputs.
+
+### 5. Our code
+
+`infra/src/compute/iam.ts` → `createIamRoles`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/compute/iam.ts` → `createIamRoles` | IAM → Roles → minitickets-dev-* → Trust relationships / Permissions; compare configured name/settings with the code. Explain-only resources should be absent. | `aws iam list-roles --query "Roles[?starts_with(RoleName, `minitickets-dev`)].RoleName"` |
+
+### 8. Console mission
+
+Open **IAM → Roles → minitickets-dev-* → Trust relationships / Permissions**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+AccessDenied is not a network timeout. Identify the caller ARN and denied action/resource, inspect trust and permission separately, then check attached taskRoleArn vs executionRoleArn.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Trust says who may assume a role; permissions say which actions on which resource ARNs; attachment says which task/function/job uses it. ECS execution roles pull/log/inject secrets; the API task role publishes SNS, queries tickets and signs constrained S3 access; Lambda roles receive their own queue and touch their own outputs. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 10: The ALB
+
+### 1. Last time and the problem
+
+Visitors need one HTTPS reception desk that sends pages and API calls to healthy staff. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The reception desk: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["The ALB"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+ACM validates minitickets.theversehub.in; HTTPS listener routes /trpc/* to API and other paths to web. Target groups track health independently. ALB-only mode accepts the owner-selected source CIDRs; the committed cdnEnabled=false remains the current shape.
+
+### 5. Our code
+
+`infra/src/entry/https-listener.ts` → `createHttpsListener`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/entry/https-listener.ts` → `createHttpsListener` | EC2 → Load balancers → minitickets-dev → Listeners and rules; Target groups → Targets; compare configured name/settings with the code. Explain-only resources should be absent. | `aws elbv2 describe-load-balancers --names minitickets-dev` |
+
+### 8. Console mission
+
+Open **EC2 → Load balancers → minitickets-dev → Listeners and rules; Target groups → Targets**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A 502/503 can mean no healthy targets, wrong container port or an application crash. Check listener rule, target health reason, task health and logs in that order.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+ACM validates minitickets.theversehub.in; HTTPS listener routes /trpc/* to API and other paths to web. Target groups track health independently. ALB-only mode accepts the owner-selected source CIDRs; the committed cdnEnabled=false remains the current shape. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 11: Service Connect
+
+### 1. Last time and the problem
+
+Web server rendering needs the API without going back through public reception. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Service Connect"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Service Connect exposes api/web names via task-local proxies (API proxy 14000, web proxy 13000). API_INTERNAL_URL is server-only; browser requests still use the public /trpc route. Proxy port ingress differs from the application container port.
+
+### 5. Our code
+
+`infra/src/compute/service-connect.ts` → `createServiceConnect`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/compute/service-connect.ts` → `createServiceConnect` | ECS → Cluster → Service Connect; Cloud Map → Namespaces → minitickets.internal; compare configured name/settings with the code. Explain-only resources should be absent. | `aws servicediscovery list-namespaces` |
+
+### 8. Console mission
+
+Open **ECS → Cluster → Service Connect; Cloud Map → Namespaces → minitickets.internal**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+A browser can work while SSR fails. Check the internal name, Service Connect discovery and proxy SG rule. Localhost-originated internal calls are not trusted for forged X-Forwarded-For.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Service Connect exposes api/web names via task-local proxies (API proxy 14000, web proxy 13000). API_INTERNAL_URL is server-only; browser requests still use the public /trpc route. Proxy port ingress differs from the application container port. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 12: CloudFront
+
+### 1. Last time and the problem
+
+An optional front layer can bring static files closer to visitors. Implemented, currently inactive while cdnEnabled=false. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["CloudFront"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+CloudFront is implemented but currently inactive: cdnEnabled=false pending account verification. Static assets can be cached; private/RSC/API answers cannot. P10 nonce-bearing HTML is now private,no-store; the events policy min/default TTL 0 honors it. Origin protection uses a secret header and AWS prefix-list mode when enabled.
+
+### 5. Our code
+
+`infra/src/entry/cdn.ts` → `createCdn`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/entry/cdn.ts` → `createCdn` | CloudFront → Distributions → Behaviors / Origins (only if enabled); compare configured name/settings with the code. Explain-only resources should be absent. | `aws cloudfront list-distributions --query "DistributionList.Items[].DomainName"` |
+
+### 8. Console mission
+
+Open **CloudFront → Distributions → Behaviors / Origins (only if enabled)**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Do not claim an inactive distribution is live. First diagnose the ALB path; then compare behavior, cache key, origin headers, DNS and certificate region.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+CloudFront is implemented but currently inactive: cdnEnabled=false pending account verification. Static assets can be cached; private/RSC/API answers cannot. P10 nonce-bearing HTML is now private,no-store; the events policy min/default TTL 0 honors it. Origin protection uses a secret header and AWS prefix-list mode when enabled. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 13: CI/CD
+
+### 1. Last time and the problem
+
+A publisher needs a short-lived badge and a deployment record, not laptop keys. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["CI/CD"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+GitHub OIDC trust restricts repository/environment subjects. CI checks code/tests/audit and Trivy images; publish builds SHA artifacts once; approved deploy records the tag in SSM, migrates, then rolls services/Lambdas. Guards reject stale infrastructure code and superseded approved runs.
+
+### 5. Our code
+
+`infra/src/cicd.ts` → `createCicd`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/cicd.ts` → `createCicd` | GitHub → Actions → CI / CD; IAM → Identity providers; SSM → Parameter Store; compare configured name/settings with the code. Explain-only resources should be absent. | `aws ssm get-parameter --name /minitickets/dev/image-tag --query Parameter.Value` |
+
+### 8. Console mission
+
+Open **GitHub → Actions → CI / CD; IAM → Identity providers; SSM → Parameter Store**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+An old approved run must not delete newer resources. Distinguish app rollback (old image/current infra) from infra rollback and an additive migration; never locally overwrite the SSM release parameter.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+GitHub OIDC trust restricts repository/environment subjects. CI checks code/tests/audit and Trivy images; publish builds SHA artifacts once; approved deploy records the tag in SSM, migrates, then rolls services/Lambdas. Guards reject stale infrastructure code and superseded approved runs. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 14: Queues, DLQs and SNS fan-out
+
+### 1. Last time and the problem
+
+Booking commits need two durable consumers without losing messages between SQL and delivery. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Queues, DLQs and SNS fan-out"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+The API commits confirmation payload in a Postgres outbox with the booking. A relay publishes to SNS; raw subscriptions copy the event into separate jobs and tickets SQS queues, each with a DLQ/redrive policy. One consumer failure does not block the other.
+
+### 5. Our code
+
+`infra/src/jobs/booking-events.ts` → `createBookingEvents`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/jobs/booking-events.ts` → `createBookingEvents` | SNS → Topics → minitickets-dev-booking-events → Subscriptions; SQS → Queues; compare configured name/settings with the code. Explain-only resources should be absent. | `aws sns list-topics; aws sqs list-queues --queue-name-prefix minitickets-dev` |
+
+### 8. Console mission
+
+Open **SNS → Topics → minitickets-dev-booking-events → Subscriptions; SQS → Queues**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+SNS is fan-out, SQS is durable backlog and retry, the outbox closes the commit/publish gap. A relay can publish twice after an unknown acknowledgement; consumers must be idempotent.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+The API commits confirmation payload in a Postgres outbox with the booking. A relay publishes to SNS; raw subscriptions copy the event into separate jobs and tickets SQS queues, each with a DLQ/redrive policy. One consumer failure does not block the other. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 15: Lambda workers
+
+### 1. Last time and the problem
+
+Queue messages need workers that scale independently from the API. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Lambda workers"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Email Lambda is 256 MB / 10 s; ticket Lambda is 512 MB / 30 s. Both use the published worker image with different commands. Event-source mappings use partial batch failure responses. They do not need the VPC because their stores are managed AWS APIs, not RDS.
+
+### 5. Our code
+
+`infra/src/jobs/worker-lambda.ts` → `createWorkerLambda`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/jobs/worker-lambda.ts` → `createWorkerLambda` | Lambda → Functions → minitickets-dev-worker / minitickets-dev-tickets → Configuration → Triggers; compare configured name/settings with the code. Explain-only resources should be absent. | `aws lambda get-function-configuration --function-name minitickets-dev-worker --query "{Timeout:Timeout,Memory:MemorySize,Role:Role}"` |
+
+### 8. Console mission
+
+Open **Lambda → Functions → minitickets-dev-worker / minitickets-dev-tickets → Configuration → Triggers**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Visibility timeout must outlast processing/retry behavior; partial failure reports only failed message identifiers. Whole-batch failure replays successful siblings; concurrency limits can cause throttling/redrive.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Email Lambda is 256 MB / 10 s; ticket Lambda is 512 MB / 30 s. Both use the published worker image with different commands. Event-source mappings use partial batch failure responses. They do not need the VPC because their stores are managed AWS APIs, not RDS. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 16: DynamoDB records
+
+### 1. Last time and the problem
+
+Consumers need durable dedupe and owner/date access patterns without an SQL connection pool. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["DynamoDB records"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Processed jobs use jobKey plus TTL. Ticket rows use userId/ticketId and by-event-date GSI for a future reminder path. Conditional writes reserve canonical ticket work and support idempotent repair; owner Query is strongly consistent, GSI reads are not. TTL is asynchronous cleanup, not an authorization clock.
+
+### 5. Our code
+
+`infra/src/tickets/storage.ts` → `createTicketStorage`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/tickets/storage.ts` → `createTicketStorage` | DynamoDB → Tables → minitickets-dev-processed-jobs / minitickets-dev-tickets → Indexes; compare configured name/settings with the code. Explain-only resources should be absent. | `aws dynamodb describe-table --table-name minitickets-dev-tickets --query "Table.{KeySchema:KeySchema,Indexes:GlobalSecondaryIndexes}"` |
+
+### 8. Console mission
+
+Open **DynamoDB → Tables → minitickets-dev-processed-jobs / minitickets-dev-tickets → Indexes**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Design keys from reads before writing rows. A hot date partition, eventual GSI propagation and duplicate delivery are different failure modes; Query differs from scanning the whole table.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Processed jobs use jobKey plus TTL. Ticket rows use userId/ticketId and by-event-date GSI for a future reminder path. Conditional writes reserve canonical ticket work and support idempotent repair; owner Query is strongly consistent, GSI reads are not. TTL is asynchronous cleanup, not an authorization clock. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 17: SES delivery
+
+### 1. Last time and the problem
+
+A confirmed booking needs an email delivery service with a verified sender. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["SES delivery"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+SES identity/DKIM records prove sender ownership. Sandbox delivery requires verified recipients and is quota-limited; first AWS delivery remains acceptance work. Lambda IAM restricts sender identities and From address. Provider acceptance is not an exactly-once inbox guarantee.
+
+### 5. Our code
+
+`infra/src/jobs/email.ts` → `createEmail`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/jobs/email.ts` → `createEmail` | SES → Verified identities / Account dashboard → Sandbox and sending quota; compare configured name/settings with the code. Explain-only resources should be absent. | `aws sesv2 get-account --query "{Production:ProductionAccessEnabled,Quota:SendQuota}"` |
+
+### 8. Console mission
+
+Open **SES → Verified identities / Account dashboard → Sandbox and sending quota**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+If SES accepted but the consumer crashed before marking done, retry can send twice. DKIM improves authentication, not universal inbox placement; production access/quota is separate from IAM.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+SES identity/DKIM records prove sender ownership. Sandbox delivery requires verified recipients and is quota-limited; first AWS delivery remains acceptance work. Lambda IAM restricts sender identities and From address. Provider acceptance is not an exactly-once inbox guarantee. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 18: Private S3 assets and signed tickets
+
+### 1. Last time and the problem
+
+A ticket needs a private QR artifact and a short-lived way for its owner to read it. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Private S3 assets and signed tickets"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Bucket ownership/public-access block, SSE-S3 and TLS-only policy protect assets. HMAC signs ticket claims; deterministic seat keys plus conditional Dynamo rows converge under duplicates. API owner-scopes reads and issues 120-second GET/download capabilities. Admin poster PUTs are constrained, staged, byte-checked and copied immutably; CORS is not authorization.
+
+### 5. Our code
+
+`infra/src/tickets/storage.ts` → `createTicketStorage`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/tickets/storage.ts` → `createTicketStorage` | S3 → minitickets-dev-ticket-assets-258237553751 → Permissions / Lifecycle; Secrets Manager → signing metadata; compare configured name/settings with the code. Explain-only resources should be absent. | `aws s3api get-public-access-block --bucket minitickets-dev-ticket-assets-258237553751` |
+
+### 8. Console mission
+
+Open **S3 → minitickets-dev-ticket-assets-258237553751 → Permissions / Lifecycle; Secrets Manager → signing metadata**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Never log raw signed URLs or signing values. MIME/header checks are not malware scanning/full decoding. Scanner verification/redemption and automated key-ring rotation are explain-only, not shipped.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Bucket ownership/public-access block, SSE-S3 and TLS-only policy protect assets. HMAC signs ticket claims; deterministic seat keys plus conditional Dynamo rows converge under duplicates. API owner-scopes reads and issues 120-second GET/download capabilities. Admin poster PUTs are constrained, staged, byte-checked and copied immutably; CORS is not authorization. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 19: Alarms and observability
+
+### 1. Last time and the problem
+
+The city diary must show one booking across API and consumers and call for help when backlog grows. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Alarms and observability"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Correlation ids flow through request logs, outbox payload, SNS/SQS and Lambda JSON. CloudWatch alarms cover queue age, DLQ, worker errors/throttles; the dashboard combines metrics and saved queries. SNS email subscriptions need confirmation. Browser vitals are structured logs, not trusted billing data or custom metrics.
+
+### 5. Our code
+
+`infra/src/observability/alarms.ts` → `createAlarms`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/observability/alarms.ts` → `createAlarms` | CloudWatch → Alarms / Dashboards → minitickets-dev; SNS → minitickets-dev-alerts; compare configured name/settings with the code. Explain-only resources should be absent. | `aws logs tail /minitickets/dev/api --since 10m` |
+
+### 8. Console mission
+
+Open **CloudWatch → Alarms / Dashboards → minitickets-dev; SNS → minitickets-dev-alerts**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+An alarm without confirmed email delivery is silent. Missing data policy, evaluation periods and age vs depth matter; search by correlation id before guessing which process failed.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Correlation ids flow through request logs, outbox payload, SNS/SQS and Lambda JSON. CloudWatch alarms cover queue age, DLQ, worker errors/throttles; the dashboard combines metrics and saved queries. SNS email subscriptions need confirmation. Browser vitals are structured logs, not trusted billing data or custom metrics. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 20: Reminder scheduler (explain-only)
+
+### 1. Last time and the problem
+
+A reminder the day before would branch from ticket date access into the existing email path. EXPLAIN-ONLY: not built. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Reminder scheduler"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Not built: a daily Scheduler would invoke a reminder Lambda, query tomorrow in by-event-date, and enqueue one email job per ticket/day. No VPC/RDS is needed. The Scheduler badge would trust scheduler.amazonaws.com and allow InvokeFunction on only that function.
+
+### 5. Our code
+
+`infra/src/jobs/queues.ts` → `createJobQueues`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/jobs/queues.ts` → `createJobQueues` | EventBridge Scheduler → Schedules (no MiniTickets reminder resource built); compare configured name/settings with the code. Explain-only resources should be absent. | `aws scheduler list-schedules` |
+
+### 8. Console mission
+
+Open **EventBridge Scheduler → Schedules (no MiniTickets reminder resource built)**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Where it would go: a new infra/src/jobs/reminders.ts and apps/worker/src/reminders handler/service beside current workers. Conditional ticket/day dedupe and paginated/sharded date queries prevent duplicate or unbounded sends.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Not built: a daily Scheduler would invoke a reminder Lambda, query tomorrow in by-event-date, and enqueue one email job per ticket/day. No VPC/RDS is needed. The Scheduler badge would trust scheduler.amazonaws.com and allow InvokeFunction on only that function. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 21: Door check-in (explain-only)
+
+### 1. Last time and the problem
+
+The door would authenticate a QR and atomically consume it once. EXPLAIN-ONLY: not built. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Door check-in"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Not built: REST API usage plans/API keys throttle staff devices, but are not staff authorization. A check-in Lambda would verify the HMAC then conditionally update valid→used in DynamoDB. Two scans race: one succeeds, one returns already-used time. A staff scanner would keep its key out of the bundle.
+
+### 5. Our code
+
+`apps/worker/src/tickets/token.ts` → `verifyTicket`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `apps/worker/src/tickets/token.ts` → `verifyTicket` | API Gateway → REST APIs / Usage plans (no MiniTickets check-in API built); compare configured name/settings with the code. Explain-only resources should be absent. | `aws apigateway get-rest-apis` |
+
+### 8. Console mission
+
+Open **API Gateway → REST APIs / Usage plans (no MiniTickets check-in API built)**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Where it would go: apps/web/src/features/checkin plus a check-in Lambda and infra/src/tickets/checkin.ts. HTTP API lacks REST usage-plan features; camera input is untrusted and a signed QR alone is replayable.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Not built: REST API usage plans/API keys throttle staff devices, but are not staff authorization. A check-in Lambda would verify the HMAC then conditionally update valid→used in DynamoDB. Two scans race: one succeeds, one returns already-used time. A staff scanner would keep its key out of the bundle. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 22: Autoscaling (explain-only)
+
+### 1. Last time and the problem
+
+A manager could add workers when traffic grows, but workers cannot create more seats. EXPLAIN-ONLY: not built. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Autoscaling"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Not built: an ECS desired-count target, min 1/max 3, CPU or ALB requests-per-target policy and cost budget. P8 instead builds shared rate limiting and an advisory inventory gate; Postgres still enforces stock. Waiting room, queued booking and expiring customer seat holds are explain-only too.
+
+### 5. Our code
+
+`infra/src/compute/service.ts` → `createApiService`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/compute/service.ts` → `createApiService` | ECS → Service → Auto scaling (no target-tracking policy built); compare configured name/settings with the code. Explain-only resources should be absent. | `aws application-autoscaling describe-scalable-targets --service-namespace ecs` |
+
+### 8. Console mission
+
+Open **ECS → Service → Auto scaling (no target-tracking policy built)**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Where it would go: a new infra/src/compute/autoscaling.ts after services/target groups. More tasks increase DB connections and contention; define a queue-depth/latency objective, cooldown and maximum spend before adding capacity.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Not built: an ECS desired-count target, min 1/max 3, CPU or ALB requests-per-target policy and cost budget. P8 instead builds shared rate limiting and an advisory inventory gate; Postgres still enforces stock. Waiting room, queued booking and expiring customer seat holds are explain-only too. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 23: Debugging playbook
+
+### 1. Last time and the problem
+
+Follow the failed request through the city rather than restarting unrelated pieces. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["Debugging playbook"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Start at the observed symptom and correlation id. Reach checks DNS/routes/SG/ports; Allowed checks IAM caller/action/resource; Password checks secret field/version/TLS without printing values. Then inspect DB locks, pool timeouts, queue age, DLQ/error logs and release SHA.
+
+### 5. Our code
+
+`infra/src/observability/log-queries.ts` → `createLogQueries`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/src/observability/log-queries.ts` → `createLogQueries` | CloudWatch → Logs Insights → Saved queries; ECS → Service events / Stopped tasks; compare configured name/settings with the code. Explain-only resources should be absent. | `aws logs tail /minitickets/dev/api --since 10m` |
+
+### 8. Console mission
+
+Open **CloudWatch → Logs Insights → Saved queries; ECS → Service events / Stopped tasks**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Change one explanation at a time. A 403 is not fixed by opening a subnet; a lock wait is not fixed by rotating an S3 key. Reproduce in disposable local resources and distinguish local proof from AWS acceptance.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Start at the observed symptom and correlation id. Reach checks DNS/routes/SG/ports; Allowed checks IAM caller/action/resource; Password checks secret field/version/TLS without printing values. Then inspect DB locks, pool timeouts, queue age, DLQ/error logs and release SHA. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Chapter 24: The final poster
+
+### 1. Last time and the problem
+
+The whole city should fit in an explanation you can give without memorizing 100 service names. Built in code; live acceptance is a separate check. 
+
+### 2. In the city
+
+The city request path: follow the same guards, road signs, badges and key safe from the city table. This chapter adds a specific boundary; it does not replace the earlier ones.
+
+### 3. The picture
+
+```mermaid
+flowchart LR
+    before["Earlier city boundary"] -->|"Reach"| piece["The final poster"]
+    badge["Staff badge / policy"] -->|"Allowed"| piece
+    safe["Key safe where needed"] -->|"Password"| piece
+```
+
+### 4. How it really works
+
+Browser→ALB→web/API→Postgres/Valkey is the synchronous path. Booking→outbox→SNS→two SQS queues→Lambdas→SES or S3/DynamoDB is the side path. OIDC/ECR/SSM/CD changes versions. SGs govern reach, IAM grants actions, secrets prove identity. Optional CloudFront and explain-only features remain distinct.
+
+### 5. Our code
+
+`infra/index.ts` → `import`. Read the WHAT/WHY comments, then [open the generated code tours](code-tours.html) and search this file. For explain-only chapters this is the existing integration point, not a claim that the proposed resource exists.
+
+### 6. How it connects
+
+Reach: a valid route/endpoint and security-group port. Allowed: the caller's exact IAM action/resource where AWS authorization applies. Password: the right secret field, session or signature where the operation requires one. Ask which of these three is actually failing before changing anything.
+
+### 7. Code → Console → CLI
+
+| Code / setting | Console path and expected evidence | Read-only CLI |
+| --- | --- | --- |
+| `infra/index.ts` → `import` | Use the explorer and Code → Console → CLI rows from each chapter; compare configured name/settings with the code. Explain-only resources should be absent. | `pnpm docs:check` |
+
+### 8. Console mission
+
+Open **Use the explorer and Code → Console → CLI rows from each chapter**. Use the built-in resource/target/relationship view where available. Read the configured endpoint, policy or trigger without revealing secrets. Question: which field proves this piece belongs to our stack, and which field proves its next hop is valid? Local emulator success is not proof of live IAM enforcement.
+
+### 9. Follow one thing
+
+Start with a booking id, request correlation id or SHA appropriate to this chapter. Find its entry boundary, the named code function, the next store/consumer and the resulting log. Record evidence at each handoff. In an explain-only chapter, sketch the proposed handoff instead of inventing deployed output.
+
+### 10. When it breaks
+
+Say which invariant each piece protects and which failure it cannot prevent. Then ask about traffic, latency, durability, privacy and budget before proposing another service.
+
+### 11. Small details and cost
+
+Keep the existing minitickets-dev names and tags. Check committed stack switches before interpreting a missing resource. No live writes are requested by this guide. Persistent stores/secrets/logs can still cost money while compute is off; an explain-only resource has no new bill because it is not created. [Deployment acceptance](../../20-deploy-day.md) gives measured local results and outstanding AWS checks.
+
+### 12. Say it in an interview
+
+Browser→ALB→web/API→Postgres/Valkey is the synchronous path. Booking→outbox→SNS→two SQS queues→Lambdas→SES or S3/DynamoDB is the side path. OIDC/ECR/SSM/CD changes versions. SGs govern reach, IAM grants actions, secrets prove identity. Optional CloudFront and explain-only features remain distinct. The trade-off is another independently failing boundary: name the invariant it protects and show the code/console evidence, rather than claiming a managed service makes failures impossible.
+
+### 13. Check yourself
+
+1. What did this piece add that the preceding city layers could not do?
+2. Which failure is Reach, which is Allowed, and which is Password?
+3. What would change at 10× traffic, and which proposed feature remains explain-only?
+
+## Final system poster
+
+```mermaid
+flowchart TB
+    browser["Browser"] --> alb["HTTPS ALB"]
+    alb --> apps["Web / API Fargate"]
+    apps --> stores["Postgres / Valkey"]
+    stores -->|"outbox relay"| topic["SNS booking events"]
+    topic --> queues["Separate SQS queues / DLQs"]
+    queues --> workers["Email / ticket Lambdas"]
+    workers --> outputs["SES / DynamoDB / private S3"]
+```
+
+GitHub OIDC → publish SHA images → ECR → SSM release tag → migration → ECS/Lambda rollout is the delivery path. CloudFront is optional/inactive. Reminder Scheduler, API Gateway check-in, SSE live seats, autoscaling and Lighthouse CI remain explain-only; the [interview scenarios](../reference-topics.md) will connect their proposed locations.
+
 ## Map so far
 
-Everything built up to chapter 2, with the names exactly as the AWS console shows them. Every arrow
+Historical network-only checkpoint through chapter 2, with the names exactly as the AWS console shows them. Every arrow
 says what allows it.
 
 ```mermaid
@@ -982,25 +2383,34 @@ districts.
 Not drawn: the default network ACL `acl-09a685b41658e7427` (allows all traffic, on all four
 subnets), the default security group, and the $20 budget (account-wide, chapter 1).
 
-## Coming next
+## Chapter index
 
 Each chapter starts from the problem the one before leaves open.
 
-| Chapter | It adds | The problem it solves |
+| Chapter | The problem it solves | Status |
 | ------- | ------- | --------------------- |
-| 3. Security groups | A guard with a guest list at every door (`minitickets-dev-alb-sg`, `-web-sg`, `-api-sg`, `-db-sg`, `-redis-sg`) | Roads exist, but every door is open |
-| 4. Public IPs and network interfaces | How a worker gets an address and a door (an ENI, elastic network interface) | What a "public IP" really is, and what it costs |
-| 5. The database and cache | RDS Postgres and ElastiCache Valkey, behind the walls | Our data needs a home nobody outside can reach |
-| 6. Secrets | Secrets Manager, the locked key safe | Passwords can't live in code or `.env` files |
-| 7. ECR | The warehouse of packed apps | Workers need a place to fetch the app from |
-| 8. ECS | Workers (tasks), the manager (service), the diary (CloudWatch Logs) | Something must run the app and restart it when it crashes |
-| 9. IAM roles | Staff badges, and who may wear them | Workers must be *allowed* to open the key safe and the warehouse |
-| 10. The ALB | The reception desk, staff lists (target groups), HTTPS on our domain | Visitors need one entrance that finds a healthy worker |
-| 11. Service Connect | Web and api calling each other by name inside the city | Server-side pages must reach the api privately |
-| 12. CloudFront | The optional front layer (`cdnEnabled`) | Caching and HTTPS close to the visitor |
-| 13. CI/CD | GitHub's badges, publish and deploy, the note of which version is deployed | Shipping a change safely, without a laptop |
-| 14. Debugging playbook | Reach → Allowed → Password, symptom by symptom | Finding what broke, fast |
-| 15. The final poster | The whole city on one page | Explaining everything in one picture |
+| [3. Security groups](#chapter-3-security-groups) | The roads exist. Guards now decide which building door accepts which visitor. | Written; verify live independently |
+| [4. Public IPs and network interfaces](#chapter-4-public-ips-and-network-interfaces) | A worker needs an address as well as a guest-list entry. | Written; verify live independently |
+| [5. The database and cache](#chapter-5-the-database-and-cache) | Workers need durable records and a shared short-term memory behind the walls. | Written; verify live independently |
+| [6. Secrets](#chapter-6-secrets) | The worker needs a key safe, not passwords written on its name plate. | Written; verify live independently |
+| [7. ECR](#chapter-7-ecr) | Workers must fetch an immutable packed app from the warehouse. | Written; verify live independently |
+| [8. ECS](#chapter-8-ecs) | A manager must keep the right packed workers running and replace unhealthy ones. | Written; verify live independently |
+| [9. IAM roles](#chapter-9-iam-roles) | The manager, workers and publisher need different staff badges. | Written; verify live independently |
+| [10. The ALB](#chapter-10-the-alb) | Visitors need one HTTPS reception desk that sends pages and API calls to healthy staff. | Written; verify live independently |
+| [11. Service Connect](#chapter-11-service-connect) | Web server rendering needs the API without going back through public reception. | Written; verify live independently |
+| [12. CloudFront](#chapter-12-cloudfront) | An optional front layer can bring static files closer to visitors. | Implemented, inactive |
+| [13. CI/CD](#chapter-13-cicd) | A publisher needs a short-lived badge and a deployment record, not laptop keys. | Written; verify live independently |
+| [14. Queues, DLQs and SNS fan-out](#chapter-14-queues-dlqs-and-sns-fan-out) | Booking commits need two durable consumers without losing messages between SQL and delivery. | Written; verify live independently |
+| [15. Lambda workers](#chapter-15-lambda-workers) | Queue messages need workers that scale independently from the API. | Written; verify live independently |
+| [16. DynamoDB records](#chapter-16-dynamodb-records) | Consumers need durable dedupe and owner/date access patterns without an SQL connection pool. | Written; verify live independently |
+| [17. SES delivery](#chapter-17-ses-delivery) | A confirmed booking needs an email delivery service with a verified sender. | Written; verify live independently |
+| [18. Private S3 assets and signed tickets](#chapter-18-private-s3-assets-and-signed-tickets) | A ticket needs a private QR artifact and a short-lived way for its owner to read it. | Written; verify live independently |
+| [19. Alarms and observability](#chapter-19-alarms-and-observability) | The city diary must show one booking across API and consumers and call for help when backlog grows. | Written; verify live independently |
+| [20. Reminder scheduler (explain-only)](#chapter-20-reminder-scheduler-explain-only) | A reminder the day before would branch from ticket date access into the existing email path. | Explain-only |
+| [21. Door check-in (explain-only)](#chapter-21-door-check-in-explain-only) | The door would authenticate a QR and atomically consume it once. | Explain-only |
+| [22. Autoscaling (explain-only)](#chapter-22-autoscaling-explain-only) | A manager could add workers when traffic grows, but workers cannot create more seats. | Explain-only |
+| [23. Debugging playbook](#chapter-23-debugging-playbook) | Follow the failed request through the city rather than restarting unrelated pieces. | Written; verify live independently |
+| [24. The final poster](#chapter-24-the-final-poster) | The whole city should fit in an explanation you can give without memorizing 100 service names. | Written; verify live independently |
 
 ## How this connects
 
@@ -1015,3 +2425,24 @@ Each chapter starts from the problem the one before leaves open.
   [cost switches](../concepts/cost-switches.md), [budget alerts](../concepts/budget-alerts.md).
 - **Then:** the [infra story](../infra-story.md) walks the same pieces in the order a request meets
   them, and the [CI/CD story](cicd-story.md) shows how a change reaches AWS.
+
+## Every IAM badge: WHO / WHAT / ATTACHED
+
+```mermaid
+flowchart LR
+    who["Trusted ECS / Lambda / OIDC principal"] -->|"Trust policy"| role["IAM role"]
+    role -->|"Permission action + resource + condition"| target["Named AWS resource"]
+    attached["Task / Lambda / GitHub job"] -->|"Uses role ARN"| role
+```
+
+| Role / attached runtime | WHO may wear it | WHAT it may do and where |
+| --- | --- | --- |
+| API execution / API + migration task start | ecs-tasks.amazonaws.com with account/task trust conditions | Managed image-pull/log policy plus GetSecretValue on named DB/cache/revalidation credentials. `infra/src/compute/iam.ts`; no SNS/S3 app access through this role. |
+| API application / API task | ecs-tasks.amazonaws.com | ssmmessages channel APIs for ECS Exec; sns:Publish only booking topic; dynamodb:Query only tickets table; s3:GetObject only ticket/poster/staging prefixes; s3:PutObject only poster prefixes with AES256 condition. `infra/src/compute/iam.ts`. |
+| Web execution / web task start | ecs-tasks.amazonaws.com | Image pull/log policy and GetSecretValue for the revalidation secret; no DB or ticket signing grants. `infra/src/compute/web-iam.ts`. |
+| Email worker / worker Lambda | lambda.amazonaws.com | Receive/Delete/ChangeVisibility/GetQueueAttributes only jobs queue; GetItem/PutItem only processed-jobs table; SendEmail only named identities/from; log stream writes only worker group. `infra/src/jobs/worker-iam.ts`. |
+| Ticket worker / ticket Lambda | lambda.amazonaws.com | Receive/Delete/GetQueueAttributes only ticket queue; Get/Put/UpdateItem tickets table; PutObject tickets/*; GetSecretValue signing secret; ticket log writes. `infra/src/tickets/iam.ts`. |
+| Publish / GitHub publish job | Restricted GitHub OIDC repository subject | ECR upload/auth and release-repository read permissions; region/account/resource restrictions. `infra/src/publish-policy.ts`. |
+| Deploy / approved GitHub deploy job | Restricted GitHub OIDC environment subject | Pulumi's named infrastructure actions, scoped PassRole, SSM release writes and ECS/Lambda deployment checks. Exact statement/resource/condition list in `infra/src/cicd.ts`; no stored AWS keys. |
+
+The combined API file defines two different roles: execution reads/injects credentials; application publishes SNS, queries owner tickets, signs private reads and writes only staged/published poster prefixes with AES256. Do not attach execution permissions to application code. Managed execution policies also supply ECR/log actions. Full inline statement scopes are the authority; listing an action here does not grant it on every resource. OIDC subject restrictions, account/region scoping and PassRole conditions must remain intact.

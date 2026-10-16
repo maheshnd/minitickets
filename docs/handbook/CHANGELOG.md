@@ -25,9 +25,21 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · docs(tours): generate source-linked offline code tours (D0)
+## 2026-10-15 · docs(infra): complete the city guide and linked explorer tours (D1)
 
 Commit: filled in by the next handbook commit
+
+Why: the learning map must cover the implemented system and label proposed services honestly.
+
+- `guides/infra-build-along.md`: chapters 3–24, final poster and IAM WHO/WHAT/ATTACHED reference; consistent Code/Console/CLI and debugging missions.
+- `guides/infra-explorer.html`: preserve the city map, add 36 tours, code layers, focus/connection ledger, searchable concepts and local checks; no external assets.
+- `generated/explorer-v3.json`: 67 components, 39 connections and 8 code layers, checked against embedded data.
+- `README.md`, `ROADMAP.md`: describe the completed guide and D2 next.
+- Validation: 144 tour navigations across two widths and themes, saved progress/filters/keyboard, no browser errors; 404 unit tests, typecheck, lint and docs:check pass. Mermaid CLI validates the guide diagrams.
+
+## 2026-10-15 · docs(tours): generate source-linked offline code tours (D0)
+
+Commit: 74d9acd
 
 Why: source snippets should be rebuilt from anchors, never copied by hand.
 
