@@ -1,120 +1,125 @@
-# Fargate: containers without managing servers
+# Fargate: the city’s hired work crews
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.2)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-**Fargate** runs each ECS task on a machine AWS picks and hides from us; we only say how much CPU
-and memory the task needs, and pay per second for that.
+MiniTickets asks [Fargate](../glossary.md#fargate) for a sized worker; AWS supplies and maintains its hidden host machine.
 
-## 2. Real-life comparison
-
-Ordering a taxi instead of owning a car. You say "one passenger, small bag"; a car arrives. No
-servicing, no parking, no paying while it waits in the garage.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
-flowchart TB
-    subgraph ec2["EC2 launch type"]
-        vm["our VM: we patch it,<br/>pay even when empty"] --> c1["container"]
-        vm --> c2["container"]
-    end
-    subgraph fg["Fargate"]
-        hidden["AWS machine, hidden"] --> ours["our task<br/>0.25 vCPU, 512 MB"]
-    end
+flowchart LR
+    S["minitickets-dev-api / web services"] -->|"FARGATE_SPOT strategy; one task each"| F["AWS Fargate capacity"]
+    M["minitickets-dev-migrate"] -->|"run-task launchType FARGATE; 256 CPU / 512 MiB"| F
+    F -->|"ARM64 recipe; 512 CPU / 1024 MiB per app"| T["api :4000 / web :3000 tasks"]
+    SG["minitickets-dev-api-sg / minitickets-dev-web-sg door guards"] -.->|"awsvpc interfaces; 4000 / 3000 from minitickets-dev-alb-sg"| T
+    E["ECR / Secrets / CloudWatch"] -->|"HTTPS 443 via public IP + IGW; execution role"| T
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class F focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=fargate#chapter=8&piece=api-task).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant S as API ECS service
+    participant F as FARGATE_SPOT capacity
+    participant E as ECR and Secrets Manager
+    participant T as ARM64 API task
+    S->>F: Need one task, 512 CPU units / 1024 MiB
+    F->>E: Pull image and read secrets with execution role
+    E-->>F: Image and allowed values
+    F->>T: Start container plus Service Connect proxy
+    T-->>S: Running and healthy
+    Note over S,T: Spot can be interrupted, service requests replacement
+```
+
+## 4. What happens in MiniTickets
+
+1. API and web task recipes require `FARGATE`, `awsvpc` networking and ARM64 images.
+2. Current services choose cheaper `FARGATE_SPOT`; each task gets 0.5 vCPU and 1 GiB including the private-call proxy.
+3. Each task receives a network interface, a public IP for outgoing calls and its own security group.
+4. The migration job uses regular Fargate with 0.25 vCPU and 512 MiB.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** task interface, subnet routes, public IP and door guard.
+
+**Allowed:** execution role starts the worker; task role authorizes app AWS calls.
+
+**Password:** ECS injects the task’s allowed secrets.
+
+## 6. In our code
+
+`infra/src/compute/task.ts` → `createApiTask`; `infra/src/compute/web-task.ts` → `createWebTask`.
+
+`infra/src/compute/service.ts` → `createApiService`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → ECS → Clusters → `minitickets-dev` → Tasks → task → Configuration / Networking. Expect ARM64, resource size and capacity provider `FARGATE_SPOT`. Migration shows `FARGATE`. Live values not inspected.
+
+## 8. Good / Bad
+
+**Good:** No host patching. Each task has its own network guard.
+
+**Bad:** Less host control. Spot loss plus one copy can stop service.
+
+## 9. Other choices
+
+- ECS on EC2: pick it when steady use makes packing owned machines worthwhile.
+- Lambda: pick it for short triggered work, like our email jobs.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Cluster](ecs-cluster.md) | In ← | Attached FARGATE providers | ECS → cluster → Infrastructure |
+| [Task recipe](task-definition.md) | In ← | Compatible size, ARM64, awsvpc | ECS → Task definitions |
+| [Service](ecs-service.md) | Out → | Capacity strategy + desired count | ECS → cluster → Services |
+
+## 11. When it breaks
+
+Cannot start → stopped-task reason → check valid CPU/memory pairing, ARM64 image and HTTPS route to AWS services.
+
+## 12. Say it in 30 seconds
+
+“Fargate supplies the machine behind each MiniTickets task. We manage container code, resource size, networking and roles. Today the API and web use half a vCPU and one GiB on Spot because their private-call proxies share the task. Migrations use regular Fargate. We still own availability and application security.”
+
+## 13. Likely follow-ups
+
+- Can you SSH to its host? No; API debugging uses ECS Exec inside the container.
+- Is serverless free when idle? Running tasks still cost while waiting.
+
+## 14. Remember it
+
+A hired crew removes host maintenance, not responsibility for the work.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/compute/task.ts` · `requiresCompatibilities: ["FARGATE"]`, `networkMode: "awsvpc"`: the api runs on Fargate.
 - Anchor: `infra/src/compute/web-task.ts` · same fields: the web app runs on Fargate.
 
-Step by step:
+Fargate requires `awsvpc`: each task has its own network interface. There is no shared host network for us to configure. CPU/memory pairs must be valid Fargate sizes; a quarter vCPU with 4096 MiB, for example, is not a valid recipe.
 
-1. `requiresCompatibilities: ["FARGATE"]` makes the recipe valid for Fargate.
-2. `networkMode: "awsvpc"` is required: each task gets its own network interface in our subnet.
-3. `cpu: "256"`, `memory: "512"`: one of Fargate's allowed size combinations.
-4. The service picks Fargate or Fargate Spot through the capacity provider strategy
-   ([fargate-spot](fargate-spot.md)); the migration task uses `--launch-type FARGATE`.
-5. ECS Exec works on Fargate through an agent AWS adds to the task ([ecs-exec](ecs-exec.md)).
+API and web run in public subnets because this dev VPC has no NAT gateway or private AWS endpoints. The public IP plus internet-gateway route provides outgoing access to ECR, Secrets Manager and logs. Inbound app ports still admit only their load-balancer group; separate Service Connect rules admit the peer group on 14000/13000. Production could use private subnets plus NAT or VPC endpoints.
 
-## 5. See it yourself
+ECS Exec runs through an agent inside the task, with Systems Manager channels authorized by the task role. No access to the hidden host is provided. ECS on EC2 offers more host control and hardware choices; EKS fits a Kubernetes requirement; App Runner offers another managed web-service path.
 
-```bash
-TASK=$(aws ecs list-tasks --profile ticketlite --cluster minitickets-dev --service-name minitickets-dev-api --query 'taskArns[0]' --output text)
-aws ecs describe-tasks --profile ticketlite --cluster minitickets-dev --tasks "$TASK" \
-  --query "tasks[0].[launchType,capacityProviderName,platformVersion,cpu,memory]"
-```
+Costs depend on region, CPU architecture, memory, duration and public IPv4. Old quarter-vCPU estimates do not price today’s larger app tasks. No current AWS quote was checked. Spot discounts and available capacity vary; do not turn an approximate discount into an availability promise.
 
-**Break it on purpose (thought experiment):** set `cpu: "256"` with `memory: "4096"`. That is not
-an allowed Fargate combination, so registering the task definition fails.
+[Official Fargate networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html).
 
-## 6. How it connects
-
-- **Uses ←** [cluster](ecs-cluster.md) capacity providers, [subnets](subnets.md).
-- **Gives →** running [tasks](task-definition.md) for the [services](ecs-service.md).
-
-## 7. Our settings and WHY
-
-| Choice | Why |
-| ------ | --- |
-| Fargate, not EC2 | One small container does not fill a VM; nothing to patch, nothing idle. |
-| Smallest size | Dev traffic is tiny. |
-
-## 8. Trade-offs
-
-- **Pros:** no servers, per-second billing, per-task isolation and security groups.
-- **Cons:** higher price per vCPU than well-packed EC2; no GPUs; less control over the host; slower
-  task start than an already-running VM.
-
-## 9. Alternatives and when to choose them
-
-- **ECS on EC2:** steady, large workloads where packing many containers onto reserved machines is
-  cheaper.
-- **EKS:** a Kubernetes requirement.
-- **Lambda:** short, event-driven work with idle periods; no always-on process.
-- **App Runner:** a simpler managed web service.
-
-## 10. What breaks, and how we'd notice
-
-- Invalid CPU/memory pair: the task definition is rejected.
-- No route to ECR/Secrets Manager: task fails before the container starts.
-
-## 11. Reach / Allowed / Password
-
-Fargate gives every task its own ENI: **Reach** is decided per task by its security group. The
-execution role is the **Allowed** part of starting it.
-
-## 12. Cost
-
-¼ vCPU + 512 MB on ARM: about $0.010 an hour on normal Fargate, about $0.003 on Spot
-([docs/17](../../17-infra-ecs-api.md), section 3.16).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Fargate runs our containers without us managing servers.
-- **Senior:** Our task definitions require FARGATE with `awsvpc`, ARM64, ¼ vCPU and 512 MB. Each
-  task gets its own ENI and security group; the services run them on Fargate Spot.
-- **Lead:** Fargate trades a higher unit price for zero host operations. I'd revisit EC2 capacity
-  once utilisation is steady and high enough that packing pays for the ops work.
-
-## 14. Follow-up questions interviewers ask
-
-- *Can you SSH into a Fargate host?* No; use ECS Exec into the container.
-- *Why `awsvpc` only?* Fargate gives every task its own network interface; there is no shared host
-  network.
-
-## 15. Say it in 30 seconds
-
-"Both apps run on Fargate: we declare a quarter vCPU and 512 MB on ARM64, and AWS supplies the
-machine. Every task gets its own network interface and security group, and we pay per second."
-
-## 16. Status
-
-✅ built.
+</details>
 
 ## Where it appears in the story
 

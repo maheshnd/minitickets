@@ -26,9 +26,11 @@ flowchart LR
   domains you own. Ours validates minitickets.theversehub.in for the ALB; retain the DNS validation CNAME.
 - **ADR (Architecture Decision Record)** – a short document that records one design decision:
   context, options, decision, consequences.
+<a id="alb"></a>
+
 - **ALB (Application Load Balancer)** – an AWS load balancer that understands HTTP and can route by
   path or header. In our app: `infra/src/entry/alb.ts`.
-- **Alerting** – sending a person a message when a measurement crosses a limit. Ours: only the budget email.
+- **Alerting** – sending a person a message when a measurement crosses a limit. MiniTickets has four CloudWatch symptom alarms plus a budget alert; actual notification delivery still needs live acceptance.
 - **Allowed** – the second of our three connection questions: does IAM permit this call? See
   [aws-foundations, chapter 3](aws-foundations.md#3-the-three-questions-reach-allowed-password).
 - **ALPN** – the step inside the TLS handshake where browser and server agree on HTTP/2 or HTTP/1.1.
@@ -128,6 +130,8 @@ flowchart LR
   We use AWS's `Managed-CachingOptimized` and `Managed-CachingDisabled`.
 - **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together. Handled for legacy public list rebuilds with per-process single-flight plus an owner-token Redis lease and double-check.
 - **cache() (React)** – a React function that remembers a result for the length of one server request. Ours: `getQueryClient` gives each request its own `QueryClient`.
+<a id="cache-aside"></a>
+
 - **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache (with a TTL). Ours: `events.list` and generation/filter Redis keys `events:upcoming:v3:g<gen>:<hash>` ([cache-aside](concepts/cache-aside.md)).
 - **Cache invalidation (server)** – deleting or updating a cached value when the data behind it changes, so it is fresh sooner than its TTL. 📋 Planned: the step after cache-aside.
 - **Cache key version** – a number in the key name (`…:v1`). Change it when the cached data's shape changes, so new code never reads old-shaped data ([cache-key-versioning](concepts/cache-key-versioning.md)).
@@ -138,13 +142,15 @@ flowchart LR
 - **Capacity provider strategy (ECS)** – how a service splits its tasks between capacity providers
   (a base plus weights). Ours: 100% `FARGATE_SPOT`.
 - **Card** – one handbook page about one concept, in `docs/handbook/concepts/<slug>.md`.
-- **CD (continuous deployment)** – automatically deploying every change that passes CI. Planned.
+- **CD (continuous deployment)** – shipping changes after CI succeeds. MiniTickets automates publishing, then requires approval in the GitHub `dev` environment before deployment (continuous delivery).
 - **CDN (content delivery network)** – servers around the world that serve content close to the
   visitor. Ours is CloudFront.
 - **Certificate authority (CA)** – an organisation whose signature on a TLS certificate we trust.
 - **CHANGELOG** – a file listing what changed, when and why. Ours: [CHANGELOG.md](CHANGELOG.md), one
   entry per handbook commit.
 - **CHECK constraint** – a rule inside a table that Postgres tests on every insert and update, for any writer. Ours: three on `events` seat counts ([card](concepts/db-check-constraints.md)).
+<a id="ci"></a>
+
 - **CI (continuous integration)** – running the checks (types, lint, tests, builds) on every push.
   Ours: `.github/workflows/ci.yml`.
 - **CIDR block** – a range of IP addresses written like `10.0.0.0/16`. The number after the slash
@@ -155,10 +161,16 @@ flowchart LR
   `"use client"`), so it can have state and click handlers.
 - **Clock skew** – two computers' clocks disagree. It matters when one side judges the age of data stamped by the other.
 - **Cloud Map** – AWS's service registry: names (like `api`) and where each one runs right now. ECS Service Connect uses it. Not built (planned).
-- **CloudFront** – AWS's CDN. In our app: HTTPS in front of the ALB, `infra/src/entry/cdn.ts`.
+<a id="cloudfront"></a>
+
+- **CloudFront** – AWS's nearby shared-copy service (CDN). MiniTickets implements it, but committed `cdnEnabled=false` sends browser HTTPS directly to the ALB.
 - **CloudTrail** – AWS's audit log of API calls made in an account.
+<a id="cloudwatch-alarm"></a>
+
 - **CloudWatch alarm** – watches one metric and notifies (for example through SNS) when it crosses a
   threshold. We have none yet.
+<a id="cloudwatch-logs"></a>
+
 - **CloudWatch Logs** – AWS's log storage. A **log group** is one book (`/minitickets/dev/api`);
   each task writes its own **log stream** (a chapter) in it.
 - **CloudWatch Logs Insights** – a query language for searching and counting log lines in log
@@ -180,7 +192,7 @@ flowchart LR
 - **Container Insights** – extra, paid CloudWatch metrics per ECS task. Off in our cluster.
 - **Content hash** – a fingerprint of a file's content put into its name (`main-3f9a1c.js`), so new
   content always gets a new name.
-- **Content-Security-Policy (CSP)** – a response header that tells the browser which scripts may run. Not set by us yet.
+- **Content-Security-Policy (CSP)** – a browser rule deciding which scripts may run. MiniTickets gives each HTML response a fresh nonce (one response's script permission token); HTML is private,no-store.
 - **Context (tRPC)** – the `ctx` object built once per request by `createContext`; every procedure receives it.
 - **Contract testing** – checking that a provider and a consumer still agree on the shape of their API.
 - **Cookie** – a small value the browser stores and sends back with each request to the same site.
@@ -198,6 +210,8 @@ flowchart LR
 - **CREATE INDEX CONCURRENTLY** – a way to build an index without blocking writes to the table. Slower, and it cannot run inside a transaction, so it does not fit in a drizzle migration. Plain `CREATE INDEX` blocks writes while it runs.
 - **Credential stuffing** – trying username/password pairs leaked from other sites. User enumeration
   and missing rate limits make it easier.
+<a id="csr"></a>
+
 - **CSR (client-side rendering)** – the browser gets the page frame and then fetches the data and draws it. Ours: `/events` in Step 21; since Step 22 only the fallback when the server could not fetch ([card](concepts/csr-vs-ssr.md)).
 - **CSRF (cross-site request forgery)** – another website tricking your browser into sending a
   request to ours, with your cookie.
@@ -211,6 +225,8 @@ flowchart LR
 - **Data layer** – our RDS database, Valkey cache and redis-url secret, switched on and off together
   with `dataEnabled`.
 - **Data residency** – rules about which country data must be stored in.
+<a id="dead-letter-queue"></a>
+
 - **Dead-letter queue (DLQ)** – where messages go after failing too many times, so they can be
   inspected instead of lost.
 - **Default deny (implicit deny)** – IAM's starting answer: anything not allowed is denied.
@@ -241,11 +257,15 @@ flowchart LR
   someone changed it by hand.
 - **Drizzle** – the TypeScript ORM (database library) we use to define tables and write queries.
 - **Dynamic rendering (Next.js)** – rendering a page on every request instead of once at build time. `export const dynamic = "force-dynamic"` forces it; the build output marks such pages `ƒ`. Ours: `/events`.
-- **DynamoDB** – AWS's managed NoSQL key-value and document database. Not used by us.
+<a id="dynamodb"></a>
+
+- **DynamoDB** – AWS's managed key-based database. MiniTickets records completed email jobs and recoverable ticket creation there.
 
 ## E
 
 - **EC2** – AWS's virtual machines. We use Fargate instead, so we manage no EC2 machines.
+<a id="ecr"></a>
+
 - **ECR (Elastic Container Registry)** – AWS's private store for Docker images.
 - **ECS (Elastic Container Service)** – AWS's service that runs containers.
 - **ECS Exec** – opens a shell or runs a command inside a running ECS task
@@ -295,6 +315,8 @@ flowchart LR
   the events cache calls.
 - **Fail open (ALB)** – when every target in a group is unhealthy, the ALB sends traffic to all of
   them anyway.
+<a id="fargate"></a>
+
 - **Fargate** – ECS without servers to manage: AWS finds a machine for each task.
 - **Fargate Spot** – Fargate on spare AWS capacity, much cheaper, but AWS can take it back with a
   2-minute warning.
@@ -335,6 +357,8 @@ flowchart LR
 
 - **Hash** – a one-way fingerprint of data. It cannot be turned back into the data.
 - **Head-of-line blocking** – one lost or slow item holds up everything queued behind it.
+<a id="health-check"></a>
+
 - **Health check** – a regular "are you OK?" call. **Liveness** = is the process up (`/health`).
   **Readiness** = can it do real work right now (`/ready`).
 - **High availability (HA)** – the system keeps working when one part (a task, an AZ) fails.
@@ -357,7 +381,9 @@ flowchart LR
 - **IAM (Identity and Access Management)** – AWS's system of who may do what.
 - **IAM database authentication** – logging in to RDS with a short-lived IAM token instead of a
   stored password. Not used by us.
-- **Idempotency key** – a unique id a client sends with a write, so the server can recognise and ignore a repeat. Not used by us.
+<a id="idempotency-key"></a>
+
+- **Idempotency key** – one receipt number for a user intent. MiniTickets stores a browser UUID with a successful booking; same input replays, changed input conflicts. Failed transactions save no success.
 - **Idempotent** – doing it twice has the same effect as doing it once. Our logout is idempotent.
 - **Identity-based policy** – an IAM policy attached to a principal (role, user, group). It has no
   `Principal` field.
@@ -401,7 +427,9 @@ flowchart LR
 
 ## L
 
-- **Lambda** – AWS's functions-as-a-service: code runs per event, no server or container to keep running. Not used by us.
+<a id="lambda"></a>
+
+- **Lambda** – AWS code that runs when an event arrives. MiniTickets has separate queue-triggered email and ticket workers; these functions are outside our VPC.
 - **Latency** – the time a request takes to travel to the server and back.
 - **Layer (Docker)** – one cached step of an image build. Unchanged layers are reused.
 - **Layered architecture** – our api's split: procedures (HTTP edge) → services (business logic) → queries (data stores).
@@ -415,8 +443,7 @@ flowchart LR
   day, keep the newest 10 tagged.
 - **Lighthouse** – Google's tool that loads a page in Chrome, simulates a slow phone and network (the mobile preset), and reports timings and a 0-100 performance score. We ran the CLI, version 13.5.0.
 - **Lint** – automatic checks for suspicious code patterns. Ours: ESLint (`pnpm lint`).
-- **Listener (ALB)** – the ALB's "ear" on one port (ours: HTTP 80). Its **rules** decide where each
-  request goes; the **default action** applies when no rule matches (ours: 403).
+- **Listener (ALB)** – the ALB's entry on one port. Current MiniTickets uses HTTPS 443 for requests and HTTP 80 only to redirect to HTTPS; optional CDN mode uses a different HTTP listener with header rules.
 - **Liveness vs readiness** – liveness: is the process alive (`/health`)? Readiness: can it do real
   work, with its databases reachable (`/ready`)? Liveness drives restarts; readiness drives routing.
 - **Load balancing algorithm** – how a load balancer picks a target: round robin (in turn), least connections, IP hash.
@@ -482,6 +509,8 @@ flowchart LR
 - **Offline queue (ioredis)** – commands that ioredis holds while disconnected and sends after
   reconnecting. We turn it off so commands fail at once.
 - **OFFSET** – an SQL clause that skips N rows. Postgres still produces the skipped rows, so deep pages get slower. See Keyset pagination.
+<a id="oidc"></a>
+
 - **OIDC federation** – letting an outside system (like GitHub Actions) get AWS role credentials
   without stored keys.
 - **On-demand** – normal capacity that AWS never takes back (the opposite of Spot).
@@ -497,6 +526,8 @@ flowchart LR
 - **Origin secret** – the random `X-Origin-Verify` header value that only our CloudFront
   distribution sends, and our ALB listener checks.
 - **ORM** – a library that maps database tables to code objects. Ours: Drizzle.
+<a id="outbox"></a>
+
 - **Outbox (transactional outbox)** – writing an event into the database in the same transaction as the change, and publishing it later.
 
 ## P
@@ -571,9 +602,11 @@ flowchart LR
   like two signups with the same email.
 - **Rainbow table** – a precomputed list of hashes for common passwords. A per-user salt makes it
   useless.
-- **Rate limiting** – limiting how many requests one caller may make per time window. Planned.
+- **Rate limiting** – giving one caller a bounded request allowance. MiniTickets shares login-IP and booking-user token buckets in Redis; 429 asks callers to wait, Redis failure stops these operations with 503.
 - **Rate-limiting algorithms** – **token bucket** (tokens refill at a fixed rate, each request spends one), **leaky bucket** (requests drain at a fixed rate), **fixed window** (count per minute), **sliding window** (count over the last minute).
 - **RBAC / ABAC** – role-based access control (permissions by role, like "admin") / attribute-based (rules on attributes, like tags or department).
+<a id="rds"></a>
+
 - **RDS (Relational Database Service)** – AWS's managed SQL databases. Ours runs Postgres 17.
 - **RDS Proxy** – an AWS connection pooler in front of RDS. Not used by us.
 - **Reach** – the first of our connection questions: can packets get there at all? See
@@ -602,10 +635,14 @@ flowchart LR
   Redis, which revokes the cookie at once.
 - **Role (IAM)** – a set of permissions with no password, assumed for a while by a trusted principal.
 - **Rollback** – going back to the last version that worked.
+<a id="rolling-update"></a>
+
 - **Rolling update** – replacing old tasks with new ones a few at a time, so some are always serving.
 - **Rotation** – replacing a password with a new one on a schedule. RDS rotates its managed
   password every 7 days by default.
 - **Route 53** – AWS's DNS service. Not used by us yet.
+<a id="route-table"></a>
+
 - **Route table** – the list that says where traffic leaving a subnet goes.
 - **RPO / RTO** – how much data you may lose (recovery point objective) / how long recovery may take
   (recovery time objective).
@@ -614,7 +651,7 @@ flowchart LR
 
 ## S
 
-- **S3** – AWS's object storage for files. Not used by us.
+- **S3** – AWS's file store. MiniTickets keeps ticket PNGs, published posters and upload staging private; the API grants short-lived signed operations after authorization.
 - **Saga** – a long business process split into steps, each with an "undo" step if a later one fails.
 - **Salt** – random bytes added to each password before hashing, stored with the hash, so equal
   passwords get different hashes.
@@ -626,8 +663,12 @@ flowchart LR
   away from accounts. Not used by us.
 - **Screen reader** – software that reads a page aloud for blind or low-vision users (VoiceOver on
   macOS).
+<a id="secrets-manager"></a>
+
 - **Secrets Manager** – AWS's locked safe for passwords and tokens. Every read is checked by IAM.
 - **Secure (cookie flag)** – the browser sends the cookie only over HTTPS. On in production.
+<a id="security-group"></a>
+
 - **Security group** – a stateful firewall attached to a resource; it lists what is allowed in
   and out. We have five: alb, web, api, db, redis.
 - **Seed data** – sample rows a script puts into a fresh database. Ours: `pnpm --filter @minitickets/api db:seed` ([card](concepts/seed-data.md)).
@@ -638,12 +679,16 @@ flowchart LR
   component JavaScript to the browser.
 - **Server state vs client state** – data owned by the server and cached in the browser (TanStack Query) vs data that exists only in the browser (form fields, `useState`).
 - **Server-to-server call** – one server calling another directly, not through a browser. Ours: the web server calls the api to render `/events` ([card](concepts/server-to-server-calls.md)).
-- **Service Connect (ECS)** – an ECS feature that gives services private names (like `http://api:4000`) other services can call inside the VPC, through a proxy in each task. Planned ([card](concepts/service-connect.md)).
+- **Service Connect (ECS)** – private names and sidecar proxies connecting ECS services. MiniTickets web calls `api:4000`; API can call `web:3000`. Door guards admit proxy ports 14000 and 13000 respectively.
 - **Service container (GitHub Actions)** – a Docker container (like Postgres) that a CI job starts
   next to its steps. Our e2e job uses Postgres 17.6 and Redis 7.4.5.
+<a id="ecs-service"></a>
+
 - **Service (ECS)** – keeps the wanted number of tasks running and replaces failed ones.
 - **Service discovery** – how one service finds the current address of another by name, even after tasks are replaced.
 - **Service-linked role** – a role AWS creates and owns so a service can act in our account.
+<a id="session"></a>
+
 - **Session** – the server's memory that a browser is logged in. Ours: a Valkey/Redis key
   `session:<sha256 of the id>` with a 7-day TTL.
 - **Session Manager plugin** – the laptop add-on the AWS CLI needs to open ECS Exec sessions.
@@ -668,16 +713,21 @@ flowchart LR
 - **Slow start (ALB)** – ramps traffic up gradually to a newly registered target. Not used by us.
 - **Slug** – a short, lowercase, dash-separated name, e.g. `graceful-shutdown`. Card files and
   anchors use it.
-- **SNS** – AWS's notification service (email, SMS, webhooks); alarms usually send to it. Not used
-  by us.
+<a id="sns"></a>
+
+- **SNS** – AWS's message-copy service. MiniTickets fans booking events into separate email and ticket SQS queues; another topic receives alarm notifications.
 - **Spot interruption** – AWS taking Spot capacity back: the task gets SIGTERM and about 2 minutes
   to stop.
 - **SQL injection** – an attacker's text being run as SQL. Prevented by parameterized queries.
 - **SQLSTATE** – Postgres's five-character error code. `23505` = unique_violation, which
   `queries/users.ts` turns into `ConflictError`.
-- **SQS** – AWS's managed message queue. Not used by us.
+<a id="sqs"></a>
+
+- **SQS** – AWS's managed waiting line for messages. MiniTickets has email and ticket queues, each with its own dead-letter repair tray.
 - **SSE (Server-Sent Events)** – the server pushes a stream of messages to the browser over one HTTP response.
 - **ssmmessages** – the AWS Systems Manager channels that ECS Exec uses.
+<a id="ssr"></a>
+
 - **SSR (server-side rendering)** – the server fetches the data and sends finished HTML. Ours: `/events` since Step 22, with streaming ([card](concepts/csr-vs-ssr.md)).
 - **Stack output** – a value a Pulumi program exports, like `export const vpcId` in `infra/index.ts`. `pulumi stack output vpcId` prints it.
 - **Staleness (server cache)** – how old a cached answer may be. Ours: the events list is up to ~33 s old; booking will read the database, never the cache, so staleness cannot cause overselling.
@@ -694,6 +744,8 @@ flowchart LR
   30; we don't set it.
 - **Streaming (HTML)** – sending one HTTP response in pieces: the first piece leaves before the last is ready. Ours: `/events` sends the frame, then the list ([card](concepts/streaming-suspense.md)).
 - **STS (Security Token Service)** – the AWS service that hands out temporary credentials for roles.
+<a id="subnet"></a>
+
 - **Subnet** – a slice of the VPC's address range that lives in one AZ.
 - **Suspense** – a React component that marks a part of the page that may wait, and shows a fallback (ours: the skeleton) until it is ready.
 - **Switch (Pulumi config switch)** – our on/off settings `dataEnabled`, `computeEnabled`,
@@ -712,11 +764,15 @@ flowchart LR
 - **Tag Editor** – part of the console's Resource Groups & Tag Editor: finds resources across services by tag, for example `Project` = `minitickets`.
 - **Tailwind CSS** – a CSS framework of small utility classes like `p-4` and `text-sm`.
 - **TanStack Query** – the React library that fetches, caches and refetches server data in the browser.
+<a id="target-group"></a>
+
 - **Target group** – the ALB's list of task IPs for one kind of request, plus a health check.
 - **Task (ECS)** – one running copy of a task definition: our container.
+<a id="task-definition"></a>
+
 - **Task definition** – the recipe for a task: image, CPU and memory, env vars, secrets, logs,
   health check.
-- **Task role** – the IAM role that the **running** container's code uses. Ours allows only ECS Exec.
+- **Task role** – the staff badge the running ECS container code uses. MiniTickets API can publish booking events, read ticket records and permitted assets, write constrained posters, and open ECS Exec channels; web has no task role.
 - **Test isolation** – each test creates its own data and doesn't depend on others. Our e2e tests
   make a new email per run.
 - **Testcontainers** – a library that starts real databases in Docker for tests. A way to add our
@@ -734,7 +790,7 @@ flowchart LR
 - **Transit gateway** – a hub that joins many VPCs and on-premises networks. Not used by us.
 - **Transpile** – convert source code into another form of code (TypeScript → JavaScript). Next.js
   transpiles `@minitickets/shared` because it ships TypeScript.
-- **Trivy / Grype** – open-source image vulnerability scanners, often run in CI. Not used by us.
+- **Trivy / Grype** – image vulnerability scanners. MiniTickets CI uses Trivy to reject fixable CRITICAL image findings, with a narrowly documented temporary exception; Grype is not used.
 - **tRPC** – a library for calling server functions from the browser with shared TypeScript types.
 - **Trust policy** – the resource-based policy on a role that says who may assume it.
 - **trustProxy** – the Fastify setting that reads the real visitor IP from `X-Forwarded-For`.
@@ -757,10 +813,14 @@ flowchart LR
 
 ## V
 
+<a id="valkey"></a>
+
 - **Valkey** – an open-source fork of Redis that speaks the same protocol. Our AWS session store.
 - **Vitest** – our unit test runner.
 - **VPC origin (CloudFront)** – CloudFront reaching a private load balancer that has no public
   address. Not used by us.
+<a id="vpc"></a>
+
 - **VPC (Virtual Private Cloud)** – our own private network inside AWS. Ours: `10.0.0.0/16`.
 - **VPC endpoint** – a private door from the VPC to an AWS service, without the internet. Not built.
 
@@ -790,6 +850,29 @@ flowchart LR
 - **Zonal resource** – lives in one AZ (a subnet, an RDS instance, a running task).
 
 ## Series 2 vocabulary
+
+<a id="iam-role"></a>
+
+- **IAM role** — a staff badge with temporary AWS permissions. Trust says who may wear it; permission rules say what it may do; attachment says which MiniTickets worker uses it.
+<a id="ecs-cluster"></a>
+
+- **ECS cluster** — a named group of MiniTickets workers and services. It is not a machine; AWS Fargate provides the machines.
+<a id="presigned-url"></a>
+
+- **Presigned URL** — a short-lived signed permission for one S3 operation. Anyone holding it can use that operation until it expires; browser CORS rules do not replace authorization.
+<a id="ses"></a>
+
+- **SES** — Amazon Simple Email Service. MiniTickets' email worker asks it to send booking confirmations. A verified sender and permitted recipients are required; acceptance is not proof of inbox delivery.
+<a id="row-lock"></a>
+
+- **Row lock** — one transaction's temporary right to change a row. MiniTickets locks the event before checking and taking seats; another buyer for that event waits until commit or rollback.
+<a id="token-bucket"></a>
+
+- **Token bucket** — an allowance with a maximum size that refills steadily. One request spends one token. Redis performs MiniTickets' refill and spend together so API workers share the limit.
+<a id="transaction"></a>
+
+- **Transaction** — database changes that succeed together or are all undone. MiniTickets commits seats, booking and its outbox message together.
+
 
 - **Single-flight** — concurrent callers in one process share one rebuild promise.
 - **Cache stampede** — many misses cause many equivalent backend reads; our rebuild lock double-checks after acquisition.

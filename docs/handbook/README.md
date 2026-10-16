@@ -2,7 +2,7 @@
 
 History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 
-Start with the [offline learning path](guides/index.html).
+Start concepts with [Learn the MiniTickets city](learning-path.md): every card in six parts, with short answer goals and connected city diagrams. The [offline learning hub](guides/index.html) holds the longer tours and practice.
 
 **In one line:** a living handbook that explains every concept in MiniTickets (app + AWS), tied to
 the exact code that implements it, so interview answers come from things we built.
@@ -44,11 +44,11 @@ flowchart LR
 
 ## How to use it
 
-1. Start at the [concept map](concept-map.md). Find the concept, check its status.
-2. Open its card (once written). Read "In one line", "Picture it" and "Where in our code".
+1. Start with the [concept learning path](learning-path.md); use the [concept map](concept-map.md) to look up a topic.
+2. Read the Batch 1 card’s two pictures and numbered flow. Folded notes preserve useful detail. Batch 2 cards retain the earlier format.
 3. Open the code at the anchor (search for `@concept: <slug>`). Read the step-wise comments there.
 4. Do "See it yourself": run the command or test, then break it on purpose.
-5. Say the three interview answers out loud. Then the 30-second version.
+5. Say the 30-second answer aloud, then try its two follow-up questions.
 
 ## Reading paths
 

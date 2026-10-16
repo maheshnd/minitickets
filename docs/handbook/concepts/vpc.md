@@ -1,130 +1,127 @@
-# VPC and CIDR blocks
+# VPC: our gated city
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step doc: [12 network](../../12-infra-network.md)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-A **VPC** (Virtual Private Cloud) is our own private, isolated network inside AWS, with an IP
-address range written as a **CIDR block** (ours: `10.0.0.0/16`).
+MiniTickets puts its workers and databases inside one [VPC](../glossary.md#vpc): a private AWS network with house numbers `10.0.0.0/16`.
 
-## 2. Real-life comparison
-
-A private office building. Nobody walks in from the street unless we add a front door (the
-internet gateway). The building's address range is every room number that starts with "10.0".
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
-flowchart TB
-    vpc["VPC 10.0.0.0/16<br/>65,536 addresses"] --> p1["public-1<br/>10.0.0.0/24"]
-    vpc --> p2["public-2<br/>10.0.1.0/24"]
-    vpc --> q1["private-1<br/>10.0.10.0/24"]
-    vpc --> q2["private-2<br/>10.0.11.0/24"]
-    igw["Internet gateway"] --- vpc
+flowchart LR
+    internet["Internet"] -->|"public IPv4 route through attached gate"| gate["minitickets-dev-igw"]
+    gate -->|"0.0.0.0/0 via public-rt"| city["minitickets-dev-vpc<br/>10.0.0.0/16"]
+    city -->|"subnet ranges 10.0.0.0/24 and 10.0.1.0/24"| public["public-1 / public-2<br/>ALB + api + web"]
+    city -->|"subnet ranges 10.0.10.0/24 and 10.0.11.0/24"| private["private-1 / private-2<br/>RDS + Valkey"]
+    guards["Five security groups"] -.->|"source-group rules: 3000 / 4000 / 5432 / 6379"| city
+    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
+    class city focus
 ```
 
-**CIDR in one picture:** `/16` fixes the first 16 of 32 bits (`10.0`), leaving 16 bits free =
-65,536 addresses. `/24` fixes 24 bits, leaving 256 (AWS keeps 5 per subnet, so 251 usable).
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=vpc#chapter=24&piece=vpc).
 
-## 4. Where in our code
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant A as api task
+    participant D as VPC DNS resolver
+    participant P as minitickets-dev-db
+    A->>D: Resolve DB_HOST (DNS support enabled)
+    D-->>A: Private database address
+    A->>P: local route + minitickets-dev-db-sg TCP 5432 from minitickets-dev-api-sg
+    P-->>A: TLS-verified database connection
+```
+
+## 4. What happens in MiniTickets
+
+1. `createNetwork` builds `minitickets-dev-vpc` in `us-east-1`.
+2. Its address range holds 65,536 addresses; a [CIDR](../glossary.md#c) is a compact way to write that range.
+3. Four smaller neighborhoods divide those addresses across two available zones.
+4. Public roads reach the internet gate. Private roads stay inside.
+5. DNS, the name lookup service, resolves RDS and Valkey names. Both VPC DNS settings are enabled.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** routes join neighborhoods; the gate joins public addresses to the internet.
+
+**Allowed:** security groups still check each connection; a VPC grants no AWS API permission.
+
+**Password:** not needed by the network; Postgres and Valkey check their own credentials.
+
+## 6. In our code
+
+`infra/src/network.ts` → `createNetwork` (`vpc`).
+
+`infra/src/tags.ts` → `tagsFor`.
+
+## 7. In the AWS console
+
+In `us-east-1`: VPC → Your VPCs → `minitickets-dev-vpc` → **Resource map** → Show details. See four subnets, their road signs and the gate. [AWS map guide](https://docs.aws.amazon.com/vpc/latest/userguide/view-vpc-resource-map.html). Resource Groups & Tag Editor → Tag Editor → search `Project=minitickets` finds supported resources. Live inventory was not checked.
+
+## 8. Good / Bad
+
+**Good:** our network boundary is explicit; the address range leaves room to grow.
+
+**Bad:** a common range can clash with another company's network; a city wall does not replace door guards.
+
+## 9. Other choices
+
+- Pick a less common range when joining a company network.
+- Pick IPv6 alongside IPv4 when clients or network policy require it.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Subnets](subnets.md) | VPC → neighborhoods | Non-overlapping ranges inside `/16` | VPC → Subnets |
+| [Road signs](route-tables.md) | VPC → paths | Same VPC ID; subnet associations | VPC → Route tables |
+| [Door guards](security-groups.md) | Guard resources | Rules scoped to this VPC | EC2 → Security Groups |
+
+## 11. When it breaks
+
+- Wrong names fail → check VPC DNS resolution and app configuration → restore the missing setting.
+- Joined networks cannot talk → compare address ranges → remove overlap before connecting them.
+
+## 12. Say it in 30 seconds
+
+“MiniTickets has one gated city: `10.0.0.0/16`. Four subnets separate public workers from private data. Routes provide roads, security groups guard doors, and credentials protect the stores. Those are separate checks; creating the VPC alone opens nothing.”
+
+## 13. Likely follow-ups
+
+- **Is the VPC one zone?** No. Our VPC spans the region; each subnet belongs to one zone.
+- **Can the primary range change?** It cannot be resized in place; secondary ranges can be added.
+
+## 14. Remember it
+
+The city owns the addresses; roads and guards decide who can visit.
+
+## 15. More detail
+
+<details>
+<summary>Reference notes, source anchors and earlier useful detail</summary>
 
 - Anchor: `infra/src/network.ts` · `vpc`: the VPC with `cidrBlock: "10.0.0.0/16"` and DNS turned on.
 
-Step by step:
+### Addresses and boundaries
 
-1. `new aws.ec2.Vpc(...)` with `cidrBlock: "10.0.0.0/16"`.
-2. `enableDnsSupport: true` lets machines in the VPC look up names; `enableDnsHostnames: true` gives
-   them names. RDS and ElastiCache endpoints are DNS names that resolve to private `10.0.x.x`
-   addresses, so both must be on.
-3. `tags: tagsFor(...)` (`infra/src/tags.ts`) adds `Project`, `Env`, `ManagedBy` and `Name`.
-4. `vpc.id` is returned as `vpcId` and used by the security groups and target groups (both belong
-   to exactly one VPC).
+`/16` fixes 16 of IPv4's 32 bits and leaves 65,536 addresses. Each `/24` leaves 256; AWS reserves five, leaving 251 usable addresses. Subnet ranges cannot overlap. Adding `10.0.0.128/25` would overlap `public-1` and AWS would refuse it.
 
-## 5. See it yourself
+`enableDnsSupport` enables the VPC resolver; `enableDnsHostnames` controls assigned hostnames. Both are true here. The earlier card overstated that turning hostnames off alone necessarily breaks RDS resolution; check DNS support, resolver settings and the actual endpoint instead.
 
-```bash
-cd infra
-aws ec2 describe-vpcs --profile ticketlite --vpc-ids $(pulumi stack output vpcId) \
-  --query "Vpcs[0].[CidrBlock,State]"
-aws ec2 describe-vpc-attribute --profile ticketlite --vpc-id $(pulumi stack output vpcId) \
-  --attribute enableDnsHostnames
-```
+`vpcId` feeds security groups and target groups. `publicSubnetIds` and `privateSubnetIds` feed later layers through `infra/index.ts`. Tags are `Project=minitickets`, `Env=dev`, `ManagedBy=pulumi`, and `Name`. Only a dev stack exists; one VPC per environment/account is a future isolation choice.
 
-**Break it on purpose (thought experiment, do not apply):** a new subnet with `10.0.0.128/25`
-overlaps `public-1` (`10.0.0.0/24`). AWS refuses it: one address can belong to only one subnet.
+A custom VPC makes placement explicit. The default VPC is convenient for experiments but begins with public subnets. IPv6 adds another family of routes and rules. A less common private range avoids future peering/VPN clashes. Private ranges are not routed on the public internet.
 
-## 6. How it connects
+The VPC, subnets and route tables have no separate hourly charge. Gateways with processing charges, public IPv4 addresses, load balancers and hosted resources can add cost; old guide prices are historical examples, not a quote.
 
-- **Uses ←** the region ([regions-and-azs](regions-and-azs.md)).
-- **Gives →** the home for [subnets](subnets.md), [route tables](route-tables.md),
-  [security groups](security-groups.md) and [target groups](target-groups.md).
+Read-only checks: `aws ec2 describe-vpcs` with the actual VPC ID, and `aws ec2 describe-vpc-attribute --vpc-id <actual-id> --attribute enableDnsHostnames`. Use `AWS_PROFILE=ticketlite`; never inspect secret values. The VPC Resource map is a network map, not an inventory of every application resource.
 
-## 7. Our settings and WHY
-
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| `cidrBlock` | `10.0.0.0/16` | A private range (`10.x` is never used on the public internet), and room for many more subnets later. |
-| DNS support + hostnames | on | RDS and Valkey are reached by DNS name. |
-| One VPC | dev only | No prod stack exists. |
-
-## 8. Trade-offs
-
-- **Pros:** a big range costs nothing and avoids renumbering later.
-- **Cons:** `10.0.0.0/16` is a very common choice. If we ever connect to another network (a peer
-  VPC, an office VPN) that also uses it, the ranges clash and cannot be routed.
-
-## 9. Alternatives and when to choose them
-
-- **A less common range** (e.g. `10.42.0.0/16`): when the VPC will be peered or joined to a
-  company network.
-- **The default VPC** AWS creates in every region: fine for experiments, but all its subnets are
-  public. We build our own so we control public vs private.
-- **IPv6 in addition:** when clients or partners need IPv6; adds complexity to rules.
-
-## 10. What breaks, and how we'd notice
-
-- **DNS hostnames off:** the api cannot resolve the RDS and Valkey endpoints; connection errors at
-  start (`ENOTFOUND`), `/ready` 503.
-- **Range clash** with a peer network: peering or VPN routes are refused.
-
-## 11. Reach / Allowed / Password
-
-**Reach** starts here: anything outside the VPC cannot reach anything inside without a door (the
-internet gateway) and a route. IAM and passwords are not part of a VPC.
-
-## 12. Cost
-
-A VPC, its subnets and route tables are free. Things inside it cost money (NAT gateways, public
-IPv4 addresses, load balancers).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A VPC is a private network in AWS. Ours is `10.0.0.0/16`.
-- **Senior:** We create our own VPC with DNS support and hostnames on, so private endpoints like RDS
-  resolve to `10.0.x.x`. It is split into four `/24` subnets, two public and two private, one of each
-  per AZ. Security groups and target groups are scoped to this VPC.
-- **Lead:** I plan CIDR ranges across all VPCs of a company up front, so peering and VPNs never
-  clash, and I keep one VPC per environment and account, which gives a hard network boundary between
-  dev and prod.
-
-## 14. Follow-up questions interviewers ask
-
-- *How many addresses in a /24, and how many usable?* 256; AWS reserves 5, so 251.
-- *Can you change a VPC's CIDR?* You can add secondary ranges; you cannot change the primary.
-- *Why private address ranges?* They are never routed on the public internet, so they cannot clash
-  with public addresses.
-
-## 15. Say it in 30 seconds
-
-"Our VPC is `10.0.0.0/16` with DNS support and hostnames on, split into four `/24` subnets across
-two AZs. It is the network boundary: nothing gets in without the internet gateway, a route and a
-security group rule."
-
-## 16. Status
-
-✅ built.
+</details>
 
 ## Where it appears in the story
 

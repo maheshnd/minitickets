@@ -1,86 +1,123 @@
-# Amazon SQS (message queue)
+# SQS: the city work trays
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Compute · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-SQS buffers independently retryable work. Email and tickets have separate standard queues/DLQs, SSE-SQS and partial-batch mappings. Email visibility is 60 s, tickets 180 s; both redrive after 3 receives.
+A MiniTickets booking leaves two [SQS](../glossary.md#sqs) messages: durable work notes, one for email and one for tickets.
 
-## 2. Real-life comparison
-
-A durable work tray keeps the task after the customer leaves; a completed stamp identifies a repeat.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    n0["Failed consumer"] --> n1
-    n1["Visibility delay"] --> n2
-    n2["Retry limit"] --> n3
-    n3["DLQ and alarm"]
+    sns["minitickets-dev-booking-events"] -->|"SNS subscription; queue policy allows sqs:SendMessage from this topic/account"| email["minitickets-dev-jobs"]
+    sns -->|"SNS subscription; same topic/account restriction"| tickets["minitickets-dev-tickets"]
+    email -->|"SQS trigger; worker-role ReceiveMessage/DeleteMessage"| worker["minitickets-dev-worker"]
+    tickets -->|"SQS trigger; tickets-role ReceiveMessage/DeleteMessage"| issuer["minitickets-dev-tickets Lambda"]
+    email -->|"redrive policy; maxReceiveCount 3"| dlq["minitickets-dev-jobs-dlq"]
+    tickets -->|"redrive policy; maxReceiveCount 3"| tdlq["minitickets-dev-tickets-dlq"]
+    roles["minitickets-dev-worker-role<br/>minitickets-dev-tickets-role"] -.->|"trust lambda.amazonaws.com; scoped queue actions"| worker
+    roles -.->|"trust lambda.amazonaws.com; scoped queue actions"| issuer
+    classDef focus fill:#fff0b3,stroke:#8a5700,stroke-width:3px
+    class email,tickets focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=sqs#chapter=24&piece=email-queue).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant SNS as booking-events SNS
+    participant Q as minitickets-dev-jobs
+    participant W as minitickets-dev-worker
+    participant SES as SES
+    SNS->>Q: Raw booking JSON, subscription + queue policy
+    Q->>W: SQS mapping receives, hide for 60 s
+    W->>SES: worker-role ses:SendEmail
+    SES-->>W: Accepted
+    W-->>Q: Empty batchItemFailures, mapping deletes message
+```
+
+## 4. What happens in MiniTickets
+
+1. SNS copies the booking into each queue; neither consumer steals the other's work.
+2. Email waits behind earlier work. A receive hides it for 60 seconds, without deleting it.
+3. The worker reports only failed records; Lambda deletes successful ones.
+4. Email failures wait 10, 40, then 120 seconds. Tickets keep their 180-second default.
+5. After three receives without deletion, SQS can move the message to its own [DLQ](dead-letter-queue.md).
+
+## 5. Reach / Allowed / Password
+
+**Reach:** AWS HTTPS APIs on 443; workers run outside our VPC.
+
+**Allowed:** SNS queue policy accepts only our topic/account; worker roles read only their queue.
+
+**Password:** temporary role credentials; no queue password.
+
+## 6. In our code
+
+`infra/src/jobs/queues.ts` → `createJobQueues`; `infra/src/jobs/queue-trigger.ts` → `createQueueTrigger`.
+
+`apps/worker/src/lambda.ts` → `handler`; `apps/worker/src/retry-later.ts` → `delayFailedMessages`.
+
+
+## 7. In the AWS console
+
+Region `us-east-1` → **SQS → Queues → minitickets-dev-jobs → Configuration / Access policy / Lambda triggers**. Check 60 seconds, three receives and the topic restriction. Repeat for `minitickets-dev-tickets`: 180 seconds.
+
+## 8. Good / Bad
+
+**Good:** survives worker outages; email and tickets recover separately.
+
+**Bad:** duplicates remain possible; delayed work needs queue-age alarms.
+
+## 9. Other choices
+
+- Pick a direct call when the customer must wait for its answer.
+- Pick a FIFO queue when work needs ordering within a named group.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [SNS](sns.md) | in | Subscription + queue policy | SNS → topic → Subscriptions |
+| [Lambda](aws-lambda.md) | out | SQS mapping + role | Lambda → function → Triggers |
+| [DLQ](dead-letter-queue.md) | out | Redrive policy | SQS → queue → Dead-letter queue |
+
+## 11. When it breaks
+
+- Oldest age rises → mapping and worker logs → repair disabled triggers, failures or capacity.
+- Duplicate email → visibility and completion logs → fix slow handling; retain deduplication.
+
+## 12. Say it in 30 seconds
+
+“MiniTickets puts email and ticket work in separate SQS trays. The API can finish a booking while workers catch up. Receiving hides a message; success deletes it. Failed messages retry, then enter a DLQ. Standard queues can repeat messages, so consumers must handle repeats safely.”
+
+## 13. Likely follow-ups
+
+**Does empty mean delivered?** No. SES acceptance and ticket readiness are separate outcomes.
+
+**Why two queues?** Each job must reach both consumers.
+
+## 14. Remember it
+
+A tray holds work until someone finishes it; picking it up is not finishing it.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and later growth</summary>
 
 - Anchor: `infra/src/jobs/queues.ts` — `createJobQueues`; follow the numbered comments at this boundary.
 
-`apps/worker/src/batch.ts` returns batchItemFailures; `backoff.ts` sets delay; `infra/src/jobs/queue-trigger.ts` sets worker mapping. `pnpm jobs:dlq` lists local failures; redrive is an explicit owner operation after a fix. Runbook §3.12 has AWS diagnostics; no live alarm drill has been claimed.
+Both standard queues retain messages for four days, long-poll for 20 seconds and use SQS-managed encryption (SSE-SQS). Each DLQ retains for 14 days. Source-queue visibility is six times its Lambda timeout: email 60/10 seconds, tickets 180/30 seconds. Too short can overlap work; too long delays recovery. Email mapping uses batches up to 10 and maximum concurrency 5; tickets use 1 and 2. Partial-batch responses require `ReportBatchItemFailures` on the mapping, or successful returns could delete failures. Avoid a reserved-concurrency limit lower than the mapping's demand: throttled invokes can consume receives. Backoff has no random jitter yet.
 
-## 5. See it yourself
-
-Run `pnpm jobs:dlq` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does an empty queue mean email was delivered? No; inspect completion/provider outcomes too. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#dlq-failure) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
-
-## 7. Our settings and WHY
-
-SQS buffers independently retryable work. Email and tickets have separate standard queues/DLQs, SSE-SQS and partial-batch mappings. Email visibility is 60 s, tickets 180 s; both redrive after 3 receives. Durable failure evidence is better than silently dropping work.
-
-## 8. Trade-offs
-
-Too-short visibility can overlap work; too-large visibility delays recovery. Reserved Lambda concurrency and mapping maximumConcurrency must agree or throttling can consume receives.
-
-## 9. Alternatives and when to choose them
-
-10x: oldest-message age and redrive rate limits. 100x: separate poison-message classes, sampling and SLO-driven alarms.
-
-## 10. What breaks and how we notice
-
-Does an empty queue mean email was delivered? No; inspect completion/provider outcomes too.
-
-## 11. Reach / Allowed / Password
-
-Prove the network path separately from the scoped IAM action and the runtime credential. [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached) shows trust, permissions and attachment. No AWS endpoint needs an inbound SG simply because a non-VPC Lambda calls it.
-
-## 12. Cost
-
-Existing resource/usage costs are detailed in the corresponding infra guide chapter. No new resources were deployed by this documentation change. Historical phase costs are illustrative snapshots, not a current quote; inspect billing and current regional pricing before a capacity decision.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** SQS buffers independently retryable work.
-- **Senior:** Find the booking/correlation id, follow structured logs, inspect queue age and failed attempts, then DLQ and alarm. Fix the root cause before redrive. Visibility timeout hides an in-flight message; it is not deletion. Partial-batch reporting retries only failed records. A poison message should not block all useful work.
-- **Lead:** 10x: oldest-message age and redrive rate limits. 100x: separate poison-message classes, sampling and SLO-driven alarms.
-
-## 14. Follow-up questions with answers
-
-Does an empty queue mean email was delivered? No; inspect completion/provider outcomes too.
-
-What should happen before redrive? **Fix the failure cause.**
-
-## 15. Say it in 30 seconds
-
-Find the booking/correlation id, follow structured logs, inspect queue age and failed attempts, then DLQ and alarm. Fix the root cause before redrive. Visibility timeout hides an in-flight message; it is not deletion. Partial-batch reporting retries only failed records. A poison message should not block all useful work.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: oldest-message age and redrive rate limits. 100x: separate poison-message classes, sampling and SLO-driven alarms.
+At greater load, measure oldest age, consumer completion and provider limits before increasing concurrency. Separate permanently broken messages from temporary outages; redrive at a controlled rate after repairs. `pnpm jobs:dlq` inspects local email failures. The [runbook](../../20-deploy-day.md#312-observability-follow-one-booking-alarms-dashboard-p2) and [failure scenario](../guides/interview-scenarios.md#dlq-failure) cover diagnosis. Resource/usage charges apply; old cost figures are snapshots, not current prices. Repository/local evidence does not prove live AWS behavior or alarm delivery.
+</details>
 
 ## Where it appears in the story
 

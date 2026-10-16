@@ -25,9 +25,61 @@ flowchart LR
 
 ---
 
-## 2026-10-16 · docs(handbook): animate explorer flows and explain connection checks
+## 2026-10-16 · docs(handbook): simplify interview concept cards and add a learning path
 
 Commit: filled in by the next handbook commit
+
+Why: make the most interview-relevant concepts understandable in one short read, while keeping useful source detail folded and preserving the handbook checks.
+
+- `concepts/alb.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/alerting.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/aws-lambda.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/cache-aside.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/cd-oidc.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/ci-pipeline.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/cloudfront.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/cloudwatch-logs.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/csr-vs-ssr.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/dead-letter-queue.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/dynamodb.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/ecr.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/ecs-cluster.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/ecs-service.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/elasticache-valkey.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/execution-vs-task-role.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/fargate.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/health-checks.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/idempotency.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/outbox.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/presigned-urls.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/rate-limiting.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/rds-postgres.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/route-tables.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/row-locks.md`: create the row-lock card from createBookingTx and pool deadlines.
+- `concepts/secrets-manager.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/security-groups.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/ses-email.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/sessions-vs-jwt.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/sns.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/sqs.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/subnets.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/target-groups.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/task-definition.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/vpc.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `concepts/zero-downtime-deploys.md`: rewrite all 15 teaching sections with two connected diagrams and preserve corrected reference detail.
+- `learning-path.md`: order all 152 cards into six connected parts with one answer goal each; identify the 116 unchanged Batch 2 cards.
+- `README.md`: make the new concept learning path the starting point and explain the two card formats.
+- `concept-map.md`: index the new row-lock card without adding executable source anchors.
+- `app-story.md`: connect the booking chapter to its row-lock explanation.
+- `glossary.md`: add direct term bookmarks and explain the words used in the short cards; correct stale built/planned descriptions for the covered mechanisms.
+- `guides/infra-explorer.html`: honor concept links beside real city/code pieces and keep context focused when switching maps or concept-index entries.
+- `CHANGELOG.md`: record every changed handbook file and fill the previous entry’s commit hash.
+
+Validation: docs:check passes (152 cards / 141 anchor slugs / 331 anchor places); all 78 new Mermaid diagrams render with Mermaid CLI 12; 72 focused links pass at 1440px/390px with zero page errors. The documentation checker passes TypeScript/lint, and 14 isolated negative cases reject malformed cards. No app, infra or test source changed; live AWS state and exact printer pagination were not verified.
+
+## 2026-10-16 · docs(handbook): animate explorer flows and explain connection checks
+
+Commit: 30c64a4
 
 Why: follow real city connections one step at a time, with simple narration and exact source/Console evidence.
 

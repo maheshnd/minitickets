@@ -1,28 +1,115 @@
-# CloudWatch Logs: log groups, streams, retention
+# CloudWatch Logs: the city’s incident notebooks
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-Structured JSON logs from API/web/workers carry validated correlation where meaningful. Four symptom alarms, SNS email, dashboard and saved queries are defined; no automatic distributed traces are built.
+When a MiniTickets worker disappears, its [logs](../glossary.md#cloudwatch-logs), records of what happened, remain in CloudWatch for seven days.
 
-## 2. Real-life comparison
-
-A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    n0["Booking correlation id"] --> n1
-    n1["API and worker JSON"] --> n2
-    n2["Logs Insights"] --> n3
-    n3["Queue/DLQ alarm"]
+    A["api / web ECS tasks"] -->|"awslogs driver; execution role PutLogEvents"| L["/minitickets/dev/api / web / worker / tickets"]
+    W["worker / tickets Lambdas"] -->|"Lambda role CreateLogStream + PutLogEvents"| L
+    R["execution / worker / tickets role policies"] -.->|"authorize configured log groups"| L
+    L -->|"Logs Insights query over selected groups"| Q["minitickets-dev saved queries"]
+    Q -->|"follow-one-request / errors / worker-durations"| O["Owner incident investigation"]
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class L focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cloudwatch-logs#chapter=8&piece=logs).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant A as API request
+    participant L as /minitickets/dev/api
+    participant W as Email worker
+    participant C as CloudWatch Logs Insights
+    A->>L: JSON line with validated correlationId
+    A->>W: Outbox then SNS/SQS message carries correlationId
+    W->>C: JSON line stored in /minitickets/dev/worker
+    C->>L: Query both groups for same correlationId
+    L-->>C: Request and relay records in time order
+    Note over W,C: Shared identity connects records, it is not a timed trace
+```
+
+## 4. What happens in MiniTickets
+
+1. `createLogs` creates API, web, worker and tickets groups under `/minitickets/dev/`.
+2. ECS’s `awslogs` driver copies output; Lambda logging uses each function’s role.
+3. API validates `x-correlation-id` as a UUID or creates one, then returns it to the caller.
+4. The outbox and email message carry that identity to worker logs.
+5. Saved queries search API and email-worker groups; old lines expire after seven days.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** HTTPS to CloudWatch; ECS uses public subnet egress, Lambda uses AWS-managed access.
+
+**Allowed:** execution/function roles need log stream creation and event writes.
+
+**Password:** not needed; AWS signs calls using temporary role credentials.
+
+## 6. In our code
+
+`infra/src/compute/logs.ts` → `createLogs`.
+
+`infra/src/observability/log-queries.ts` → `createLogQueries`.
+
+`apps/api/src/http/correlation-id.ts` → `correlationIdFor`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → CloudWatch → Logs → Log groups → `/minitickets/dev/api` → Log streams. Then Logs Insights → Saved queries → `minitickets-dev/follow-one-request`; select the matching time range and identity. Live delivery not checked.
+
+## 8. Good / Bad
+
+**Good:** Survives task replacement. Shared request IDs connect separate workers.
+
+**Bad:** Seven days is a short history. Reading many logs costs money.
+
+## 9. Other choices
+
+- Timed tracing: pick it when you need durations between services; not built here.
+- Longer retention: pick it when recovery or audit needs older evidence.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Task recipe](task-definition.md) | In ← | awslogs group, region and prefix | ECS → revision → Container logs |
+| [Lambda](aws-lambda.md) | In ← | Function log configuration + role | Lambda → function → Monitor |
+| [Alarms](alerting.md) | Out → | Owner follows alarm to saved queries | CloudWatch → Alarms; Logs Insights |
+
+## 11. When it breaks
+
+No lines → task/function logging config and role → repair group/stream permissions.
+
+No matching request → selected groups, time range and UUID → follow the original correlationId.
+
+## 12. Say it in 30 seconds
+
+“CloudWatch keeps our incident notebooks after workers die. The API gives a request a validated correlation ID, carries it through outbox and queues, and the email worker logs it too. Saved queries join those records. Logs explain individual events; metrics power alarms. We have no automatic distributed tracing.”
+
+## 13. Likely follow-ups
+
+- Why validate an incoming ID? To reject junk and fake log text.
+- Is one ID a trace? No; it joins records without measuring every causal span.
+
+## 14. Remember it
+
+The receipt number connects the notebooks; it does not draw a stopwatch trace.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/compute/logs.ts` — `createLogs`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/compute/task.ts` — `module configuration`; follow the numbered comments at this boundary.
@@ -30,53 +117,17 @@ flowchart LR
 - Anchor: `infra/src/jobs/worker-lambda.ts` — `module configuration`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/observability/log-queries.ts` — `prefix`; follow the numbered comments at this boundary.
 
-`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
+`createLogs` accepts `api`, `web`, `worker`, `tickets`. Every group has `retentionInDays: 7`. API stream names follow `api/api/<task id>`; migration uses `migrate/migrate/<task id>` in the API group. Log groups are created by infrastructure, so task/function roles do not need permission to create arbitrary groups.
 
-## 5. See it yourself
+`createLogQueries` defines `minitickets-dev/follow-one-request`, `minitickets-dev/errors` and `minitickets-dev/worker-durations`. The first two select the API and email-worker groups. The duration query selects only the email worker; ticket-group coverage is not implied. Query text is shared with `dashboard-body.ts` so dashboard and saved queries agree. Saving a query is distinct from paying to execute a scan. [AWS saved-query guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CWL_Insights-Saving-Queries.html) shows that console workflow.
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+API JSON request logs use `correlationId`; credentials are redacted and request bodies/password hashes must not be logged. Worker duration/error records help distinguish a thrown invocation from a handled failed message. Full payload logging can leak personal data even when an identifier is useful.
 
-Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
+P2’s recorded local evidence was 115 ms request-to-email and about 10 seconds to retry recovery. Those are local measurements, not AWS delivery guarantees or service-level targets. Owner runbook §3.12 covers deployed investigation and notification checks.
 
-## 6. How it connects
+Logs explain events, metrics show counts/rates and traces time causal spans. Our four configured symptom alarms and dashboard do not create automatic traces. Higher traffic may justify sampling, latency distributions and deliberate retention budgets. Live log delivery, query usefulness and ticket coverage remain operational checks.
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
-
-## 7. Our settings and WHY
-
-Structured JSON logs from API/web/workers carry validated correlation where meaningful. Four symptom alarms, SNS email, dashboard and saved queries are defined; no automatic distributed traces are built. A user symptom spans asynchronous boundaries, not one process log.
-
-## 8. Trade-offs
-
-Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
-
-## 9. Alternatives and when to choose them
-
-10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 10. What breaks and how we notice
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Structured JSON logs from API/web/workers carry validated correlation where meaningful.
-- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 14. Follow-up questions with answers
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-Which signal explains a specific failed booking? **Correlated structured logs.**
-
-## 15. Say it in 30 seconds
-
-Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
+</details>
 
 ## Where it appears in the story
 

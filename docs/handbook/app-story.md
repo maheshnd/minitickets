@@ -1085,6 +1085,8 @@ with a TTL, and driver errors turned into our own errors."
 
 ## 9b. A booking reaches its transaction
 
+The seat ledger is locked one event at a time: read [row locks](concepts/row-locks.md) before following the booking transaction.
+
 ### 1. In one line
 
 Token buckets permit a burst then refill at a steady rate. Login limits a trustworthy client IP; booking limits an authenticated user. Redis Lua makes refill and debit atomic across instances. Return 429 and Retry-After. A spoofable forwarded header must not choose someone else’s bucket.

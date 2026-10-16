@@ -1,131 +1,124 @@
-# ECS service: desired count, replacement
+# ECS service: the shift manager
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: AWS Compute · Status: ✅ built · Step docs: [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-An **ECS service** keeps the wanted number of tasks running from one task definition, replaces any
-task that dies or fails its health checks, registers tasks with the ALB, and rolls out new revisions.
+When an API worker dies, the MiniTickets [service](../glossary.md#ecs-service) starts a replacement from its saved recipe.
 
-## 2. Real-life comparison
-
-A shift manager. The rule is "always one cook at the api counter". If the cook goes home sick, the
-manager calls in another one. When the recipe changes, the manager brings in a cook with the new
-recipe before sending the old one home.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    svc["service minitickets-dev-api<br/>desiredCount 1"] -->|"start"| t["task (rev 7)"]
-    t -->|"crash or unhealthy"| svc
-    svc -->|"register IP"| tg["api target group"]
-    svc -->|"new revision"| t2["task (rev 8)"]
+    C["minitickets-dev cluster"] -->|"attached FARGATE_SPOT; clusterName"| S["minitickets-dev-api service"]
+    D["minitickets-dev-api revision"] -->|"taskDefinition ARN"| S
+    S -->|"desiredCount=1; FARGATE_SPOT weight=1"| T["api task :4000"]
+    S -->|"loadBalancers: api / 4000"| G["minitickets-dev-api-tg-* IP list"]
+    SG["minitickets-dev-api-sg"] -.->|"4000 from minitickets-dev-alb-sg; 14000 from minitickets-dev-web-sg"| T
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class S focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecs-service#chapter=8&piece=api-task).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant T as API task
+    participant S as minitickets-dev-api service
+    participant G as API target group
+    T-->>S: Task exits
+    S->>T: Start replacement from same task definition
+    S->>G: Register replacement IP on port 4000
+    G->>T: GET /health every 15 seconds
+    T-->>G: HTTP 200
+    Note over S,G: ECS ignores unhealthy ALB checks for first 60 seconds
+```
+
+## 4. What happens in MiniTickets
+
+1. `minitickets-dev-api` and `minitickets-dev-web` each want one task.
+2. Both run on Spot, in public subnets with a public IP for outgoing AWS calls.
+3. ECS adds each task IP to its API :4000 or web :3000 target group.
+4. Failed tasks are replaced. New recipes trigger a rolling change; a startup failure can trigger automatic rollback.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** public subnets and task security groups.
+
+**Allowed:** ECS’s service-linked role manages task interfaces and target registration.
+
+**Password:** not needed by the manager; ECS injects each app’s secrets at startup.
+
+## 6. In our code
+
+`infra/src/compute/service.ts` → `createApiService`.
+
+`infra/src/compute/web-service.ts` → `createWebService`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → ECS → Clusters → `minitickets-dev` → Services → `minitickets-dev-api` → Deployments / Events / Tasks. Open a task’s Networking details to see its subnet, interface and guards. Live health was not checked.
+
+## 8. Good / Bad
+
+**Good:** Replaces failed workers. Registers changing task IPs automatically.
+
+**Bad:** One Spot copy can go away. A healthy process does not prove booking works.
+
+## 9. Other choices
+
+- Two or more tasks: pick them when one lost worker must not stop the app.
+- Standalone task: pick it when work runs once, like migrations.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Cluster](ecs-cluster.md) | In ← | Attached provider | ECS → cluster → Infrastructure |
+| [Task recipe](task-definition.md) | In ← | taskDefinition ARN | ECS → service → Deployments |
+| [Target groups](target-groups.md) | Out → | containerName + containerPort mapping | EC2 → Target groups → Targets |
+
+## 11. When it breaks
+
+Never becomes stable → service Events and stopped-task reason → repair the image, secret access or network path before retrying.
+
+## 12. Say it in 30 seconds
+
+“The service is our shift manager. It keeps one API or web task alive, replaces failures and registers task IPs with the load balancer. It rolls new task definitions and can roll back a failed startup. One Spot task is a dev cost choice, so I do not claim high availability.”
+
+## 13. Likely follow-ups
+
+- Service versus task? The manager versus one running worker.
+- What does 60 seconds protect? Startup from early failed load-balancer checks.
+
+## 14. Remember it
+
+A task does one shift; the service fills the next shift.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/compute/service.ts` · `createApiService`: the api service.
 - Anchor: `infra/src/compute/web-service.ts` · `createWebService`: the web service.
 
-The api service, step by step:
+Both services enable `deploymentCircuitBreaker: { enable: true, rollback: true }`. API enables ECS Exec; web does not. Neither explicitly sets rolling minimum/maximum percentages, so ECS defaults apply. Spot interruption or a crash can still leave no worker while a replacement starts; rolling overlap does not remove that risk.
 
-1. `cluster: clusterName`, `taskDefinition: taskDefinitionArn`.
-2. `desiredCount: 1` ([scaling](scaling.md)).
-3. `capacityProviderStrategies: [{ capacityProvider: "FARGATE_SPOT", weight: 1 }]` ([fargate-spot](fargate-spot.md)).
-4. `networkConfiguration`: public subnets, the api security group, `assignPublicIp: true` (no NAT).
-5. `deploymentCircuitBreaker: { enable: true, rollback: true }` ([circuit-breaker](circuit-breaker.md)).
-6. `enableExecuteCommand: true` ([ecs-exec](ecs-exec.md)).
-7. Only with entry on: `loadBalancers` (container `api`, port 4000, api target group) and
-   `healthCheckGracePeriodSeconds: 60`.
-8. No deployment settings are given, so ECS's rolling-update defaults apply
-   ([zero-downtime-deploys](zero-downtime-deploys.md)).
+The API’s ALB mapping and 60-second grace period exist only with entry enabled. Web exists only with entry enabled. The target group must already belong to a listener before service creation; the listener layer returns usable ARNs after attaching the rules. A different VPC or unattached target group causes creation failure.
 
-The web service is the same pattern with container `web`, port 3000, the web group and no ECS Exec.
+Service Connect offers `api:4000` and `web:3000`; receiving proxies use 14000 and 13000. Web waits for the API service to exist so its first task learns the API name. API may require a one-time redeployment when web is first added. Service auto scaling and an on-demand base remain future choices. Blue/green deployment buys a switchable new fleet at the cost of overlapping capacity.
 
-## 5. See it yourself
+The ECS service itself adds no separate compute charge. Task CPU, memory, public IPv4 and surrounding resources do. Historical hourly estimates are not current quotes.
 
-```bash
-aws ecs describe-services --profile ticketlite --cluster minitickets-dev \
-  --services minitickets-dev-api minitickets-dev-web \
-  --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,events:events[:3].message}'
-```
+[Official ECS task networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html).
 
-**Break it on purpose (safe, compute on):** stop the running api task by hand
-(`aws ecs stop-task --cluster minitickets-dev --task <arn>`). Within a minute the service starts a
-new one; the events show "has started 1 tasks".
-
-## 6. How it connects
-
-- **Uses ←** [cluster](ecs-cluster.md), [task definition](task-definition.md),
-  [subnets](subnets.md), [security groups](security-groups.md), [target groups](target-groups.md).
-- **Gives →** running tasks for the [ALB](alb.md); rolling deploys; self-healing.
-
-## 7. Our settings and WHY
-
-| Setting | api | web | Why |
-| ------- | --- | --- | --- |
-| `desiredCount` | 1 | 1 | Dev; production 2+ across AZs. |
-| Capacity | FARGATE_SPOT | FARGATE_SPOT | About 70% cheaper; dev can live with interruptions. |
-| Public IP | yes | yes | No NAT gateway. |
-| Circuit breaker + rollback | yes | yes | A broken image does not loop forever. |
-| ECS Exec | yes | no | Debug shell for the api only. |
-| Grace period | 60 s (entry on) | 60 s | Node needs a few seconds before `/health` answers. |
-
-## 8. Trade-offs
-
-- **Pros:** self-healing, rolling deploys, ALB registration, all managed.
-- **Cons:** with one task, every replacement or Spot interruption is a short outage.
-
-## 9. Alternatives and when to choose them
-
-- **Service auto scaling** (target tracking on CPU or requests): real traffic.
-- **CODE_DEPLOY (blue/green) deployment controller:** instant switch and fast rollback.
-- **Standalone tasks (`run-task`):** one-off jobs like our migration.
-
-## 10. What breaks, and how we'd notice
-
-- `services-stable` times out: a task keeps failing; check the stopped reason and service events.
-- "unable to place a task": capacity, subnet or configuration problems.
-- Service and target group in different VPCs, or the target group not attached to a load balancer:
-  ECS refuses to create the service (why `listener.ts` returns the ARNs only after the rules exist).
-
-## 11. Reach / Allowed / Password
-
-- **Reach:** the service's `networkConfiguration` decides subnets, security group and public IP.
-- **Allowed:** ECS uses its service-linked role (`AWSServiceRoleForECS`) to create network
-  interfaces and register targets; tasks use their own roles.
-
-## 12. Cost
-
-The service is free; each task costs per second (Spot ARM ¼ vCPU + 512 MB ≈ $0.003 an hour, plus
-$0.005 an hour for its public IPv4 address).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A service keeps our containers running and replaces failed ones.
-- **Senior:** Two services, api and web, one Spot task each in public subnets with their own
-  security groups, registered in `ip` target groups with a 60 s grace period, deployment circuit
-  breaker with rollback, and ECS Exec on the api.
-- **Lead:** For production: two or more tasks spread across AZs, an on-demand base with Spot on top,
-  auto scaling, and alarms on running count and deployment failures.
-
-## 14. Follow-up questions interviewers ask
-
-- *Service vs task?* The task is one running copy; the service keeps N copies alive.
-- *What does the grace period protect?* ECS from killing a task whose ALB checks have not passed yet.
-
-## 15. Say it in 30 seconds
-
-"Two ECS services keep one Spot task each running for api and web, register them in the ALB's target
-groups, replace failed tasks, and roll out new revisions with a circuit breaker that rolls back if
-the new version never gets healthy."
-
-## 16. Status
-
-✅ built. **To make it production-grade:** 2+ tasks across AZs, on-demand base, auto scaling.
+</details>
 
 ## Where it appears in the story
 

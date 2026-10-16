@@ -114,6 +114,7 @@ The hub links every card to its implementation or proposed location. ✅ means b
 
 | Concept | Status | Where in our code | Card |
 | --- | --- | --- | --- |
+| Booking row locks | ✅ built | `apps/api/src/queries/bookings.ts` → `createBookingTx` | [row-locks](concepts/row-locks.md) |
 | Connection pooling | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/client.ts` | [connection-pooling](concepts/connection-pooling.md) |
 | Database CHECK constraints | ✅ built | `apps/api/src/db/schema/events.ts` | [db-check-constraints](concepts/db-check-constraints.md) |
 | Postgres schema with Drizzle ORM (UUID keys) | ✅ built | `apps/api/src/db/schema/users.ts`, `apps/api/src/db/client.ts` | [drizzle-schema](concepts/drizzle-schema.md) |

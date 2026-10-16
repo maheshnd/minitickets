@@ -1,116 +1,118 @@
-# ECS cluster and capacity providers
+# ECS cluster: the city work register
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.1)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-An **ECS cluster** is a named group that services and tasks belong to; its **capacity providers**
-say what kind of machines those tasks may run on (`FARGATE`, `FARGATE_SPOT`).
+When MiniTickets starts a worker, [ECS](../glossary.md#ecs-cluster), AWS’s container manager, files it under `minitickets-dev`.
 
-## 2. Real-life comparison
-
-A kitchen. It holds no food by itself; it is where the cooks (services) work. The capacity providers
-are the two kinds of ovens it may use: the normal oven, or a cheap borrowed one that the owner can
-take back.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
-flowchart TB
-    cl["Cluster minitickets-dev"] --> cp["Capacity providers<br/>FARGATE, FARGATE_SPOT"]
-    cl --> s1["service minitickets-dev-api"]
-    cl --> s2["service minitickets-dev-web"]
-    cl --> m["one-off migration task<br/>(FARGATE)"]
+flowchart LR
+    P["Pulumi createCluster"] -->|"computeEnabled=true"| C["minitickets-dev cluster"]
+    C -->|"FARGATE_SPOT attached; clusterName dependency"| A["minitickets-dev-api service"]
+    C -->|"FARGATE_SPOT attached; clusterName dependency"| W["minitickets-dev-web service"]
+    C -->|"run-task --launch-type FARGATE"| M["minitickets-dev-migrate task"]
+    CP["FARGATE + FARGATE_SPOT"] -.->|"ClusterCapacityProviders association"| C
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class C focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecs-cluster#chapter=8&piece=api-task).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant P as Pulumi createCluster
+    participant C as minitickets-dev cluster
+    participant S as minitickets-dev-api service
+    P->>C: Create named cluster
+    P->>C: Attach FARGATE and FARGATE_SPOT
+    C-->>P: capacityProviders.clusterName resolves
+    P->>S: Create service using resolved clusterName
+    S->>C: Schedule one FARGATE_SPOT task
+```
+
+## 4. What happens in MiniTickets
+
+1. `createCluster` creates `minitickets-dev` when compute is enabled.
+2. It attaches `FARGATE` and `FARGATE_SPOT`: the two places AWS may find machines.
+3. API and web services each request one Spot task. The one-off migration uses regular Fargate.
+4. Returning the provider’s cluster name makes services wait for that attachment.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** not needed here; each task gets its own network.
+
+**Allowed:** deployment permissions create the cluster; task badges govern running code.
+
+**Password:** not needed; a cluster stores no app password.
+
+## 6. In our code
+
+`infra/src/compute/cluster.ts` → `createCluster`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → ECS → Clusters → `minitickets-dev` → Services / Tasks; inspect capacity providers under Infrastructure. These are configured names; live counts were not checked.
+
+## 8. Good / Bad
+
+**Good:** One place to find both services. No host machines to maintain.
+
+**Bad:** The register itself adds no network protection. One Spot copy still permits outages.
+
+## 9. Other choices
+
+- EC2 capacity: pick it when steady workloads justify managing your own machines.
+- Separate clusters: pick them when environments need separate ownership.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Service](ecs-service.md) | Out → | Attached Spot provider | ECS → cluster → Services |
+| [Fargate](fargate.md) | In ← | Capacity-provider attachment | ECS → cluster → Infrastructure |
+| [Task recipe](task-definition.md) | Out → | Service taskDefinition / run-task | ECS → cluster → Tasks |
+
+## 11. When it breaks
+
+“Provider not associated” → service Events → make the service depend on the completed provider attachment.
+
+## 12. Say it in 30 seconds
+
+“Our ECS cluster is the city’s work register. `minitickets-dev` groups API, web and migration tasks. It permits regular Fargate and Spot. Services use Spot; migrations use regular Fargate. The cluster does not protect traffic: task networking and roles do that.”
+
+## 13. Likely follow-ups
+
+- Does a cluster own servers? With Fargate, AWS hides the hosts.
+- Why return the provider’s name? To prevent a creation-order race.
+
+## 14. Remember it
+
+The register names the workers; it does not guard their doors.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/compute/cluster.ts` · `createCluster`: the cluster and its capacity providers.
 
-Step by step:
+`containerInsights` is `disabled`; basic service CPU and memory metrics remain available. Extra task-level Container Insights would add observability cost. An empty Fargate cluster has no task compute charge; running tasks and related resources do.
 
-1. `aws.ecs.Cluster` named `minitickets-dev`, with `containerInsights: "disabled"` (see [metrics](metrics.md)).
-2. `aws.ecs.ClusterCapacityProviders` attaches `FARGATE` and `FARGATE_SPOT`.
-3. Returns `clusterName` **from the capacity providers resource**, so anything that uses the name
-   (the services) waits until the providers are attached. Otherwise a service could fail with
-   "capacity provider FARGATE_SPOT is not associated with the cluster".
-4. Created only when `computeEnabled` is on (`infra/index.ts`, step 12).
+`ClusterCapacityProviders` depends on the cluster. Consumers receive `capacityProviders.clusterName`, not `cluster.name`, so Pulumi follows the full dependency chain. Removing that dependency could fail only on a fresh create, making the bug intermittent.
 
-## 5. See it yourself
+A capacity-provider strategy uses a base and weights to divide work. Our services choose only Spot; an on-demand base plus Spot is a production option, not our current configuration. A cluster is not a security boundary. AWS refuses to delete one while dependent services remain. EKS is another choice when the Kubernetes ecosystem is required.
 
-```bash
-aws ecs describe-clusters --profile ticketlite --clusters minitickets-dev \
-  --query "clusters[0].[status,capacityProviders,runningTasksCount,settings]"
-```
+[Official ECS console guide](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/getting-started-fargate.html).
 
-**Break it on purpose (thought experiment):** return `cluster.name` instead of
-`capacityProviders.clusterName`. On a fresh `pulumi up`, the service may be created first and fail
-with the "not associated" error. A race like this shows up only sometimes.
-
-## 6. How it connects
-
-- **Uses ←** nothing.
-- **Gives →** a home for [ECS services](ecs-service.md) and the migration task; the capacity for
-  [Fargate](fargate.md) and [Fargate Spot](fargate-spot.md).
-
-## 7. Our settings and WHY
-
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Name | `minitickets-dev` | Used by scripts and deploy-day commands. |
-| Container Insights | disabled | Billed as custom metrics; basic metrics are enough for dev. |
-| Capacity providers | FARGATE, FARGATE_SPOT | Services use Spot; migrations use normal Fargate. |
-
-## 8. Trade-offs
-
-- **Pros:** free, nothing to patch.
-- **Cons:** a cluster gives no isolation by itself; IAM and security groups do that.
-
-## 9. Alternatives and when to choose them
-
-- **EC2 capacity provider (Auto Scaling group):** large steady workloads or special hardware (GPUs).
-- **One cluster per environment or team:** clearer ownership and quotas.
-- **EKS:** a Kubernetes ecosystem is a requirement.
-
-## 10. What breaks, and how we'd notice
-
-- Services created before the capacity providers: "not associated with the cluster".
-- Cluster deleted while services exist: AWS refuses; Pulumi deletes services first.
-
-## 11. Reach / Allowed / Password
-
-Not a connection. Tasks in it get their own network settings and roles.
-
-## 12. Cost
-
-An empty cluster is free; you pay for running tasks.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A cluster groups our containers in ECS.
-- **Senior:** Ours is a Fargate-only cluster with the FARGATE and FARGATE_SPOT capacity providers
-  attached. Services pick Spot; the migration runner uses on-demand. We pass the cluster name from
-  the capacity providers resource to force the right creation order.
-- **Lead:** The cluster is mostly a namespace. The real decisions are capacity strategy (on-demand
-  base plus Spot), observability cost (Container Insights) and how clusters map to environments and
-  teams.
-
-## 14. Follow-up questions interviewers ask
-
-- *Does a cluster have machines?* With Fargate, none we see or pay for.
-- *What is a capacity provider strategy?* Weights and a base that split a service's tasks between
-  providers.
-
-## 15. Say it in 30 seconds
-
-"One ECS cluster, `minitickets-dev`, with FARGATE and FARGATE_SPOT attached and Container Insights
-off. It's free while empty; services use Spot and the migration task uses on-demand Fargate."
-
-## 16. Status
-
-✅ built.
+</details>
 
 ## Where it appears in the story
 

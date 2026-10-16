@@ -1,132 +1,128 @@
-# Route tables and the internet gateway
+# Route tables: the city road signs
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step doc: [12 network](../../12-infra-network.md)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-A **route table** lists where traffic leaving a subnet goes; the **internet gateway (IGW)** is the
-VPC's door to the internet, and a route `0.0.0.0/0 → IGW` is what makes a subnet public.
+A MiniTickets [route table](../glossary.md#route-table) chooses the next road for an address; our public sign points internet traffic to the city gate.
 
-## 2. Real-life comparison
-
-The signboard at the end of each corridor: "rooms 10.0.x.x: this way (inside the building);
-everything else: the front door". A corridor without the "everything else" sign has no way out.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    pubSub["public-1, public-2"] --> pubRt["public route table<br/>10.0.0.0/16 → local<br/>0.0.0.0/0 → igw"]
-    privSub["private-1, private-2"] --> privRt["private route table<br/>10.0.0.0/16 → local<br/>(nothing else)"]
-    pubRt --> igw["Internet gateway"]
-    igw --> net["Internet"]
+    pub["public-1 / public-2"] -->|"explicit subnet associations"| rt["minitickets-dev-public-rt"]
+    rt -->|"10.0.0.0/16 to local"| local["VPC neighbors"]
+    rt -->|"0.0.0.0/0 to gatewayId"| igw["minitickets-dev-igw"]
+    igw -->|"attached gateway + public IPv4"| net["Internet / AWS public APIs"]
+    priv["private-1 / private-2"] -->|"explicit subnet associations"| prt["minitickets-dev-private-rt"]
+    prt -->|"10.0.0.0/16 to local only"| local
+    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
+    class rt focus
 ```
 
-The **longest matching prefix wins**: `10.0.5.7` matches both `10.0.0.0/16` and `0.0.0.0/0`, and
-`/16` is more specific, so it stays inside the VPC.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=route-tables#chapter=24&piece=public-rt).
 
-## 4. Where in our code
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant A as api task
+    participant R as public-rt
+    participant P as RDS private address
+    participant W as AWS public endpoint
+    A->>R: Destination 10.0.x.x
+    R->>P: More specific /16 local route, minitickets-dev-db-sg TCP 5432 from minitickets-dev-api-sg
+    A->>R: Destination outside 10.0.0.0/16
+    R->>W: /0 through igw, public IP + outbound rule
+```
+
+## 4. What happens in MiniTickets
+
+1. `createNetwork` attaches `minitickets-dev-igw` to our VPC.
+2. `publicRouteTable` adds `0.0.0.0/0 → internetGateway.id`: every other IPv4 address.
+3. AWS supplies `10.0.0.0/16 → local` to both tables.
+4. Four explicit associations give every subnet its intended sign.
+5. The more specific route wins. Database traffic stays inside; image downloads use the gate.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** a matching route provides a path, not a promise that the destination answers.
+
+**Allowed:** security groups separately admit the connection.
+
+**Password:** not needed by a road sign; stores and AWS APIs still authenticate callers.
+
+## 6. In our code
+
+`infra/src/network.ts` → `createNetwork` (`internetGateway`, `publicRouteTable`, `privateRouteTable`).
+
+## 7. In the AWS console
+
+VPC → Route tables → `minitickets-dev-public-rt` → Routes / Subnet associations. Expect local plus the default gateway route and two associations. The private table has local only. VPC → Your VPCs → our VPC → Resource map draws both signs. [AWS route guide](https://docs.aws.amazon.com/vpc/latest/userguide/WorkWithRouteTables.html). Live tables were not checked.
+
+## 8. Good / Bad
+
+**Good:** two small tables are easy to inspect; explicit associations avoid hidden defaults.
+
+**Bad:** private workers would have no external path; losing the public default route breaks new task startup.
+
+## 9. Other choices
+
+- Pick a NAT gateway per zone when private workers need an internet exit resilient to one zone failing.
+- Pick VPC endpoints when only supported AWS service roads are needed.
+- Pick Transit Gateway when joining many networks through a hub.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Subnets](subnets.md) | Subnet → table | Explicit association | Route table → Subnet associations |
+| [VPC](vpc.md) | Internal destinations | Built-in local route | Route table → Routes |
+| [ALB](alb.md) | Public round trip | Default route to attached IGW | ALB → Network mapping; subnet Routes |
+
+## 11. When it breaks
+
+- Tasks cannot fetch images → public Routes and task IP → restore the missing public path.
+- One subnet differs → Subnet associations → replace unintended use of the main table.
+
+## 12. Say it in 30 seconds
+
+“MiniTickets uses one public and one private road sign. Both know local addresses; only the public table has a default route to the internet gateway. The longest match keeps database calls local. Routes provide reach, while security groups and credentials remain separate checks.”
+
+## 13. Likely follow-ups
+
+- **What is the main table?** AWS creates a fallback for subnets without explicit associations.
+- **IGW versus NAT?** The gate connects public addresses; NAT lets private callers start outbound internet connections.
+
+## 14. Remember it
+
+The most specific sign wins; no sign means no road.
+
+## 15. More detail
+
+<details>
+<summary>Reference notes, source anchors and earlier useful detail</summary>
 
 - Anchor: `infra/src/network.ts` · `publicRouteTable`, `privateRouteTable`, `internetGateway`, the 4 `RouteTableAssociation`s.
 
-Step by step:
+AWS creates a main route table too. Our four subnets have explicit associations, so none should rely on it. Expect our two named tables plus the AWS-created main table in a fresh stack; verify live inventory rather than assuming the count.
 
-1. `internetGateway` is attached to the VPC (`vpcId: vpc.id`).
-2. `publicRouteTable` has one route we write: `{ cidrBlock: "0.0.0.0/0", gatewayId: internetGateway.id }`.
-3. `privateRouteTable` has no routes we write. AWS adds the `local` route to every route table
-   by itself.
-4. Four `RouteTableAssociation`s link each subnet to its table. Without them a subnet would use the
-   VPC's **main** route table, which is easy to forget about.
-5. No NAT gateway: the comment at `privateRouteTable` explains the choice.
+`10.0.5.7` matches both `/16` and `/0`; `/16` is longer and wins. A route table is attached to a subnet through a `RouteTableAssociation`, not directly to an application. An attached internet gateway without a default route does not provide an internet path.
 
-## 5. See it yourself
+Removing `0.0.0.0/0` breaks inbound/outbound public round trips. In today's ALB-only mode browsers time out; in optional CloudFront mode the origin can time out and produce 502/504. New tasks can fail image pulls or secret reads. Existing healthy task logs may show nothing because no request arrives.
 
-```bash
-cd infra
-aws ec2 describe-route-tables --profile ticketlite \
-  --filters Name=vpc-id,Values=$(pulumi stack output vpcId) \
-  --query "RouteTables[].{name:Tags[?Key=='Name']|[0].Value,routes:Routes[].[DestinationCidrBlock,GatewayId]}"
-```
+Private tables have no NAT and no VPC endpoint routes today. A later VPC Lambda or worker would need suitable endpoints or NAT for external calls. Current email/ticket Lambdas are outside the VPC and do not use these tables.
 
-Expect 3 tables: our public one (`local` + `igw-…`), our private one (`local` only), and the VPC's
-main table that AWS created (no subnets use it).
+NAT per zone avoids sharing one zone's failure and can avoid cross-zone traffic. Gateway endpoints for S3/DynamoDB add routes; interface endpoints provide private network interfaces. Transit Gateway is a many-network hub. Road tables and an internet gateway have no separate hourly charge; old NAT examples of roughly $33/month were historical regional estimates, not a current quote.
 
-**Break it on purpose (thought experiment):** delete the `0.0.0.0/0` route. The ALB loses its way
-back to CloudFront, and new tasks cannot pull images: CloudFront shows 502/504 and tasks fail
-with `CannotPullContainerError`.
+The old hourly NAT example was $0.045 plus per-GB processing; actual rates depend on region and time.
 
-## 6. How it connects
+Read-only check: `aws ec2 describe-route-tables --filters Name=vpc-id,Values=<actual-vpc-id>`; inspect routes and associations with `AWS_PROFILE=ticketlite`.
 
-- **Uses ←** the [VPC](vpc.md) and [subnets](subnets.md).
-- **Gives →** internet reach for the [ALB](alb.md) and the tasks (image pull, secrets, logs);
-  isolation for [RDS](rds-postgres.md) and [Valkey](elasticache-valkey.md).
-
-## 7. Our settings and WHY
-
-| Choice | Why |
-| ------ | --- |
-| One shared public table, one shared private table | Both AZs need the same routes; one table each keeps it simple. |
-| Explicit associations | Never rely on the main route table. |
-| No NAT gateway | About $33 a month; nothing private needs the internet today. |
-
-## 8. Trade-offs
-
-- **Pros:** tiny, readable network; private subnets are truly cut off.
-- **Cons:** anything we later put in a private subnet (a worker, a Lambda) has no way to call the
-  internet or AWS APIs until we add NAT or VPC endpoints.
-
-## 9. Alternatives and when to choose them
-
-- **NAT gateway per AZ:** production private subnets that must call out. One per AZ so an AZ
-  failure does not cut the other AZ off.
-- **VPC endpoints:** routes (gateway endpoints for S3 and DynamoDB) or private network cards
-  (interface endpoints) to AWS services without the internet.
-- **Transit gateway:** many VPCs and on-premises networks joined through one hub.
-
-## 10. What breaks, and how we'd notice
-
-- **Missing IGW route:** timeouts on everything that goes out or comes in. Reach problem: nothing
-  in the logs because nothing arrives.
-- **Subnet not associated:** it silently uses the main table; behaviour differs from what the code
-  says.
-
-## 11. Reach / Allowed / Password
-
-Pure **Reach**. A route says a path exists; a security group then says whether a connection may
-use it.
-
-## 12. Cost
-
-Route tables and the internet gateway are free. A NAT gateway would be about $0.045 an hour plus
-per-GB traffic ([docs/17](../../17-infra-ecs-api.md), section 3.16).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A route table tells traffic where to go. The internet gateway is the way out.
-- **Senior:** Every route table has the `local` route for the VPC; the most specific match wins.
-  Our public table adds `0.0.0.0/0 → igw`, which is the only thing that makes those subnets public.
-  The private table has only `local`, and each subnet is explicitly associated.
-- **Lead:** I choose between NAT and VPC endpoints by traffic and cost: endpoints for heavy AWS
-  traffic (ECR, S3, logs), NAT for anything else. One NAT per AZ for resilience, and I would keep
-  the database subnets without any outbound route.
-
-## 14. Follow-up questions interviewers ask
-
-- *Internet gateway vs NAT gateway?* The IGW is two-way for things with public IPs; NAT lets private
-  things start outbound connections only.
-- *What is the main route table?* The VPC's default; any subnet without an association uses it.
-
-## 15. Say it in 30 seconds
-
-"Public subnets use a route table with `0.0.0.0/0` to the internet gateway; private subnets use one
-with only the built-in `local` route. Every subnet is explicitly associated, and we chose no NAT
-gateway, so private subnets have no way out at all."
-
-## 16. Status
-
-✅ built.
+</details>
 
 ## Where it appears in the story
 

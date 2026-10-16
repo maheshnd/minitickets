@@ -1,139 +1,131 @@
-# RDS Postgres: private, single-AZ, subnet group
+# RDS Postgres: the city’s booking vault
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-**RDS** runs a managed Postgres 17 server for us (patching, backups, storage) inside our private
-subnets, reachable only by the api.
+When MiniTickets sells seats, [Postgres](../glossary.md#rds) commits the booking, seat count and outbox together inside our private RDS vault.
 
-## 2. Real-life comparison
-
-A bank vault in the basement with a vault company that maintains it. Only the api's staff badge
-opens the basement corridor, and only with the vault's combination.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    api["api task<br/>api group"] -->|"TLS :5432"| db[("RDS Postgres 17<br/>db.t4g.micro, 20 GB gp3")]
-    db --- sg["db subnet group<br/>private-1, private-2"]
-    net["Internet / laptop"] -.->|"no public IP, no route,<br/>db group allows only api"| db
+    A["minitickets-dev-api / migrate"] -->|"VPC local route; TLS 5432; user minitickets"| D["minitickets-dev-db Postgres 17"]
+    SG["minitickets-dev-db-sg"] -.->|"5432 from minitickets-dev-api-sg only"| D
+    N["minitickets-dev-db-subnets"] -.->|"private-1 + private-2; publiclyAccessible=false"| D
+    S["RDS-managed password secret"] -.->|"execution role GetSecretValue; DB_USER / DB_PASSWORD"| A
+    D -->|"same SQL transaction commit"| B["events + bookings + outbox rows"]
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class D focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rds-postgres#chapter=5&piece=rds).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant A as API createBookingTx
+    participant D as minitickets-dev-db
+    A->>D: BEGIN over verified TLS :5432
+    A->>D: SELECT event FOR UPDATE
+    D-->>A: Current seats, row lock held
+    A->>D: Update seats, insert booking and outbox
+    A->>D: COMMIT
+    D-->>A: All three saved, release lock
+```
+
+## 4. What happens in MiniTickets
+
+1. RDS runs Postgres 17 as `minitickets-dev-db`, `db.t4g.micro`, with 20 GB encrypted gp3 storage.
+2. Its subnet group contains both private subnets; the instance itself is single-AZ.
+3. Only the API security group reaches :5432. The migration task wears that same group.
+4. ECS injects the RDS-managed username/password. Node checks the server certificate.
+5. Postgres is the final seat authority; Redis hints cannot overrule its locked transaction.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** private VPC route plus db guard allowing 5432 from minitickets-dev-api-sg.
+
+**Allowed:** SQL login uses no IAM database authentication; execution role reads its secret first.
+
+**Password:** user `minitickets`, RDS-managed password, verified TLS.
+
+## 6. In our code
+
+`infra/src/data/postgres.ts` → `createPostgres`.
+
+`apps/api/src/config/database.ts` → `DatabaseEnvSchema`; `apps/api/src/db/client.ts` → `pool`.
+
+`apps/api/src/queries/bookings.ts` → `createBookingTx`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → RDS → Databases → `minitickets-dev-db` → Connectivity & security / Configuration / Maintenance & backups. See private endpoint, attached guards, encryption and single-AZ setting. These settings are from code; live state not checked.
+
+## 8. Good / Bad
+
+**Good:** Transactions protect seat truth. AWS handles database host maintenance.
+
+**Bad:** One AZ can fail. Dev deletion settings can discard all data.
+
+## 9. Other choices
+
+- Multi-AZ RDS: pick it when a lost AZ must fail over.
+- Aurora PostgreSQL: pick it when its scaling and availability model justify the cost.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Security groups](security-groups.md) | Guard | 5432 from minitickets-dev-api-sg | RDS → Connectivity & security → VPC security groups |
+| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | RDS → Configuration → Master credentials |
+| [Outbox](outbox.md) | In/out ↔ | Same DB transaction | RDS → Monitoring; inspect SQL inside VPC |
+
+## 11. When it breaks
+
+Timeout → guards/routes and pool → restore intended private path.
+
+Password failure → secret rotation/task age → refresh task credentials.
+
+Missing relation → migration logs → apply the release’s migration through the authorized workflow.
+
+## 12. Say it in 30 seconds
+
+“RDS is our booking vault: private Postgres 17 with verified TLS. Only the API guard reaches it, including our migration task. A transaction locks the event row and saves seats, booking and outbox together. It is single-AZ with short backups for dev; that is not a production recovery plan.”
+
+## 13. Likely follow-ups
+
+- Two subnets means two databases? No; placement choices are not a standby.
+- Why not trust Redis seats? Only the database transaction commits the sale.
+
+## 14. Remember it
+
+The vault decides who owns the seat; the noticeboard only suggests availability.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/data/postgres.ts` · `createPostgres`: the subnet group and the database instance.
 
-Step by step:
+The database name and master username are `minitickets`. `manageMasterUserPassword: true` lets RDS manage the secret. We return its ARN, endpoint and port, never its plaintext password. The app currently uses the master user: a separate app user with fewer SQL rights is a production improvement.
 
-1. `subnetGroup`: only the private subnets, in 2 AZs (RDS demands 2 even for a single-AZ database).
-2. `engine: "postgres"`, `engineVersion: "17"` (same major as local Docker `postgres:17.6`; AWS
-   picks the newest 17.x).
-3. `instanceClass: "db.t4g.micro"`, `allocatedStorage: 20`, `storageType: "gp3"`.
-4. `storageEncrypted: true` ([encryption-at-rest](encryption-at-rest.md)).
-5. `dbName` and `username`: `minitickets`; `manageMasterUserPassword: true`
-   ([rds-managed-password](rds-managed-password.md)).
-6. `vpcSecurityGroupIds: [dbSgId]`, `publiclyAccessible: false`, `port: 5432`.
-7. `multiAz: false`, and the dev-only settings: `deletionProtection: false`,
-   `skipFinalSnapshot: true`, `backupRetentionPeriod: 1`, `applyImmediately: true`
-   ([backups-dr](backups-dr.md)).
-8. Returns `address`, `port` and `masterSecretArn`, never the password.
+`publiclyAccessible: false` supplies no public address. A subnet group in at least two availability zones gives RDS placement choices even with `multiAz: false`; it does not create a second running copy. `db.t4g.micro` is a small burstable ARM instance, so sustained CPU use can exhaust credits.
 
-The api connects with TLS and verifies the certificate ([tls-in-transit](tls-in-transit.md));
-Postgres 15+ on RDS refuses non-TLS connections by default (`rds.force_ssl = 1`).
+Dev values are `backupRetentionPeriod: 1`, `deletionProtection: false`, `skipFinalSnapshot: true` and `applyImmediately: true`. Production needs deliberate retention, deletion protection, a final snapshot and restore drills. Old $14/month arithmetic was a historical estimate, not a checked price. Storage and instance runtime are both billed.
 
-## 5. See it yourself
+AWS DB settings use `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`; local/CI use `DATABASE_URL`. The Zod transform rejects incomplete or mixed forms. AWS sets `ssl.rejectUnauthorized: true`, using the RDS CA installed in the API image; never bypass certificate checks to hide a configuration error. Pool maximum is 10 per API task, connection/acquisition budget 2000 ms, SQL statement budget 5000 ms including lock waits.
 
-```bash
-aws rds describe-db-instances --profile ticketlite --db-instance-identifier minitickets-dev-db \
-  --query "DBInstances[0].[PubliclyAccessible,StorageEncrypted,MultiAZ,EngineVersion,DBInstanceClass]"
-dig +short $(cd infra && pulumi stack output dbEndpoint)      # a private 10.0.x.x address
-```
+ECS resolves the secret at startup. Rotation can leave a long-running task holding an old password; automatic runtime secret refresh is not claimed. Multi-AZ, replicas, RDS Proxy and stronger recovery targets remain choices requiring separate work.
 
-**Break it on purpose (scratch branch):** remove the `db-in-5432` rule. New connections time out;
-`/ready` returns 503 via ECS Exec.
+[Official RDS encryption console check](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.html).
 
-## 6. How it connects
-
-- **Uses ←** [private subnets](subnets.md), the db [security group](security-groups.md).
-- **Gives →** `DB_HOST`/`DB_PORT` and the secret ARN to the [task definition](task-definition.md); the
-  api's `users` table (Phase 3 `drizzle-schema`, `migrations` cards).
-
-## 7. Our settings and WHY
-
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Class | `db.t4g.micro` | Smallest Graviton class; burstable CPU is fine for dev. |
-| Storage | 20 GB gp3 | Minimum size; gp3 is cheaper and faster than gp2. |
-| Private | yes | The database must never be reachable from the internet. |
-| Multi-AZ | off | Doubles cost; dev can be down for a while. |
-| Dev teardown settings | on | The data switch deletes it cheaply. Production flips all four. |
-
-## 8. Trade-offs
-
-- **Pros:** no server work; encryption, backups and patching built in.
-- **Cons:** hourly price whether used or not; single-AZ means an AZ problem is an outage; burstable
-  CPU can run out of credits under steady load.
-
-## 9. Alternatives and when to choose them
-
-- **Aurora PostgreSQL / Aurora Serverless v2:** faster failover, storage that grows by itself,
-  scale-down when idle.
-- **Postgres in a container:** never for real data on AWS.
-- **DynamoDB:** key-value access patterns at huge scale (we need SQL and constraints).
-
-## 10. What breaks, and how we'd notice
-
-| Symptom | Cause |
-| ------- | ----- |
-| Connection timeout | Security group rule missing (Reach) |
-| `password authentication failed` | Wrong or rotated password (Password) |
-| `self-signed certificate in certificate chain` | RDS CA bundle not trusted |
-| `relation "users" does not exist` | Migrations not run (`pnpm infra:migrate`) |
-
-## 11. Reach / Allowed / Password
-
-See [aws-foundations, chapter 3](../aws-foundations.md#3-the-three-questions-reach-allowed-password):
-**Reach** = db group allows 5432 from the api group, private subnets, no public IP. **Allowed** =
-not asked for the SQL connection (no IAM database auth); the execution role read the password
-secret at start. **Password** = user `minitickets` with the RDS-managed password, over verified TLS.
-
-## 12. Cost
-
-About $0.016 an hour for the instance plus $0.003 for 20 GB gp3: roughly $14 a month if left on
-([docs/14](../../14-infra-data.md), section 3.11).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A managed Postgres database in a private network that only our api can reach.
-- **Senior:** Postgres 17 on `db.t4g.micro` in a subnet group of the two private subnets, not
-  publicly accessible, behind a security group that admits only the api group on 5432, encrypted at
-  rest, with an RDS-managed password in Secrets Manager. The api connects over TLS and verifies the
-  RDS CA.
-- **Lead:** For production: Multi-AZ, deletion protection, final snapshot, 7-35 days of
-  point-in-time recovery, a separate least-privilege app user, rotation-safe secret reading or IAM
-  auth, and maybe RDS Proxy once connection counts grow.
-
-## 14. Follow-up questions interviewers ask
-
-- *Why two subnets for one database?* RDS requires two AZs in the subnet group so it can move or
-  fail over.
-- *Can you connect from your laptop?* No, by design; use ECS Exec from inside the VPC.
-
-## 15. Say it in 30 seconds
-
-"Postgres 17 on RDS, smallest Graviton class, in the two private subnets with no public address. Only
-the api's security group can reach 5432, the storage is encrypted, the password is managed by RDS in
-Secrets Manager, and the api connects over verified TLS. Single-AZ and easy teardown, because it's
-dev."
-
-## 16. Status
-
-✅ built for dev. **To make it production-grade:** Multi-AZ, deletion protection, final snapshot,
-longer backups.
+</details>
 
 ## Where it appears in the story
 

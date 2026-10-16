@@ -1,28 +1,120 @@
-# AWS Lambda (serverless functions)
+# Lambda: the city workers called when needed
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Compute · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-Lambda processes bounded queue batches from one arm64 worker image. Email is 256 MB/10 s, tickets 512 MB/30 s, outside the VPC; image cold starts and AWS quotas remain live acceptance.
+An SQS trigger calls MiniTickets' [Lambda](../glossary.md#lambda) worker for waiting jobs; AWS supplies the machine only while the function runs.
 
-## 2. Real-life comparison
-
-A durable work tray keeps the task after the customer leaves; a completed stamp identifies a repeat.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    n0["HTTP long-lived process"] --> n1
-    n1["ECS pool"] --> n2
-    n2["Queue burst"] --> n3
-    n3["Lambda handler"]
+    q["minitickets-dev-jobs"] -->|"SQS event source mapping; batch 10, max concurrency 5"| fn["minitickets-dev-worker"]
+    image["minitickets-dev-worker ECR image"] -->|"repository policy: lambda.amazonaws.com BatchGetImage/GetDownloadUrlForLayer"| fn
+    role["minitickets-dev-worker-role"] -.->|"trust lambda.amazonaws.com; sts:AssumeRole"| fn
+    fn -->|"role: dynamodb:GetItem/PutItem; HTTPS 443"| db["minitickets-dev-processed-jobs"]
+    fn -->|"role: ses:SendEmail; identity/from restriction; HTTPS 443"| ses["SES"]
+    fn -->|"role: logs:CreateLogStream/PutLogEvents"| logs["/minitickets/dev/worker"]
+    fn -->|"role: sqs:ChangeMessageVisibility; failed-record delay"| q
+    classDef focus fill:#fff0b3,stroke:#8a5700,stroke-width:3px
+    class fn focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=aws-lambda#chapter=24&piece=email-lambda).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant Q as minitickets-dev-jobs
+    participant L as Lambda pollers
+    participant W as minitickets-dev-worker
+    participant D as processed-jobs DynamoDB
+    participant S as SES
+    L->>Q: ReceiveMessage with worker role
+    L->>W: handler(batch up to 10)
+    W->>D: GetItem booking job key
+    W->>S: SendEmail if not done
+    W->>D: Conditional PutItem: done
+    W-->>L: batchItemFailures
+    L->>Q: Delete only successful records
+```
+
+## 4. What happens in MiniTickets
+
+1. AWS pollers read `minitickets-dev-jobs` and invoke `lambda.handler`.
+2. The first invocation starts the arm64 container. Later batches may reuse it and its clients.
+3. The email worker gets 256 MB and 10 seconds; it checks completion, sends, then records done.
+4. It reports failed records and adjusts their retry delay.
+5. A separate ticket function uses the same image, `ticket-lambda.handler`, 512 MB and 30 seconds.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** both functions run outside our VPC and call AWS HTTPS APIs on 443.
+
+**Allowed:** each function has one scoped Lambda role; its SQS mapping also uses that role.
+
+**Password:** temporary role credentials; no server password.
+
+## 6. In our code
+
+`infra/src/jobs/worker-lambda.ts` → `createWorkerLambda`; `infra/src/tickets/lambda.ts` → `createTicketLambda`.
+
+`apps/worker/src/lambda.ts` → `handler`; `apps/worker/src/batch.ts` → `handleBatch`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → **Lambda → Functions → minitickets-dev-worker**. The function overview draws its SQS trigger. **Configuration → Triggers / Permissions / VPC** shows mapping, role and no VPC attachment. **Monitor → View CloudWatch logs** opens `/minitickets/dev/worker`.
+
+## 8. Good / Bad
+
+**Good:** no idle worker process; separate limits for email and tickets.
+
+**Bad:** first runs can start slowly; timeouts and account/provider limits still matter.
+
+## 9. Other choices
+
+- Pick ECS for MiniTickets' always-running HTTP API and web.
+- Pick Lambda for short queue jobs with no idle work.
+- Pick EKS when Kubernetes control justifies operating it.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [SQS](sqs.md) | in | Mapping + role receive/delete | Lambda → Configuration → Triggers |
+| [DynamoDB](dynamodb.md) | out | Scoped table actions | IAM → worker-role → Permissions |
+| [SES](ses-email.md) | out | `ses:SendEmail` + sender | IAM → worker-role → Permissions |
+| [ECR](ecr.md) | in | Lambda repository policy | ECR → worker → Permissions |
+
+## 11. When it breaks
+
+- Timeout → logs' REPORT duration and AWS calls → bound work or calls before raising the budget.
+- Throttled → mapping concurrency and account quota → match limits to actual capacity.
+
+## 12. Say it in 30 seconds
+
+“MiniTickets keeps web and API on ECS, but calls Lambda workers when queue work arrives. AWS reads SQS, invokes a bounded batch and deletes successful records. Our workers stay outside the VPC because their messages contain all required facts and they only call AWS APIs. Startup time, retries and quotas still need measurement.”
+
+## 13. Likely follow-ups
+
+**Does a public subnet give Lambda a public IP?** No.
+
+**Are container clients rebuilt per job?** No; warm processes reuse them.
+
+## 14. Remember it
+
+Call in a worker for a shift; do not keep an empty workshop running.
+
+## 15. More detail
+
+<details>
+<summary>Runtime, retry and deployment details</summary>
 
 - Anchor: `apps/worker/Dockerfile` — `as`; follow the numbered comments at this boundary.
 - Anchor: `apps/worker/src/lambda.ts` — `that`; follow the numbered comments at this boundary.
@@ -30,61 +122,12 @@ flowchart LR
 - Anchor: `infra/src/jobs/worker-lambda.ts` — `createWorkerLambda`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/registry.ts` — `is`; follow the numbered comments at this boundary.
 
-`infra/src/compute/service.ts` runs Fargate; `infra/src/jobs/worker-lambda.ts` has no vpcConfig and 10 s timeout; ticket Lambda has its own larger budget. Lambdas use container images already published by CI. `pnpm demo:tickets` validates handlers locally, not AWS cold starts. EKS/NAT gateways are not built.
+Both functions use the one worker ECR image built for `linux/arm64`; an architecture mismatch can fail startup. The email Docker image defaults to `lambda.handler`; the ticket function overrides its command. Email queue mapping uses batch size 10 and maximum concurrency 5; tickets use 1 and 2. Both enable `ReportBatchItemFailures`. Email has no reserved concurrency by default (`-1`); comments record a historical low account quota, not a current verified limit. Check Service Quotas before making reservations. Matching poller demand to available concurrency avoids consuming receives on throttled calls.
 
-## 5. See it yourself
+A cold start runs top-level code once; warm processes reuse SDK connections. The email clients set 1-second connect and 3-second request timeouts; Lambda's overall timeout still cuts off the batch. Logs are JSON stdout in our seven-day groups, not an unbounded default `/aws/lambda/*` group. Ticket logs use `/minitickets/dev/tickets`.
 
-Run `pnpm demo:tickets` and inspect the asserted outcome described above.
-
-Failure thought experiment: Is a Lambda in a public subnet publicly addressed? No. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#compute-choices) and [explorer tour](../guides/infra-explorer.html?tour=booking).
-
-## 7. Our settings and WHY
-
-Lambda processes bounded queue batches from one arm64 worker image. Email is 256 MB/10 s, tickets 512 MB/30 s, outside the VPC; image cold starts and AWS quotas remain live acceptance. Match runtime lifecycle and network needs to workload.
-
-## 8. Trade-offs
-
-VPC Lambda for RDS requires routing/endpoints or NAT for outside services. NAT has fixed and data charges; endpoints also cost. Container image cold start differs from zip, so measure.
-
-## 9. Alternatives and when to choose them
-
-10x: concurrency/quota and SES limits. 100x: provisioned concurrency only for measured latency needs, reserved concurrency for protection.
-
-## 10. What breaks and how we notice
-
-Is a Lambda in a public subnet publicly addressed? No.
-
-## 11. Reach / Allowed / Password
-
-Prove the network path separately from the scoped IAM action and the runtime credential. [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached) shows trust, permissions and attachment. No AWS endpoint needs an inbound SG simply because a non-VPC Lambda calls it.
-
-## 12. Cost
-
-Existing resource/usage costs are detailed in the corresponding infra guide chapter. No new resources were deployed by this documentation change. Historical phase costs are illustrative snapshots, not a current quote; inspect billing and current regional pricing before a capacity decision.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Lambda processes bounded queue batches from one arm64 worker image.
-- **Senior:** ECS fits long-running API/web processes and predictable pools. Lambda fits bursty queue handlers with bounded work. EKS provides Kubernetes control at substantial operational cost. Our workers run outside the VPC because they only call managed public AWS APIs; putting a worker in a public subnet does not give it a public IP or automatic internet.
-- **Lead:** 10x: concurrency/quota and SES limits. 100x: provisioned concurrency only for measured latency needs, reserved concurrency for protection.
-
-## 14. Follow-up questions with answers
-
-Is a Lambda in a public subnet publicly addressed? No.
-
-Which runtime currently owns the HTTP API? **ECS Fargate.**
-
-## 15. Say it in 30 seconds
-
-ECS fits long-running API/web processes and predictable pools. Lambda fits bursty queue handlers with bounded work. EKS provides Kubernetes control at substantial operational cost. Our workers run outside the VPC because they only call managed public AWS APIs; putting a worker in a public subnet does not give it a public IP or automatic internet.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: concurrency/quota and SES limits. 100x: provisioned concurrency only for measured latency needs, reserved concurrency for protection.
+No `vpcConfig`, NAT gateway or paid interface endpoints are added. Moving a worker inside private networking would require deliberate routes/endpoints for the AWS APIs it calls. Provisioned concurrency is not built; consider it only after measuring startup latency. `pnpm demo:tickets` checks local handlers, not AWS cold starts or quotas. EKS is not built. [Compute-choice scenario](../guides/interview-scenarios.md#compute-choices). Usage/storage costs remain; old prices are snapshots. Live AWS acceptance is separate.
+</details>
 
 ## Where it appears in the story
 

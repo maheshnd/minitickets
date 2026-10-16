@@ -1,131 +1,134 @@
-# ElastiCache Valkey: TLS + auth token
+# Valkey: the city’s fast coat check
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
-
 Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md) (sections 3.7, 3.8)
+<!-- interview-card: v1 -->
 
 ## 1. In one line
 
-**ElastiCache** runs a managed **Valkey** 8.2 node (an open-source fork of Redis) in our private
-subnets; the api keeps login sessions there, over TLS with an auth token.
+When a visitor returns, MiniTickets checks their [session](../glossary.md#valkey), its saved login record, in private [Valkey](../glossary.md#v), our Redis-compatible memory store.
 
-## 2. Real-life comparison
-
-A coat check next to the vault: fast, small, short-lived. You get a ticket (session id), and the
-coat check only opens for staff who know its password.
-
-## 3. Picture it
+## 2. Where it sits
 
 ```mermaid
 flowchart LR
-    api["api task"] -->|"rediss:// TLS :6379<br/>+ auth token"| vk[("Valkey 8.2<br/>cache.t4g.micro, 1 node")]
-    vk --- sg["cache subnet group<br/>private-1, private-2"]
-    sec["redis-url secret"] -.->|"REDIS_URL at start"| api
+    A["minitickets-dev-api"] -->|"VPC local route; rediss TLS 6379 + auth token"| V["minitickets-dev-valkey"]
+    SG["minitickets-dev-redis-sg"] -.->|"6379 from minitickets-dev-api-sg only"| V
+    S["minitickets/dev/redis-url secret"] -.->|"execution role GetSecretValue; REDIS_URL at startup"| A
+    V -->|"Redis keys + expiry; Lua atomic commands"| K["sessions / list cache / rate buckets / seat hints"]
+    D["Postgres booking vault"] -->|"reconciliation reads confirmed seatsLeft"| A
+    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
+    class V focus
 ```
 
-## 4. Where in our code
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=elasticache-valkey#chapter=5&piece=valkey).
+
+## 3. How it works
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API session query
+    participant V as minitickets-dev-valkey
+    B->>A: Request with opaque session cookie
+    A->>V: GET session:hash of token
+    V-->>A: Saved user id or missing
+    A->>V: ZSCORE user session index for token hash
+    V-->>A: Membership or missing
+    alt Both record and membership exist
+        A-->>B: Continue as saved user
+    else Missing or invalid
+        A-->>B: Treat visitor as logged out
+    end
+```
+
+## 4. What happens in MiniTickets
+
+1. `createCache` creates one Valkey 8.2 node, `cache.t4g.micro`, private on :6379.
+2. ECS injects `REDIS_URL`, containing the TLS address and a 32-character token.
+3. Sessions last seven days; a per-user index supports rotation, device limits and revocation.
+4. Legacy event lists, shared rate buckets and advisory inventory also use Redis commands.
+5. Postgres still decides seat ownership. Current `events.search` bypasses the legacy list cache.
+
+## 5. Reach / Allowed / Password
+
+**Reach:** private route; redis guard allows 6379 from minitickets-dev-api-sg only.
+
+**Allowed:** no IAM check on Redis commands; execution role reads the URL secret first.
+
+**Password:** auth token inside `rediss://`, with TLS.
+
+## 6. In our code
+
+`infra/src/data/cache.ts` → `createCache`.
+
+`apps/api/src/queries/sessions.ts` → `create`, `get`, `revokeAll`.
+
+`apps/api/src/queries/inventory.ts` → `reserve`, `reconcile`.
+
+
+## 7. In the AWS console
+
+`us-east-1` → ElastiCache → Valkey caches → `minitickets-dev-valkey` → Configuration / Connectivity and security. Check one primary, TLS, authentication and subnet group. Console labels can vary with cache view; live state was not checked.
+
+## 8. Good / Bad
+
+**Good:** Fast shared login checks. Atomic scripts coordinate work across API copies.
+
+**Bad:** One node has no failover. Losing session records forces fresh login.
+
+## 9. Other choices
+
+- Replica plus failover: pick it when one node failure must not stop login.
+- DynamoDB sessions: pick them when per-request storage fits better than a running node.
+
+## 10. Connected to
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Sessions](sessions-vs-jwt.md) | In/out ↔ | TLS + auth token | ElastiCache → cache → Configuration |
+| [Cache-aside](cache-aside.md) | In/out ↔ | API Redis client and bounded keys | ElastiCache → Monitoring |
+| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | Secrets Manager → redis-url → Permissions |
+
+## 11. When it breaks
+
+Timeout → guard/routes/TLS URL → restore private 6379 path.
+
+`WRONGPASS` → injected secret age → correct credentials and replace affected task.
+
+Login disappears → eviction/restart/index expiry → inspect memory and session logs.
+
+## 12. Say it in 30 seconds
+
+“Valkey is our fast shared coat check. It holds login records, legacy list caches and advisory admission state. The API reaches one private TLS-only node with a secret token. Lua makes related changes atomic. It is disposable support state: Postgres remains seat truth, and missing session membership fails closed.”
+
+## 13. Likely follow-ups
+
+- Why Valkey? It speaks the Redis protocol our client uses.
+- Does losing a cache risk overselling? No; the locked Postgres transaction decides.
+
+## 14. Remember it
+
+The coat-check ticket proves a login; it never owns a theatre seat.
+
+## 15. More detail
+
+<details>
+<summary>Settings, limits and deeper interview notes</summary>
 
 - Anchor: `infra/src/data/cache.ts` · `createCache`: auth token, subnet group and the replication group.
 
-Step by step:
+`createCache` creates a replication group with `engine: "valkey"`, `engineVersion: "8.2"`, `nodeType: "cache.t4g.micro"`, `numCacheClusters: 1`, `automaticFailoverEnabled: false`, `multiAzEnabled: false`, `port: 6379`. Its subnet group uses the two private subnets. A subnet group across zones is not a second node.
 
-1. `authToken`: `random.RandomPassword`, 32 letters and digits (safe inside a URL), stored as a
-   Pulumi secret.
-2. `subnetGroup`: private subnets only, 2 AZs.
-3. `aws.elasticache.ReplicationGroup`: `engine: "valkey"`, `engineVersion: "8.2"`,
-   `nodeType: "cache.t4g.micro"`, `numCacheClusters: 1`, no automatic failover, no Multi-AZ, port 6379.
-   A replication group (not a plain cache cluster) is the kind that supports TLS + auth token.
-4. `securityGroupIds: [redisSgId]`.
-5. `transitEncryptionEnabled: true`, `atRestEncryptionEnabled: true`, `authToken`.
-6. `snapshotRetentionLimit: 0` (no backups: sessions can be recreated by logging in).
-7. `secrets.ts` stores `rediss://:<token>@<primary endpoint>:6379` as the redis-url secret
-   ([secrets-manager](secrets-manager.md)).
+Both transit and at-rest encryption are enabled. `random.RandomPassword` creates 32 letters/digits so the token safely fits inside the URL. Secrets Manager stores `rediss://:<token>@<primary endpoint>:6379`; neither the token nor full URL should be printed. A replication-group resource supports primary/replica operation; this setup chooses one primary. Current [AWS TLS documentation](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/in-transit-encryption.html) covers supported encryption changes; do not assume every change requires replacement.
 
-The api code is unchanged from local Redis 7.4: Valkey speaks the same protocol, and we only use
-GET, SET with expiry and DEL.
+`snapshotRetentionLimit: 0` and `applyImmediately: true` are dev choices. Sessions are replaceable by login; public list caches can rebuild. A cache outage does not imply every key was lost, but inaccessible login authority cannot be assumed valid. Add a replica/failover, memory/eviction alarms and an explicit session-loss policy before a stronger availability claim.
 
-## 5. See it yourself
+The app now uses sorted sets, hashes, Lua scripts and scans as well as GET/SET/DEL. Session creation and index updates share a Lua operation, cap 20 devices and replace the previous token. Reads require both the saved session and index membership. Rate buckets and inventory use separate scripts; Redis admission is advisory and is repaired against Postgres.
 
-```bash
-aws elasticache describe-replication-groups --profile ticketlite --replication-group-id minitickets-dev-valkey \
-  --query "ReplicationGroups[0].[TransitEncryptionEnabled,AtRestEncryptionEnabled,AuthTokenEnabled,Status]"
-```
+Legacy list soft freshness is 30–33 s and hard expiry 300 s. Cache failures have bounded behavior; authorization and seat truth must not rely on stale public lists. ElastiCache Serverless and JWTs are other designs, with different cost and revocation choices. Historical $9.30/month and percentage savings were estimates, not checked prices.
 
-Expect `true, true, true, available`. To prove the session store works: log in on `appUrl`, then
-`/ready` via ECS Exec returns 200.
-
-**Break it on purpose (thought experiment):** put `redis://` (no `s`) in the secret. The server only
-accepts TLS, so the connection fails and `/ready` returns 503.
-
-## 6. How it connects
-
-- **Uses ←** [private subnets](subnets.md), the redis [security group](security-groups.md).
-- **Gives →** the session store behind login (Phase 3 `sessions-vs-jwt` card); its endpoint and token
-  to [Secrets Manager](secrets-manager.md).
-
-## 7. Our settings and WHY
-
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Engine | Valkey 8.2 | Redis-compatible and about 20% cheaper than Redis on ElastiCache. |
-| Size | 1 × `cache.t4g.micro` | Plenty for sessions in dev. |
-| TLS + token | on | Session ids never cross the network in plain text; only callers with the token can run commands. |
-| Snapshots | 0 | Sessions are not the source of truth. |
-
-## 8. Trade-offs
-
-- **Pros:** fast, managed, encrypted, private.
-- **Cons:** one node: if it fails, every user is logged out until it comes back. TLS and at-rest
-  encryption cannot be turned on later without rebuilding.
-
-## 9. Alternatives and when to choose them
-
-- **2+ nodes in 2 AZs with automatic failover:** production.
-- **ElastiCache Serverless:** spiky load, no sizing.
-- **DynamoDB with TTL** for sessions: no always-on node, pay per request.
-- **Stateless JWTs:** no session store at all, but no instant logout.
-
-## 10. What breaks, and how we'd notice
-
-| Symptom | Cause |
-| ------- | ----- |
-| Hang / timeout | Security group or `redis://` instead of `rediss://` |
-| `WRONGPASS` / `NOAUTH` | Wrong token in the secret |
-| Everyone logged out | The node restarted or the data layer was switched off |
-
-## 11. Reach / Allowed / Password
-
-**Reach:** redis group allows 6379 only from the api group; private subnets. **Allowed:** no IAM on
-the connection. **Password:** the auth token inside the `rediss://` URL, over TLS.
-
-## 12. Cost
-
-About $0.013 an hour, roughly $9.30 a month if left on ([docs/14](../../14-infra-data.md), section 3.11).
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A managed Redis-compatible cache that stores our login sessions.
-- **Senior:** A single-node Valkey 8.2 replication group on `cache.t4g.micro` in the private subnets,
-  TLS in transit, encryption at rest and an auth token. The full `rediss://` URL lives in Secrets
-  Manager and is injected as `REDIS_URL`. The api code is the same as for local Redis.
-- **Lead:** Sessions make the api stateless, which moves availability to the cache. For production
-  I'd run a replica in a second AZ with automatic failover, alarm on memory and evictions, and decide
-  whether losing sessions on failover is acceptable.
-
-## 14. Follow-up questions interviewers ask
-
-- *Why Valkey and not Redis?* Same protocol, open-source licence, cheaper on ElastiCache.
-- *Why no backups?* Sessions are disposable; users can log in again.
-
-## 15. Say it in 30 seconds
-
-"Sessions live in a single Valkey 8.2 node on ElastiCache, private, TLS-only, with an auth token and
-at-rest encryption. The api gets a `rediss://` URL from Secrets Manager. It's one node in dev, so a
-failure logs everyone out; production needs a replica with failover."
-
-## 16. Status
-
-✅ built for dev. **To make it production-grade:** replica + automatic failover across AZs.
+</details>
 
 ## Where it appears in the story
 
