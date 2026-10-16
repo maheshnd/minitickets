@@ -20,6 +20,7 @@
     "app:up": "docker compose --profile app up -d --build --wait",
     "app:down": "docker compose --profile app rm --stop --force api web migrate",
     "test:e2e": "pnpm --filter @minitickets/web test:e2e",
+    "test:e2e:prod": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=apps/api/.env scripts/test-e2e-prod.ts",
     "lint": "eslint .",
     "test": "vitest run",
     "docs:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-concepts.ts",

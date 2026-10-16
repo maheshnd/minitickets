@@ -25,9 +25,20 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · docs(handbook): complete the learning path and pending catch-up (D3)
+## 2026-10-15 · chore(e2e): add production runner and refresh code tours
 
 Commit: filled in by the next handbook commit
+
+Why: make the full production browser suite repeatable without changing the owner's running dev servers, and restore the generated-source freshness gate after the telemetry fix.
+
+- `PENDING.md`: record the runner, local API/admin opt-in, measured 43-pass/7-skip run and occupied-port/failure/signal cleanup checks.
+- `generated/code-tours.json`: regenerate source snippets and hashes for the current telemetry, hydration and e2e code.
+- `guides/code-tours.html`: refresh the embedded generated source data to match the JSON artifact.
+- `guides/infra-explorer.html`: refresh its embedded generated source data; no infrastructure or authored tour layout changes.
+
+## 2026-10-15 · docs(handbook): complete the learning path and pending catch-up (D3)
+
+Commit: 4d8a279
 
 Why: close the reduced series with an ordered learning path and current teaching material, while preserving measured history and explicit live-acceptance limits.
 

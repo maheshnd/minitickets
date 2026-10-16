@@ -10,6 +10,9 @@ test-results
 playwright-report
 dist
 
+# Disposable web source/build copies used by test:e2e:prod.
+apps/.e2e-prod-*/
+
 # Written by pnpm infra:graph
 infra/deps.dot
 

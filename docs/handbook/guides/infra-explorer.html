@@ -10136,7 +10136,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
 <script type="application/json" id="generated-code">
 {
   "version": 1,
-  "sourceHash": "a27acc43af9cdf5583de34c18ad045c49d5c4822019e07ff3753ba97dd77fad2",
+  "sourceHash": "4b12a97acade09e4e9cc08e50e37426f877a34f5afe98e0c3b95784686873991",
   "snippets": [
     {
       "id": "least-privilege:.github/workflows/ci.yml:8",
@@ -11324,7 +11324,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "line": 46,
       "endLine": 62,
       "symbol": "eventsCalls",
-      "code": "\n// @concept: hydration\ntest(\"the browser makes no events.search request: hydration reuses the server's data\", async ({ page }) => {\n  // 1. Record every request the BROWSER sends. (The web server's own call to the API happens on\n  //    the server, so Playwright never sees it.) The tRPC client batches, so a browser fetch would\n  //    show up as /trpc/events.search or /trpc/auth.me,events.search: matching \"events.search\" catches both.\n  const eventsCalls: string[] = [];\n  page.on(\"request\", (request) => {\n    if (request.url().includes(\"events.search\")) eventsCalls.push(request.url());\n  });\n\n  // 2. Load the page and wait for the header's auth.me call. It is sent by a query after React has\n  //    hydrated, so when it arrives every query on the page has had its chance to fetch.\n  const authMe = page.waitForResponse((response) => response.url().includes(\"auth.me\"));\n  await page.goto(\"/events\");\n  await authMe;\n  await page.waitForLoadState(\"networkidle\");"
+      "code": "\n// @concept: hydration\ntest(\"the browser makes no events.search request: hydration reuses the server's data\", async ({ page }) => {\n  // 1. Record every request the BROWSER sends. (The web server's own call to the API happens on\n  //    the server, so Playwright never sees it.) The tRPC client batches, so a browser fetch would\n  //    show up as /trpc/events.search or /trpc/auth.me,events.search: matching \"events.search\" catches both.\n  const eventsCalls: string[] = [];\n  page.on(\"request\", (request) => {\n    if (request.url().includes(\"events.search\")) eventsCalls.push(request.url());\n  });\n\n  // 2. Wait for both the header's auth query and the streamed list's own hydration marker.\n  //    Server-rendered headings alone do not prove that the list is interactive yet.\n  const authMe = page.waitForResponse((response) => response.url().includes(\"auth.me\"));\n  await page.goto(\"/events\");\n  await authMe;\n  await expect(page.getByRole(\"region\", { name: \"Search events\", exact: true })).toHaveAttribute(\"data-hydrated\", \"true\");"
     },
     {
       "id": "e2e-tests:apps/web/e2e/login.spec.ts:3",
@@ -11660,13 +11660,13 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "code": "// @concept: streaming-suspense\n// Grey placeholder cards, so the page does not jump when the real ones arrive.\n// Used in two places: the \u003cSuspense> fallback in app/events/page.tsx (while the server is still\n// fetching) and EventList's loading state (when the browser has to fetch by itself).\n// No \"use client\": it has no state, so it works as a Server Component too.\nexport function EventListSkeleton() {\n  return (\n    \u003cul aria-label=\"Loading events\" aria-busy=\"true\" className=\"space-y-4\">\n      {[0, 1, 2].map((i) => (\n        \u003cli key={i} className=\"h-28 animate-pulse rounded-lg border border-gray-200 bg-gray-200\" />\n      ))}\n    \u003c/ul>\n  );\n}\n"
     },
     {
-      "id": "ui-error-handling:apps/web/src/features/events/components/event-list.tsx:11",
+      "id": "ui-error-handling:apps/web/src/features/events/components/event-list.tsx:16",
       "concept": "ui-error-handling",
       "file": "apps/web/src/features/events/components/event-list.tsx",
-      "line": 10,
-      "endLine": 26,
+      "line": 15,
+      "endLine": 31,
       "symbol": "EventList",
-      "code": "\n// @concept: ui-error-handling\nexport function EventList({ input, filtered }: { input: ListEventsInput; filtered: boolean }) {\n  const [text, setText] = useState(\"\");\n  const events = useEventSearch(input, text);\n  const items = events.data?.pages.flatMap(page => page.items) ?? [];\n  // 1. Previous results remain visible during a new search, but cannot load pages of the old key.\n  const busy = events.isFetching || events.typing;\n  function more() {\n    if (events.hasNextPage && !busy && !events.isPlaceholderData) void events.fetchNextPage();\n  }\n  return (\n    \u003csection aria-label=\"Search events\" className=\"space-y-4\">\n      \u003cInput id=\"event-search\" label=\"Search title or venue\" maxLength={200} value={text}\n        onChange={event => setText(event.target.value)} />\n      \u003cp role=\"status\" className=\"text-sm text-gray-600\">{busy ? \"Updating events…\" : `${items.length} events loaded`}\u003c/p>\n      {events.isPending ? \u003cEventListSkeleton /> : null}"
+      "code": "\n// @concept: ui-error-handling\nexport function EventList({ input, filtered }: { input: ListEventsInput; filtered: boolean }) {\n  const hydrated = useSyncExternalStore(subscribe, inBrowser, onServer);\n  const [text, setText] = useState(\"\");\n  const events = useEventSearch(input, text);\n  const items = events.data?.pages.flatMap(page => page.items) ?? [];\n  // 2. Previous results remain visible during a new search, but cannot load pages of the old key.\n  const busy = events.isFetching || events.typing;\n  function more() {\n    if (events.hasNextPage && !busy && !events.isPlaceholderData) void events.fetchNextPage();\n  }\n  return (\n    \u003csection aria-label=\"Search events\" data-hydrated={hydrated} className=\"space-y-4\">\n      \u003cInput id=\"event-search\" label=\"Search title or venue\" maxLength={200} value={text}\n        onChange={event => setText(event.target.value)} />\n      \u003cp role=\"status\" className=\"text-sm text-gray-600\">{busy ? \"Updating events…\" : `${items.length} events loaded`}\u003c/p>"
     },
     {
       "id": "virtualization:apps/web/src/features/events/components/virtual-event-list.tsx:11",
@@ -11765,7 +11765,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "line": 3,
       "endLine": 19,
       "symbol": "report",
-      "code": "\n// @concept: web-vitals\nfunction report(metric: { name: string; value: number; id: string; rating: string }) {\n  // 1. Strip ids/query strings before sending, so private URLs never enter telemetry logs.\n  const path = window.location.pathname;\n  const route = /^\\/events\\/[^/]+$/.test(path) ? \"/events/[id]\" : path;\n  const parsed = WebVitalInput.safeParse({ name: metric.name, value: metric.value, id: metric.id,\n    rating: metric.rating, route: WebVitalInput.shape.route.safeParse(route).success ? route : \"/other\" });\n  if (!parsed.success) return;\n  // 2. Keep a stable callback and use keepalive for navigation/unload. No cookies, retries or user ids.\n  void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? \"\"}/trpc/telemetry.report`, {\n    method: \"POST\", headers: { \"content-type\": \"application/json\" }, body: JSON.stringify(parsed.data),\n    credentials: \"omit\", keepalive: true,\n  }).catch(() => {});\n}\nexport function useWebVitals() { useReportWebVitals(report); }\n"
+      "code": "\n// @concept: web-vitals\nfunction report(metric: { name: string; value: number; id: string; rating: string }) {\n  // 1. Strip ids/query strings before sending, so private URLs never enter telemetry logs.\n  const path = window.location.pathname;\n  const route = /^\\/events\\/[^/]+$/.test(path) ? \"/events/[id]\" : path;\n  const parsed = WebVitalInput.safeParse({ name: metric.name, value: metric.value, id: metric.id,\n    rating: metric.rating, route: WebVitalInput.shape.route.safeParse(route).success ? route : \"/other\" });\n  if (!parsed.success) return;\n  // 2. Keep a stable callback and use keepalive for navigation/unload. No cookies, retries or user ids.\n  void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? \"\"}/trpc/telemetry.report`, {\n    method: \"POST\", headers: { \"content-type\": \"application/json\" }, body: JSON.stringify(parsed.data),\n    credentials: \"omit\", keepalive: true,\n  }).then(response => {\n    // 3. Drain the small acknowledgement: an unread keepalive body can leave Chromium's request open.\n    return response.text();\n  }).catch(() => {});"
     },
     {
       "id": "csp:apps/web/src/lib/security-policy.ts:3",

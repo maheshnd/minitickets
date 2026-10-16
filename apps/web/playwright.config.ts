@@ -19,7 +19,8 @@ export default defineConfig({
   // 3. In CI only: start the API and the web app, and wait until each answers.
   //    Locally we do NOT start anything: the tests use the servers you already run with
   //    `pnpm dev`, so they never touch servers they did not start.
-  webServer: isCI
+  // test:e2e:prod already owns its servers, even when called from a CI shell.
+  webServer: isCI && process.env.E2E_LOCAL_API !== "1"
     ? [
         {
           // 3a. The API, read from the process env (set in the workflow). /health answers when it is up.
