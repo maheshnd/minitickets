@@ -13,6 +13,9 @@ function report(metric: { name: string; value: number; id: string; rating: strin
   void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/trpc/telemetry.report`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(parsed.data),
     credentials: "omit", keepalive: true,
+  }).then(response => {
+    // 3. Drain the small acknowledgement: an unread keepalive body can leave Chromium's request open.
+    return response.text();
   }).catch(() => {});
 }
 export function useWebVitals() { useReportWebVitals(report); }

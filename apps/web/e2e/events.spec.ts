@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Request } from "@playwright/test";
 
 // These titles come from the seed (apps/api/src/db/seed.ts): run `pnpm --filter @minitickets/api db:seed` first.
 test("/events shows upcoming seeded events, not past ones, and the sold out badge", async ({ page }) => {
@@ -54,16 +54,41 @@ test("the browser makes no events.search request: hydration reuses the server's 
     if (request.url().includes("events.search")) eventsCalls.push(request.url());
   });
 
-  // 2. Load the page and wait for the header's auth.me call. It is sent by a query after React has
-  //    hydrated, so when it arrives every query on the page has had its chance to fetch.
+  // 2. Wait for both the header's auth query and the streamed list's own hydration marker.
+  //    Server-rendered headings alone do not prove that the list is interactive yet.
   const authMe = page.waitForResponse((response) => response.url().includes("auth.me"));
   await page.goto("/events");
   await authMe;
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("region", { name: "Search events", exact: true })).toHaveAttribute("data-hydrated", "true");
 
   // 3. The events are on screen, yet the browser never asked the API for them.
   await expect(page.getByRole("main").getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
   expect(eventsCalls).toEqual([]);
+});
+
+test("/events completes its API requests and stays quiet after load", async ({ page }) => {
+  // 1. Track app traffic only: HMR and static assets do not indicate an events/telemetry loop.
+  const calls: string[] = [];
+  const pending = new Map<Request, string>();
+  page.on("request", request => {
+    if (!new URL(request.url()).pathname.startsWith("/trpc/")) return;
+    calls.push(request.url());
+    pending.set(request, request.url());
+  });
+  page.on("requestfinished", request => { pending.delete(request); });
+  page.on("requestfailed", request => { pending.delete(request); });
+  const metric = page.waitForResponse(response => response.url().includes("telemetry.report") && response.status() === 200);
+  await page.goto("/events");
+  await expect(page.getByRole("region", { name: "Search events", exact: true })).toHaveAttribute("data-hydrated", "true");
+  await metric;
+
+  // 2. Headers are insufficient: unread keepalive response bodies used to stay pending forever.
+  await expect.poll(() => [...pending.values()]).toEqual([]);
+  const initialCalls = [...calls];
+  // 3. This observation window deliberately has no interactions; fail on polling or list loops.
+  await page.waitForTimeout(15_000);
+  expect(calls).toEqual(initialCalls);
+  expect([...pending.values()]).toEqual([]);
 });
 
 test("filter by venue: only matching events; reload keeps the filter (server-rendered); clear filters shows all", async ({ page }) => {
@@ -94,7 +119,7 @@ test("filter by venue: only matching events; reload keeps the filter (server-ren
   expect(html).toContain("Indie Rock Showcase");
   expect(html).not.toContain("Symphony Under the Stars");
   await authMe;
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("region", { name: "Search events", exact: true })).toHaveAttribute("data-hydrated", "true");
   await expect(filters.getByLabel("Venue")).toHaveValue("the FOUNDRY");
   await expect(main.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
   expect(eventsCalls).toEqual([]);

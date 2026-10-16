@@ -17,7 +17,7 @@ for (const ignoreAbort of [false, true]) {
     });
     await page.goto("/events");
     await expect(page.getByRole("heading", { name: "Indie Rock Showcase" })).toBeVisible();
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("region", { name: "Search events", exact: true })).toHaveAttribute("data-hydrated", "true");
     let release!: () => void;
     let entered!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
@@ -38,10 +38,10 @@ for (const ignoreAbort of [false, true]) {
     await search.fill("newer");
     await expect(page.getByRole("heading", { name: "NEWER result" })).toBeVisible();
     if (aborted) await aborted;
-    const late = ignoreAbort ? page.waitForResponse(response => response.url() === oldRoute!.request().url()) : undefined;
+    // 3. Wait for this specific late response's body, rather than unrelated page traffic.
+    const late = ignoreAbort ? page.waitForEvent("requestfinished", request => request.url() === oldRoute!.request().url()) : undefined;
     release();
     if (late) await late;
-    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("heading", { name: "NEWER result" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OLDER result" })).toHaveCount(0);
   });
