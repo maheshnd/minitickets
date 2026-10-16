@@ -17,13 +17,24 @@ flowchart LR
    uncommitted changes).
 2. Add a new entry at the top: `## YYYY-MM-DD · <commit subject>`, a `Why:` line, and one line per
    changed file: which sections were added or changed, and why.
-3. A commit can't contain its own hash, so write `Commit: filled in by the next handbook commit`,
+3. A commit can't contain its own hash, so write `Commit: 7974c06`,
    and replace that text in the **previous** entry with its real hash
    (`git log -1 --format=%h -- docs/handbook`).
 
 `pnpm docs:history` (no arguments) shows the last change date and commit of every file.
 
 ---
+
+## 2026-10-16 · docs(handbook): animate explorer flows and explain connection checks
+
+Commit: filled in by the next handbook commit
+
+Why: follow real city connections one step at a time, with simple narration and exact source/Console evidence.
+
+- `generated/explorer-v3.json`: define five request/deploy stories plus dynamic permission playback; add REACH, ALLOWED and PASSWORD evidence to all 41 connections.
+- `guides/infra-explorer.html`: add path tokens, play/pause, forward/back, speed, keyboard controls and reduced-motion step-only behavior; keep the details panel beside playback and let ledger rows select connections.
+- `explorer-flow-review.md`: describe the flow data contract and preserve measured browser, screenshot and validator evidence.
+- `CHANGELOG.md`: record this animation pass and fill in the preceding handbook commit.
 
 ## 2026-10-16 · docs(handbook): audit explorer content and integrate the city map
 

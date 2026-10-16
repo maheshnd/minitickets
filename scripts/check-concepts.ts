@@ -265,12 +265,16 @@ function checkGuides() {
     problems.push(`${explorerName}: no <script type="application/json" id="city-data"> block`);
     return;
   }
+  type FlowReference = { file: string; symbol: string };
+  type ConnectionCheck = { name: string; line: string; pass: boolean; rule: string; code: FlowReference[]; console: string };
+  type FlowStep = { title: string; line: string; component?: string; connection?: string; reverse?: boolean; code: FlowReference[]; console: string };
   type Explorer = {
     chapters: { n: number; title: string; status: string }[];
     components: { id: string; name: string; lifecycle?: string; code?: { file: string; symbol?: string }[] }[];
-    connections: { id: string; from: string; to: string; label: string; kind: string }[];
+    connections: { id: string; from: string; to: string; label: string; kind: string; checks: ConnectionCheck[] }[];
     codePieces: { id: string; name: string; file: string; symbol: string }[];
     tours: { id: string; steps: { title: string; pieces: string[]; console: { path: string; expect: string; question: string }; cli: string }[] }[];
+    flows: { id: string; title: string; steps?: FlowStep[]; checks?: boolean; defaultConnection?: string }[];
   };
   let data: Explorer;
   try {
@@ -295,7 +299,11 @@ function checkGuides() {
       }
     }
   }
+  const componentIds = new Set(ids);
+  const connectionIds = new Set<string>();
   for (const connection of data.connections) {
+    if (connectionIds.has(connection.id)) problems.push(`${explorerName}: connection id "${connection.id}" is used twice`);
+    connectionIds.add(connection.id);
     for (const end of [connection.from, connection.to]) {
       if (!ids.has(end)) problems.push(`${explorerName}: connection "${connection.id}" joins "${end}", which is not a component`);
     }
@@ -335,7 +343,61 @@ function checkGuides() {
     if (component.lifecycle !== "explain-only" && !covered.has(component.id)) problems.push(`${explorerName}: built piece ${component.id} is in no tour`);
   }
 
-  // 8h. Every scenario has a decision, a real tour and a three-choice quiz.
+  // 8h. A flow can only visit real map pieces, with code and console evidence for every stop.
+  const checkFlowReferences = (owner: string, refs: FlowReference[] | undefined) => {
+    if (!Array.isArray(refs) || !refs.length) {
+      problems.push(`${explorerName}: ${owner} needs code references`);
+      return;
+    }
+    for (const ref of refs) {
+      if (!validLabel(ref.file) || !validLabel(ref.symbol)) {
+        problems.push(`${explorerName}: ${owner} has a blank code file or symbol`);
+        continue;
+      }
+      const full = path.join(ROOT, ref.file);
+      if (!existsSync(full) || !readFileSync(full, "utf8").includes(ref.symbol)) {
+        problems.push(`${explorerName}: ${owner} has invalid code reference ${ref.file} → ${ref.symbol}`);
+      }
+    }
+  };
+  if (!Array.isArray(data.flows) || !data.flows.length) problems.push(`${explorerName}: flows must be a nonempty array`);
+  const flowIds = new Set<string>();
+  for (const flow of data.flows ?? []) {
+    if (!validLabel(flow.id) || !validLabel(flow.title)) problems.push(`${explorerName}: flow needs an id and title`);
+    if (flowIds.has(flow.id)) problems.push(`${explorerName}: flow id "${flow.id}" is used twice`);
+    flowIds.add(flow.id);
+    if (flow.checks === true) {
+      if (!flow.defaultConnection || !connectionIds.has(flow.defaultConnection)) problems.push(`${explorerName}: ${flow.id} points at missing default connection ${flow.defaultConnection}`);
+      if (flow.steps !== undefined) problems.push(`${explorerName}: ${flow.id} must use connection checks instead of fixed steps`);
+      continue;
+    }
+    if (!Array.isArray(flow.steps) || !flow.steps.length) problems.push(`${explorerName}: ${flow.id} needs nonempty steps`);
+    for (const [index, step] of (flow.steps ?? []).entries()) {
+      const owner = `flow ${flow.id} step ${index + 1}`;
+      if (![step.title, step.line, step.console].every(validLabel)) problems.push(`${explorerName}: ${owner} needs a title, narration and console path`);
+      if ((step.component !== undefined) === (step.connection !== undefined)) problems.push(`${explorerName}: ${owner} needs exactly one component or connection`);
+      if (step.component !== undefined && !componentIds.has(step.component)) problems.push(`${explorerName}: ${owner} points at missing component ${step.component}`);
+      if (step.connection !== undefined && !connectionIds.has(step.connection)) problems.push(`${explorerName}: ${owner} points at missing connection ${step.connection}`);
+      if (step.reverse !== undefined && (typeof step.reverse !== "boolean" || step.connection === undefined)) problems.push(`${explorerName}: ${owner} may reverse only a connection`);
+      checkFlowReferences(owner, step.code);
+    }
+  }
+
+  // 8i. Every road explains all three gates in order, including gates that do not apply.
+  for (const connection of data.connections) {
+    const checks = connection.checks;
+    if (!Array.isArray(checks) || checks.map(check => check.name).join(",") !== "REACH,ALLOWED,PASSWORD") {
+      problems.push(`${explorerName}: connection ${connection.id} needs ordered REACH, ALLOWED, PASSWORD checks`);
+      continue;
+    }
+    for (const check of checks) {
+      const owner = `connection ${connection.id} ${check.name}`;
+      if (typeof check.pass !== "boolean" || ![check.line, check.rule, check.console].every(validLabel)) problems.push(`${explorerName}: ${owner} needs narration, a result, exact rule and console path`);
+      checkFlowReferences(owner, check.code);
+    }
+  }
+
+  // 8j. Every scenario has a decision, a real tour and a three-choice quiz.
   const scenarioFile = path.join(HANDBOOK, "generated/scenarios.json");
   if (existsSync(scenarioFile)) {
     const scenarios = JSON.parse(readFileSync(scenarioFile, "utf8")) as { id: string; question: string; area: string; status: string; tour: string; answer: string; how: string; why: string; trade: string; scale: string; counter: string; quiz: string; correct: string; wrong: string[]; flow: string[] }[];

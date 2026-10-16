@@ -13,6 +13,7 @@
      decor       -> drawings that are not clickable (zone labels, roads, the inner wall)
      components  -> every piece of the city, built or planned, with its map shape
      connections -> what joins two components, and WHAT ALLOWS IT (label; "short" = a shorter map label)
+     flows       -> ordered stops on existing components/connections; each connection also has three checks
   2. A component is "built" when its chapter's status is "written" and the reader has stepped to it.
      Otherwise it is drawn faintly as planned. It can still be inspected; the panel states its status.
   3. To add a chapter: set its status to "written", fill in the details of its components (what, why,
@@ -20,6 +21,7 @@
      Keep the text identical in meaning to docs/handbook/guides/infra-build-along.md.
   4. pnpm docs:check reads this JSON: every code file and symbol must exist, every connection must
      join two known components, and every written chapter's title must match a guide heading.
+     Flow targets and their code/console evidence must exist too; checks run REACH, ALLOWED, PASSWORD.
   No network requests: no fonts, no libraries. Works by double-clicking the file.
 -->
 <style>
@@ -370,6 +372,20 @@
       <button class="step-btn" id="next" type="button">Next →</button>
     </nav>
     <div class="summary" id="summary" aria-live="polite"></div>
+    <section class="flow-player" aria-label="Play a flow">
+      <div class="flow-controls">
+        <label for="flow-select">Play a flow</label>
+        <select id="flow-select"><option value="">Choose a flow…</option></select>
+        <button id="flow-back" type="button" disabled aria-label="Previous flow step">←</button>
+        <button id="flow-play" type="button" disabled>Play</button>
+        <button id="flow-next" type="button" disabled aria-label="Next flow step">→</button>
+        <label for="flow-speed">Speed</label>
+        <select id="flow-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+        <button id="flow-close" type="button" hidden>Leave flow</button>
+      </div>
+      <p id="flow-status" role="status">Follow a request along the city’s real connections.</p>
+      <p id="flow-help">Space: play / pause. ← →: step. Stops and branches use one token at a time. Timing is shortened for teaching.</p>
+    </section>
     <div class="map-frame" id="map-frame">
       <svg id="map" viewBox="0 0 1200 1580" role="group" aria-label="City map of the minitickets AWS setup. Built pieces can be reached with Tab and opened with Enter."></svg>
     </div>
@@ -426,7 +442,7 @@ window.addEventListener('map-chapter',()=>{focus=false;$('v3-focus').setAttribut
 window.addEventListener('map-fit',()=>{focus=false;$('v3-focus').setAttribute('aria-pressed','false');focusPieces([])});
 $('v3-code').onclick=()=>{$('v3-code-map').hidden=false;document.querySelector('.map-frame').hidden=true};$('v3-infra').onclick=()=>{$('v3-code-map').hidden=true;document.querySelector('.map-frame').hidden=false};
 
-function ledger(){const q=$('v3-edge-search').value.toLowerCase(),kind=$('v3-kind').value;$('v3-edges').replaceChildren();for(const e of D.connections){if(kind&&e.kind!==kind||!(e.from+' '+e.to+' '+e.label+' '+e.console).toLowerCase().includes(q))continue;const tr=element('tr',''),first=element('td','');const b=element('button',e.from+' → '+e.to);b.onclick=()=>bridge.selectNode(e.to);first.append(b);tr.append(first,element('td',e.kind+' · '+e.label),element('td',e.console));$('v3-edges').append(tr)}}
+function ledger(){const q=$('v3-edge-search').value.toLowerCase(),kind=$('v3-kind').value;$('v3-edges').replaceChildren();for(const e of D.connections){if(kind&&e.kind!==kind||!(e.from+' '+e.to+' '+e.label+' '+e.console).toLowerCase().includes(q))continue;const tr=element('tr',''),first=element('td','');const b=element('button',e.from+' → '+e.to);b.onclick=()=>bridge.selectConnection(e.id);first.append(b);tr.append(first,element('td',e.kind+' · '+e.label),element('td',e.console));$('v3-edges').append(tr)}}
 $('v3-edge-search').oninput=ledger;$('v3-kind').onchange=ledger;
 function concepts(){const q=$('v3-concept-search').value.toLowerCase();$('v3-concepts').replaceChildren();const unique=[...new Set(snippets.map(s=>s.concept))].filter(c=>c.includes(q));for(const concept of unique){const b=element('button',concept);b.onclick=()=>{const s=snippets.find(s=>s.concept===concept),p=D.components.find(c=>(c.code||[]).some(r=>r.file===s.file));if(p)bridge.selectNode(p.id);const panel=$('v3-tour-panel');panel.replaceChildren(element('h3',concept),element('p',s.file+' · line '+s.line),element('pre',s.code));for(const [label,url]of [['Concept card','../concepts/'+concept+'.md'],['Code tour','code-tours.html#'+encodeURIComponent(s.id)],['Scenario catalogue','scenarios.html?q='+encodeURIComponent(concept)]]){const a=element('a',label);a.href=url;panel.append(a,document.createTextNode(' · '))}const tour=D.tours.find(t=>t.steps.some(step=>step.code.some(r=>r.file===s.file)));if(tour)panel.append(element('p','Tour: '+tour.title+' · Demo: '+tour.steps.find(st=>st.code.some(r=>r.file===s.file)).cli))};$('v3-concepts').append(b)}}
 position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Number(initial.get('step'))||0):linkedTour?linkedTour.steps.findIndex(s=>s.code.some(r=>r.file===initial.get('file'))):0));$('v3-concept-search').oninput=concepts;codeMap();ledger();concepts();if(initial.has('tour')||initial.has('file')||initial.has('step'))step();else $('v3-tour-panel').append(element('h3','Choose a guided tour'),element('p','Use the chapter road above to explore the growing city, or select a tour to follow one request.'));
@@ -3605,6 +3621,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         388,
         108
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "InternetGateway.vpcId attaches minitickets-dev-igw to minitickets-dev-vpc. A subnet still needs its own route and a public address.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "vpcId: vpc.id"
+            }
+          ],
+          "console": "VPC \u2192 Internet gateways \u2192 minitickets-dev-igw \u2192 State: Attached",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "internetGateway"
+            }
+          ],
+          "console": "VPC \u2192 Internet gateways \u2192 minitickets-dev-igw \u2192 State: Attached",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "internetGateway"
+            }
+          ],
+          "console": "VPC \u2192 Internet gateways \u2192 minitickets-dev-igw \u2192 State: Attached",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3637,6 +3694,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         388,
         339
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-public-rt has 0.0.0.0/0 with gatewayId=internetGateway.id. This is the internet route.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "gatewayId: internetGateway.id"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes tab \u2192 0.0.0.0/0, Target: attached internet gateway",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "0.0.0.0/0"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes tab \u2192 0.0.0.0/0, Target: attached internet gateway",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "0.0.0.0/0"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes tab \u2192 0.0.0.0/0, Target: attached internet gateway",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3682,6 +3780,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         700,
         382
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-public-rta-1 sets public-1 subnetId and publicRouteTable.id. Public subnet 1 is 10.0.0.0/24.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3723,6 +3862,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         706,
         382
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-public-rta-2 sets public-2 subnetId and publicRouteTable.id. Public subnet 2 is 10.0.1.0/24.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "public-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3756,6 +3936,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         374,
         670
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-private-rta-1 sets private-1 subnetId and privateRouteTable.id. The table has no internet or NAT route.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3789,6 +4010,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         402,
         670
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-private-rta-2 sets private-2 subnetId and privateRouteTable.id. The table has no internet or NAT route.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "private-rta-"
+            }
+          ],
+          "console": "VPC \u2192 Route tables \u2192 minitickets-dev-private-rt \u2192 Subnet associations \u2192 Explicit subnet associations",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3826,6 +4088,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         70,
         672
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Both subnet route tables keep the AWS-created route 10.0.0.0/16 to local. This reaches private addresses; security groups still decide TCP access.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3863,6 +4166,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "labelAt": [
         704,
         672
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Both subnet route tables keep the AWS-created route 10.0.0.0/16 to local. This reaches private addresses; security groups still decide TCP access.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association does not use an application IAM role.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: a VPC route or subnet association has no password.",
+          "code": [
+            {
+              "file": "infra/src/network.ts",
+              "symbol": "local"
+            }
+          ],
+          "console": "Any of our route tables \u2192 Routes tab \u2192 10.0.0.0/16, Target local",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -3909,7 +4253,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         740,
         440
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Current mode is cdnEnabled=false. minitickets-dev-alb-in-443-0 allows TCP 443 from allowedCidrs[0] (default 0.0.0.0/0); the ALB uses public subnets. DNS CNAME is an owner operation, not checked here.",
+          "code": [
+            {
+              "file": "infra/src/entry/alb-public-ingress.ts",
+              "symbol": "createAlbPublicIngress"
+            }
+          ],
+          "console": "EC2 \u2192 Security Groups \u2192 minitickets-dev-alb-sg \u2192 Inbound rules; Load Balancers \u2192 minitickets-dev \u2192 Network mapping",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: a browser does not assume an IAM role to open this public HTTPS listener. The listener uses ELBSecurityPolicy-TLS13-1-2-2021-06.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "sslPolicy"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 Listeners and rules \u2192 HTTPS:443",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required at this connection: createHttpsListener has no X-Origin-Verify condition in ALB-only mode. Protected API actions separately validate the session.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "createHttpsListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 Listeners and rules \u2192 HTTPS:443 \u2192 Rules",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-1",
@@ -3951,7 +4336,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         222,
         527
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-web-in-3000 allows TCP 3000 only from minitickets-dev-alb-sg. ALB outbound allows all IPv4; same-VPC routes are local.",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "createSecurityGroups"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-web-sg \u2192 Inbound rules; minitickets-dev-alb-sg \u2192 Outbound rules",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: HTTP forwarding to the web task is not an IAM API. HTTPS listener default action forwards all other paths to the web target group.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "defaultActions"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 HTTPS:443 \u2192 Rules; Target groups \u2192 Targets",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required on this internal HTTP hop: source security group restricts the caller; ALB-only mode has no origin-header secret.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "createHttpsListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 HTTPS:443 \u2192 Rules",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-2",
@@ -3985,7 +4411,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         520,
         500
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-api-in-4000 allows TCP 4000 only from minitickets-dev-alb-sg. ALB outbound allows all IPv4; same-VPC routes are local.",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "createSecurityGroups"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-api-sg \u2192 Inbound rules; minitickets-dev-alb-sg \u2192 Outbound rules",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: HTTP forwarding to the api task is not an IAM API. HTTPS listener priority 100 matches /trpc/* and forwards to the API target group.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "trpcRule"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 HTTPS:443 \u2192 Rules; Target groups \u2192 Targets",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required on this internal HTTP hop: source security group restricts the caller; ALB-only mode has no origin-header secret.",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "createHttpsListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 HTTPS:443 \u2192 Rules",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-3",
@@ -4027,7 +4494,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         368,
         287
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "This edge means Service Connect discovery, not direct Cloud Map DNS traffic. web service enables Service Connect in minitickets.internal; task-local proxy handles the api alias.",
+          "code": [
+            {
+              "file": "infra/src/compute/web-service.ts",
+              "symbol": "serviceConnectConfiguration"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Service Connect; Cloud Map \u2192 Namespaces \u2192 minitickets.internal",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required for web application code: ECS manages Service Connect registration and proxy discovery. The web task has no task role.",
+          "code": [
+            {
+              "file": "infra/src/compute/web-iam.ts",
+              "symbol": "createWebIamRole"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-web \u2192 Task role; ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Service Connect",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the private api alias uses HTTP through task-local proxies; no shared password is defined for discovery.",
+          "code": [
+            {
+              "file": "infra/src/compute/service-connect.ts",
+              "symbol": "createServiceConnect"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Service Connect",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-4",
@@ -4069,7 +4577,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         718,
         532
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-api-in-14000 allows TCP 14000 from web SG. apiProxyPort=14000 matches ingressPortOverride; web outbound allows all. The proxy forwards to API 127.0.0.1:4000.",
+          "code": [
+            {
+              "file": "infra/src/compute/service-connect.ts",
+              "symbol": "apiProxyPort"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-api-sg \u2192 Inbound rules; ECS \u2192 minitickets-dev-api \u2192 Service Connect",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: web-to-API HTTP uses Service Connect proxies, not an application IAM action.",
+          "code": [
+            {
+              "file": "infra/src/compute/service-connect.ts",
+              "symbol": "createServiceConnect"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Service Connect",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required for public events.search: this is an internal HTTP path. Protected operations still check their own application session.",
+          "code": [
+            {
+              "file": "apps/api/src/procedures/events.ts",
+              "symbol": "eventsRouter"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 events.search; ECS \u2192 minitickets-dev-api \u2192 Service Connect",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-5",
@@ -4111,7 +4660,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         386,
         690
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-db-in-5432 allows TCP 5432 from API SG; API outbound allows all IPv4. VPC local 10.0.0.0/16 reaches private RDS; publiclyAccessible=false.",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "createSecurityGroups"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-db-sg \u2192 Inbound rules; RDS \u2192 minitickets-dev-db \u2192 Connectivity & security",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "No rds-db:connect IAM policy is used for SQL. The API execution role has secretsmanager:GetSecretValue on the RDS master secret so ECS can inject credentials before startup.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "executionSecrets"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-execution-role \u2192 read-secrets; ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 Containers \u2192 Secrets",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "RDS manageMasterUserPassword=true creates the password secret. Task secrets inject its username field into DB_USER and password field into DB_PASSWORD; database configuration verifies TLS. Values are not displayed.",
+          "code": [
+            {
+              "file": "infra/src/compute/task.ts",
+              "symbol": "DB_PASSWORD"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 Containers \u2192 Secrets; RDS \u2192 minitickets-dev-db \u2192 Configuration \u2192 Master credentials metadata",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-6",
@@ -4149,7 +4739,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         568,
         632
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "minitickets-dev-redis-in-6379 allows TCP 6379 only from API SG; API outbound allows all. VPC local route reaches private Valkey.",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "createSecurityGroups"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-redis-sg \u2192 Inbound rules; ElastiCache \u2192 Valkey caches \u2192 minitickets-dev-valkey \u2192 Security",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not IAM database authentication: runtime uses a Valkey auth token. API execution role has secretsmanager:GetSecretValue only on the configured redis-url secret.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "executionSecrets"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-execution-role \u2192 read-secrets",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "createCache sets transitEncryptionEnabled=true and authToken to a random 32-character value. createSecrets stores rediss:// token URL; task injects it as REDIS_URL. Values are not displayed.",
+          "code": [
+            {
+              "file": "infra/src/data/cache.ts",
+              "symbol": "authToken"
+            }
+          ],
+          "console": "ElastiCache \u2192 Valkey caches \u2192 minitickets-dev-valkey \u2192 Security; ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 Containers \u2192 Secrets",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-7",
@@ -4191,7 +4822,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         742,
         948
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "API tasks use public subnets with assignPublicIp=true. Their public route table sends 0.0.0.0/0 to the internet gateway, and API SG allows all outbound; HTTPS reaches this AWS public API.",
+          "code": [
+            {
+              "file": "infra/src/compute/service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Startup only: minitickets-dev-api-execution-role read-secrets allows secretsmanager:GetSecretValue on dbMasterSecretArn, redisUrlSecretArn and the optional revalidateSecretArn. API task role cannot read these secrets.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "executionSecrets"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-execution-role \u2192 read-secrets \u2192 Resources",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required to fetch a secret: ECS uses its execution role. The returned secret becomes the later database/cache password; it is not itself a password for Secrets Manager.",
+          "code": [
+            {
+              "file": "infra/src/compute/task.ts",
+              "symbol": "secrets:"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 Containers \u2192 Secrets (names and references only)",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-8",
@@ -4233,7 +4905,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         356,
         848
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Web tasks use public subnets and assignPublicIp=true; public route 0.0.0.0/0 points to IGW and web SG permits all outbound. ECS can reach ECR to pull the image.",
+          "code": [
+            {
+              "file": "infra/src/compute/web-service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Web execution role trusts ecs-tasks.amazonaws.com with SourceAccount equal to this account and attaches AmazonECSTaskExecutionRolePolicy for ECR pull. Web application code has no task role.",
+          "code": [
+            {
+              "file": "infra/src/compute/web-iam.ts",
+              "symbol": "executionManaged"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-web-execution-role \u2192 Permissions and Trust relationships",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No stored ECR password: ECS obtains temporary registry authorization through the execution role.",
+          "code": [
+            {
+              "file": "infra/src/compute/web-iam.ts",
+              "symbol": "AmazonECSTaskExecutionRolePolicy"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-web-execution-role \u2192 AmazonECSTaskExecutionRolePolicy",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-9",
@@ -4263,7 +4976,52 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         264,
         922
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "GitHub-hosted ubuntu runner connects to public STS and ECR APIs. It is outside this VPC and does not use its security groups.",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "runs-on:"
+            }
+          ],
+          "console": "GitHub \u2192 maheshnd/minitickets \u2192 Actions \u2192 CD \u2192 publish \u2192 Configure AWS credentials (OIDC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Publish role trust requires aud=sts.amazonaws.com and exact sub=repo:maheshnd@63289193/minitickets@1412723955:ref:refs/heads/main. EcrLogin allows ecr:GetAuthorizationToken on *; push/pull actions are limited to the API, web and worker repository ARNs.",
+          "code": [
+            {
+              "file": "infra/src/cicd.ts",
+              "symbol": "allowedSubject"
+            },
+            {
+              "file": "infra/src/publish-policy.ts",
+              "symbol": "publishPolicyDocument"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-gh-publish \u2192 Trust relationships and push-images \u2192 Resources",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No stored AWS keys: sts:AssumeRoleWithWebIdentity exchanges the GitHub token for short-lived role credentials; publish role maxSessionDuration=3600.",
+          "code": [
+            {
+              "file": "infra/src/cicd.ts",
+              "symbol": "maxSessionDuration: 3600"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-gh-publish \u2192 Maximum session duration; GitHub \u2192 CD \u2192 publish",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-10",
@@ -4293,7 +5051,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         500,
         922
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "GitHub-hosted deploy runner calls the public SSM API over HTTPS; this VPC has no security group on that managed service.",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Configure AWS credentials (OIDC, deploy role)"
+            }
+          ],
+          "console": "GitHub \u2192 maheshnd/minitickets \u2192 Actions \u2192 CD \u2192 deploy \u2192 Configure AWS credentials (OIDC, deploy role)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Deploy role trust requires aud=sts.amazonaws.com and exact sub=repo:maheshnd@63289193/minitickets@1412723955:environment:dev. OurReleaseParameters grants Get/Put only on image-tag and deployed-commit (plus scoped management actions).",
+          "code": [
+            {
+              "file": "infra/src/cicd.ts",
+              "symbol": "OurReleaseParameters"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-gh-deploy \u2192 Trust relationships; deploy policy \u2192 OurReleaseParameters",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No stored AWS password: approved dev-environment OIDC provides short-lived role credentials. image-tag and deployed-commit are ordinary String release records, not secrets.",
+          "code": [
+            {
+              "file": "infra/src/release.ts",
+              "symbol": "type: \"String\""
+            }
+          ],
+          "console": "Systems Manager \u2192 Parameter Store \u2192 /minitickets/dev/image-tag and /minitickets/dev/deployed-commit \u2192 Overview",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-11",
@@ -4339,7 +5138,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         736,
         528
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "This line is a configuration dependency, not SSM sending traffic to an API task: Pulumi reads /minitickets/dev/image-tag and uses it to register the task image.",
+          "code": [
+            {
+              "file": "infra/src/release.ts",
+              "symbol": "readDeployedImageTag"
+            }
+          ],
+          "console": "Systems Manager \u2192 Parameter Store \u2192 /minitickets/dev/image-tag; ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 Container image",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "The CD deploy role ReadOurParameterPath allows ssm:GetParametersByPath on parameter/minitickets/dev. The running API task role does not read release records.",
+          "code": [
+            {
+              "file": "infra/src/cicd.ts",
+              "symbol": "ReadOurParameterPath"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-gh-deploy \u2192 deploy policy \u2192 ReadOurParameterPath",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: image-tag is a nonsecret String. Pulumi ignoreChanges on insecureValue leaves CD as the writer.",
+          "code": [
+            {
+              "file": "infra/src/release.ts",
+              "symbol": "ignoreChanges"
+            }
+          ],
+          "console": "Systems Manager \u2192 Parameter Store \u2192 /minitickets/dev/image-tag \u2192 Type: String",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-12",
@@ -4377,7 +5217,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         748,
         355
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "API tasks use public subnets with assignPublicIp=true. Their public route table sends 0.0.0.0/0 to the internet gateway, and API SG allows all outbound; HTTPS reaches this AWS public API.",
+          "code": [
+            {
+              "file": "infra/src/compute/service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "minitickets-dev-api-task-role inline send-jobs allows only sns:Publish on inputs.bookingEventsTopicArn. It grants no SQS receive permission.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "taskSendJobs"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-task-role \u2192 send-jobs \u2192 Resource",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the AWS SDK request uses short-lived role credentials and request signing; this service has no separate application password.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "createIamRoles"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions; SQS \u2192 Queues",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-13",
@@ -4407,7 +5288,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         838,
         404
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "SNS makes a managed-service delivery to the SQS subscription endpoint. No VPC route or application security-group rule is required.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "TopicSubscription"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions \u2192 email SQS endpoint",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Queue policy allows Principal sns.amazonaws.com, Action sqs:SendMessage, Resource exactly this queue; ArnEquals aws:SourceArn is booking topic ARN and StringEquals aws:SourceAccount is this account.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "aws:SourceArn"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-jobs \u2192 Access policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: rawMessageDelivery=true copies the JSON without an SNS envelope; AWS service identity and queue resource policy authorize it.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "rawMessageDelivery: true"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions \u2192 Raw message delivery",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-14",
@@ -4445,7 +5367,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         756,
         521
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "SNS makes a managed-service delivery to the SQS subscription endpoint. No VPC route or application security-group rule is required.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "TopicSubscription"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions \u2192 tickets SQS endpoint",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Queue policy allows Principal sns.amazonaws.com, Action sqs:SendMessage, Resource exactly this queue; ArnEquals aws:SourceArn is booking topic ARN and StringEquals aws:SourceAccount is this account.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "aws:SourceArn"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-tickets \u2192 Access policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: rawMessageDelivery=true copies the JSON without an SNS envelope; AWS service identity and queue resource policy authorize it.",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "rawMessageDelivery: true"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions \u2192 Raw message delivery",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-15",
@@ -4487,7 +5450,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1062,
         390
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Lambda event source mapping polls SQS as a managed service. Both functions have no vpcConfig; no app security group is needed.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queue-trigger.ts",
+              "symbol": "createQueueTrigger"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration \u2192 Triggers",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Worker role ReadJobsQueue permits sqs:ReceiveMessage, DeleteMessage, ChangeMessageVisibility and GetQueueAttributes only on the jobs queue.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "ReadJobsQueue"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-worker-role \u2192 Permissions",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: Lambda uses its execution role, not a shared queue password.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "createWorkerRole"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration \u2192 Permissions",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-16",
@@ -4529,7 +5533,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1062,
         478
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Lambda event source mapping polls SQS as a managed service. Both functions have no vpcConfig; no app security group is needed.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "createTicketLambda"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 Triggers",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Ticket role permits sqs:ReceiveMessage, DeleteMessage and GetQueueAttributes only on the tickets queue.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "createTicketRole"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-tickets-role \u2192 Permissions",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: Lambda uses its execution role, not a shared queue password.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "createTicketRole"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 Permissions",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-17",
@@ -4559,7 +5604,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         916,
         432
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "SQS performs redrive inside the managed service. A DLQ is not a VPC host; no route or SG rule applies.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "redrivePolicy"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-jobs \u2192 Configuration \u2192 Dead-letter queue",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Main queue redrivePolicy sets deadLetterTargetArn to its own DLQ and maxReceiveCount=3. DLQ RedriveAllowPolicy uses redrivePermission=byQueue and sourceQueueArns=[this queue ARN]. No consumer role needs DLQ send permission.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "redriveAllowPolicy"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-jobs-dlq \u2192 Redrive allow policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: SQS redrives after three receives without deletion; there is no DLQ password.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "maxReceiveCount: 3"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-jobs \u2192 Configuration \u2192 Maximum receives",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-18",
@@ -4589,7 +5675,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         916,
         522
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "SQS performs redrive inside the managed service. A DLQ is not a VPC host; no route or SG rule applies.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "redrivePolicy"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 Dead-letter queue",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Main queue redrivePolicy sets deadLetterTargetArn to its own DLQ and maxReceiveCount=3. DLQ RedriveAllowPolicy uses redrivePermission=byQueue and sourceQueueArns=[this queue ARN]. No consumer role needs DLQ send permission.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "redriveAllowPolicy"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-tickets-dlq \u2192 Redrive allow policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: SQS redrives after three receives without deletion; there is no DLQ password.",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "maxReceiveCount: 3"
+            }
+          ],
+          "console": "SQS \u2192 Queues \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 Maximum receives",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-19",
@@ -4635,7 +5762,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1046,
         582
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Email Lambda has no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-lambda.ts",
+              "symbol": "NO vpcConfig"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Worker role ProcessedJobsTable permits dynamodb:GetItem and dynamodb:PutItem only on minitickets-dev-processed-jobs. No Scan, Query or DeleteItem.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "ProcessedJobsTable"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-worker-role \u2192 worker \u2192 ProcessedJobsTable",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the AWS SDK request uses short-lived role credentials and request signing; this service has no separate application password.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "createWorkerRole"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-processed-jobs / minitickets-dev-tickets \u2192 Indexes",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-20",
@@ -4677,7 +5845,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1400,
         410
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Email Lambda has no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-lambda.ts",
+              "symbol": "NO vpcConfig"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Worker role SendBookingEmails allows ses:SendEmail only on configured verified identity ARNs and StringEquals ses:FromAddress=inputs.email.mailFrom. No email configuration means no such statement.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "SendBookingEmails"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-worker-role \u2192 worker \u2192 SendBookingEmails; SES \u2192 Verified identities",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No SMTP password: the worker uses signed SES API requests. SES identity/DKIM verification, sandbox recipient rules and quota are separate provider checks; their live state is not asserted here.",
+          "code": [
+            {
+              "file": "apps/worker/src/ses-mailer.ts",
+              "symbol": "SendEmailCommand"
+            }
+          ],
+          "console": "SES \u2192 Verified identities \u2192 minitickets.theversehub.in; Account dashboard \u2192 Sandbox and sending limits",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-21",
@@ -4715,7 +5924,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1058,
         721
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Ticket Lambda defines no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "createTicketLambda"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Ticket Lambda role permits dynamodb:GetItem, dynamodb:PutItem and dynamodb:UpdateItem only on inputs.tableArn (minitickets-dev-tickets).",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "dynamodb:UpdateItem"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-tickets-role \u2192 tickets \u2192 DynamoDB statement",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the AWS SDK request uses short-lived role credentials and request signing; this service has no separate application password.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "createTicketRole"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-processed-jobs / minitickets-dev-tickets \u2192 Indexes",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-22",
@@ -4761,7 +6011,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1056,
         698
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Ticket Lambda defines no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "createTicketLambda"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Ticket role permits s3:PutObject only on assetsBucketArn/tickets/*. Bucket policy denies any s3:* request with aws:SecureTransport=false; public ACLs and policies are blocked.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "s3:PutObject"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-tickets-role \u2192 tickets \u2192 S3 statement; S3 \u2192 ticket-assets bucket \u2192 Permissions \u2192 Bucket policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No bucket password: signed AWS role requests authorize writes. The QR payload HMAC signing key is a separate secret read through the signing-secret connection.",
+          "code": [
+            {
+              "file": "infra/src/tickets/storage.ts",
+              "symbol": "BucketPublicAccessBlock"
+            }
+          ],
+          "console": "S3 \u2192 ticket-assets bucket \u2192 Permissions \u2192 Block public access",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-23",
@@ -4799,7 +6090,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1066,
         919
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Ticket Lambda defines no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "createTicketLambda"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Ticket Lambda role permits secretsmanager:GetSecretValue only on inputs.secretArn, the minitickets/dev/ticket-signing secret.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "secretsmanager:GetSecretValue"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-tickets-role \u2192 tickets \u2192 Secrets Manager statement",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "GetSecretValue uses role credentials, with no extra password. createTicketStorage stores one 32-byte random signing key as a secret; the key signs QR claims and is never displayed.",
+          "code": [
+            {
+              "file": "infra/src/tickets/storage.ts",
+              "symbol": "ticket-signing-key"
+            }
+          ],
+          "console": "Secrets Manager \u2192 Secrets \u2192 minitickets/dev/ticket-signing \u2192 Secret details (metadata only)",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-24",
@@ -4837,7 +6169,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         746,
         721
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "API tasks use public subnets with assignPublicIp=true. Their public route table sends 0.0.0.0/0 to the internet gateway, and API SG allows all outbound; HTTPS reaches this AWS public API.",
+          "code": [
+            {
+              "file": "infra/src/compute/service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "API task role ReadTickets grants dynamodb:Query on the tickets table ARN only. It has no Scan or ticket write grant. Application code supplies the verified userId; IAM does not constrain per-user rows.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "ReadTickets"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-task-role \u2192 ticket-reads-and-posters \u2192 ReadTickets",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the AWS SDK request uses short-lived role credentials and request signing; this service has no separate application password.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "createIamRoles"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-processed-jobs / minitickets-dev-tickets \u2192 Indexes",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-25",
@@ -4875,7 +6248,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         738,
         787
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "API tasks use public subnets with assignPublicIp=true. Their public route table sends 0.0.0.0/0 to the internet gateway, and API SG allows all outbound; HTTPS reaches this AWS public API.",
+          "code": [
+            {
+              "file": "infra/src/compute/service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "API task role allows s3:GetObject on tickets/*, posters/* and poster-uploads/*; s3:PutObject only on posters/* and poster-uploads/* with s3:x-amz-server-side-encryption=AES256. No ticket writes or bucket listing.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "taskAssets"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-task-role \u2192 ticket-reads-and-posters; S3 \u2192 ticket-assets bucket \u2192 Permissions \u2192 TLS-only policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: the AWS SDK request uses short-lived role credentials and request signing; this service has no separate application password.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "createIamRoles"
+            }
+          ],
+          "console": "S3 \u2192 minitickets-dev-ticket-assets-258237553751 \u2192 Permissions / Lifecycle; Secrets Manager \u2192 signing metadata",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-26",
@@ -4921,7 +6335,52 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         748,
         992
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Browser uses the public S3 HTTPS endpoint; the bucket stays private. Bucket policy explicitly denies aws:SecureTransport=false. No VPC security-group rule is involved.",
+          "code": [
+            {
+              "file": "infra/src/tickets/storage.ts",
+              "symbol": "aws:SecureTransport"
+            }
+          ],
+          "console": "S3 \u2192 ticket-assets bucket \u2192 Permissions \u2192 Bucket policy and Block public access",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "A presigned GET carries API task-role authorization. ReadTicketPngs allows s3:GetObject on tickets/*; signAssetGet permits only validated tickets/ or posters/ keys and expiresIn=120.",
+          "code": [
+            {
+              "file": "apps/api/src/queries/assets.ts",
+              "symbol": "signAssetGet"
+            },
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "ReadTicketPngs"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 signed S3 GET; IAM \u2192 minitickets-dev-api-task-role \u2192 ReadTicketPngs",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No bucket password: the signed URL is a bearer link valid for 120 seconds. Anyone holding it can use it until expiry; the API first verifies ticket ownership before issuing it.",
+          "code": [
+            {
+              "file": "apps/api/src/services/tickets.ts",
+              "symbol": "mine"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 ticket response and S3 GET (do not share URL credentials)",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-27",
@@ -4959,7 +6418,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1054,
         820
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "This line means CloudWatch observes the SQS metric, not a TCP connection from the DLQ. Alarm dimension QueueName is minitickets-dev-jobs-dlq.",
+          "code": [
+            {
+              "file": "infra/src/observability/alarm-specs.ts",
+              "symbol": "jobs-dlq-not-empty"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms \u2192 minitickets-dev-jobs-dlq-not-empty \u2192 Metrics",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "No worker IAM action is required for this managed-service metric. Alarm uses Maximum ApproximateNumberOfMessagesVisible > 0, period=60 seconds, evaluationPeriods=1; treatMissingData=ignore.",
+          "code": [
+            {
+              "file": "infra/src/observability/alarm-specs.ts",
+              "symbol": "ApproximateNumberOfMessagesVisible"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms \u2192 minitickets-dev-jobs-dlq-not-empty \u2192 Details",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: CloudWatch reads the service metric; no queue password or secret is configured.",
+          "code": [
+            {
+              "file": "infra/src/observability/alarm-specs.ts",
+              "symbol": "alarmSpecs"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms \u2192 minitickets-dev-jobs-dlq-not-empty \u2192 Details",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-28",
@@ -4997,7 +6497,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1392,
         932
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "CloudWatch publishes to the managed SNS topic when an alarm changes state; no VPC route or SG is involved. alarmActions and okActions both name the alerts topic.",
+          "code": [
+            {
+              "file": "infra/src/observability/alarms.ts",
+              "symbol": "alarmActions"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms \u2192 minitickets-dev-jobs-dlq-not-empty \u2192 Actions",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Alerts topic policy OurCloudWatchAlarmsMayPublish allows cloudwatch.amazonaws.com sns:Publish only with ArnLike aws:SourceArn=arn:aws:cloudwatch:\u003cregion>:\u003caccount>:alarm:minitickets-dev-* and SourceAccount equal to this account.",
+          "code": [
+            {
+              "file": "infra/src/observability/alert-topic.ts",
+              "symbol": "OurCloudWatchAlarmsMayPublish"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-alerts \u2192 Access policy",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "No password: alerts-email subscription uses protocol=email. SNS sends alerts only after the owner confirms the subscription; confirmation is not asserted by this configuration check.",
+          "code": [
+            {
+              "file": "infra/src/observability/alert-topic.ts",
+              "symbol": "alerts-email"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-alerts \u2192 Subscriptions \u2192 Status",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-29",
@@ -5043,7 +6584,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1062,
         984
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "API tasks use public subnets with assignPublicIp=true. Their public route table sends 0.0.0.0/0 to the internet gateway, and API SG allows all outbound; HTTPS reaches this AWS public API.",
+          "code": [
+            {
+              "file": "infra/src/compute/service.ts",
+              "symbol": "assignPublicIp: true"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Tasks \u2192 Networking; VPC \u2192 Route tables \u2192 minitickets-dev-public-rt \u2192 Routes",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "API execution role attaches AmazonECSTaskExecutionRolePolicy for logs:CreateLogStream and logs:PutLogEvents; API task awslogs driver selects the pre-created group /minitickets/dev/api.",
+          "code": [
+            {
+              "file": "infra/src/compute/iam.ts",
+              "symbol": "executionManaged"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-api-execution-role \u2192 AmazonECSTaskExecutionRolePolicy; ECS \u2192 Task definition \u2192 api \u2192 Log configuration",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: ECS sends logs with execution-role credentials; log group retentionInDays=7.",
+          "code": [
+            {
+              "file": "infra/src/compute/logs.ts",
+              "symbol": "retentionInDays: 7"
+            }
+          ],
+          "console": "CloudWatch \u2192 Logs \u2192 Log groups \u2192 /minitickets/dev/api \u2192 Retention",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "v3-edge-30",
@@ -5089,7 +6671,48 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         752,
         442
       ],
-      "v3": true
+      "v3": true,
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": false,
+          "rule": "Inactive: committed minitickets:cdnEnabled=false. CloudFront-mode REACH would require minitickets-dev-alb-in-80 with prefixListId com.amazonaws.global.cloudfront.origin-facing; that ingress rule is not created in current mode.",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "if (inputs.cdnEnabled)"
+            }
+          ],
+          "console": "VPC \u2192 Security groups \u2192 minitickets-dev-alb-sg \u2192 Inbound rules; committed infra/Pulumi.dev.yaml \u2192 cdnEnabled",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Not required: CloudFront-to-ALB HTTP uses source filtering and an origin header, not an IAM role assumed for each request. Current cdnEnabled=false selects direct HTTPS mode.",
+          "code": [
+            {
+              "file": "infra/src/entry/listener.ts",
+              "symbol": "createListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 Listeners and rules",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": false,
+          "rule": "Inactive: committed cdnEnabled=false means no CloudFront origin-header listener. In CDN mode X-Origin-Verify must equal the random 32-character createOriginSecret value; unmatched requests get fixed 403.",
+          "code": [
+            {
+              "file": "infra/src/entry/origin-secret.ts",
+              "symbol": "X-Origin-Verify"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 Listeners and rules; CloudFront \u2192 Origins \u2192 Custom headers (do not reveal value)",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
+      ]
     },
     {
       "id": "email-worker-logs",
@@ -5127,6 +6750,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1368,
         382,
         "end"
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Email Lambda has no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-lambda.ts",
+              "symbol": "NO vpcConfig"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Worker Lambda role permits logs:CreateLogStream and logs:PutLogEvents on the configured logGroupArn:* only; loggingConfig selects /minitickets/dev/worker.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "WriteWorkerLogs"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-worker-role \u2192 Permissions; Lambda \u2192 Configuration \u2192 Logging",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: Lambda uses its execution role to deliver logs. No log password exists.",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-lambda.ts",
+              "symbol": "loggingConfig"
+            }
+          ],
+          "console": "CloudWatch \u2192 Logs \u2192 Log groups \u2192 /minitickets/dev/worker",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     },
     {
@@ -5165,6 +6829,47 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         1388,
         458,
         "end"
+      ],
+      "checks": [
+        {
+          "name": "REACH",
+          "pass": true,
+          "rule": "Ticket Lambda defines no vpcConfig. It runs outside the VPC and calls public AWS APIs without a customer VPC route or security-group rule.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "createTicketLambda"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-tickets \u2192 Configuration \u2192 VPC (no VPC)",
+          "line": "First, check whether the road and door let this caller through."
+        },
+        {
+          "name": "ALLOWED",
+          "pass": true,
+          "rule": "Tickets Lambda role permits logs:CreateLogStream and logs:PutLogEvents on the configured logGroupArn:* only; loggingConfig selects /minitickets/dev/tickets.",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "logs:PutLogEvents"
+            }
+          ],
+          "console": "IAM \u2192 Roles \u2192 minitickets-dev-tickets-role \u2192 Permissions; Lambda \u2192 Configuration \u2192 Logging",
+          "line": "Next, check whether the caller has permission to do this work."
+        },
+        {
+          "name": "PASSWORD",
+          "pass": true,
+          "rule": "Not required: Lambda uses its execution role to deliver logs. No log password exists.",
+          "code": [
+            {
+              "file": "infra/src/tickets/lambda.ts",
+              "symbol": "loggingConfig"
+            }
+          ],
+          "console": "CloudWatch \u2192 Logs \u2192 Log groups \u2192 /minitickets/dev/tickets",
+          "line": "Last, check whether a secret is needed and supplied."
+        }
       ]
     }
   ],
@@ -11184,6 +12889,686 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
         }
       ]
     }
+  ],
+  "flows": [
+    {
+      "id": "booking",
+      "title": "1. A booking end to end",
+      "steps": [
+        {
+          "title": "Book a seat",
+          "line": "You press Book in your browser.",
+          "component": "visitors",
+          "code": [
+            {
+              "file": "apps/web/src/features/bookings/hooks/use-book-ticket.ts",
+              "symbol": "useBookTicket"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 Document and /trpc requests"
+        },
+        {
+          "title": "Enter the city",
+          "line": "HTTPS takes the request to the load balancer.",
+          "connection": "v3-edge-0",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "createHttpsListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load balancers \u2192 minitickets-dev \u2192 Listeners and rules; Target groups \u2192 Targets"
+        },
+        {
+          "title": "Choose the API",
+          "line": "The /trpc/* rule sends this request to the API task.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "/trpc/*"
+            }
+          ],
+          "console": "EC2 \u2192 Load Balancers \u2192 minitickets-dev \u2192 Listeners \u2192 HTTPS:443 \u2192 Rules \u2192 /trpc/*"
+        },
+        {
+          "title": "Save together",
+          "line": "Postgres locks the event row and saves the seats, booking and outbox row in one transaction.",
+          "connection": "v3-edge-5",
+          "code": [
+            {
+              "file": "apps/api/src/queries/bookings.ts",
+              "symbol": "createBookingTx"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches"
+        },
+        {
+          "title": "Read the outbox",
+          "line": "The relay in the API task reads a saved row; other relays skip its lock.",
+          "connection": "v3-edge-5",
+          "code": [
+            {
+              "file": "apps/api/src/queries/outbox.ts",
+              "symbol": "deliverBatch"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches",
+          "reverse": true
+        },
+        {
+          "title": "Tell both workers",
+          "line": "The relay publishes the saved event to SNS; a crash can cause a repeat.",
+          "connection": "v3-edge-12",
+          "code": [
+            {
+              "file": "apps/api/src/services/outbox.ts",
+              "symbol": "relayOnce"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions; SQS \u2192 Queues"
+        },
+        {
+          "title": "Email branch",
+          "line": "SNS puts one copy in the email queue.",
+          "connection": "v3-edge-13",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "createBookingEvents"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions; SQS \u2192 Queues"
+        },
+        {
+          "title": "Wake the email worker",
+          "line": "Lambda reads the email job from its queue.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "infra/src/jobs/worker-iam.ts",
+              "symbol": "createWorkerRole"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers"
+        },
+        {
+          "title": "Send the email",
+          "line": "The email worker asks SES to send the confirmation.",
+          "connection": "v3-edge-20",
+          "code": [
+            {
+              "file": "apps/worker/src/ses-mailer.ts",
+              "symbol": "SesMailer"
+            }
+          ],
+          "console": "SES \u2192 Verified identities / Account dashboard \u2192 Sandbox and sending quota"
+        },
+        {
+          "title": "Ticket branch",
+          "line": "Back at the SNS fork, another copy goes to the ticket queue.",
+          "connection": "v3-edge-14",
+          "code": [
+            {
+              "file": "infra/src/jobs/booking-events.ts",
+              "symbol": "createBookingEvents"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions; SQS \u2192 Queues"
+        },
+        {
+          "title": "Wake the ticket worker",
+          "line": "The ticket Lambda reads its own copy.",
+          "connection": "v3-edge-16",
+          "code": [
+            {
+              "file": "infra/src/tickets/iam.ts",
+              "symbol": "createTicketRole"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers"
+        },
+        {
+          "title": "Remember the ticket",
+          "line": "DynamoDB keeps the ticket identity so a retry can reuse it.",
+          "connection": "v3-edge-21",
+          "code": [
+            {
+              "file": "apps/worker/src/handlers/tickets.ts",
+              "symbol": "handleTickets"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-processed-jobs / minitickets-dev-tickets \u2192 Indexes"
+        },
+        {
+          "title": "Store the QR image",
+          "line": "The ticket worker signs the ticket and puts its QR image in private S3 storage.",
+          "connection": "v3-edge-22",
+          "code": [
+            {
+              "file": "apps/worker/src/tickets/assets.ts",
+              "symbol": "ticketPngWriter"
+            }
+          ],
+          "console": "S3 \u2192 minitickets-dev-ticket-assets-258237553751 \u2192 Permissions / Lifecycle; Secrets Manager \u2192 signing metadata"
+        },
+        {
+          "title": "Make the ticket ready",
+          "line": "After the image is stored, the worker marks the ticket ready in DynamoDB.",
+          "connection": "v3-edge-21",
+          "code": [
+            {
+              "file": "apps/worker/src/handlers/tickets.ts",
+              "symbol": "markReady"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-tickets \u2192 Explore table items \u2192 status: ready"
+        },
+        {
+          "title": "Open My tickets",
+          "line": "Later, your browser asks the API for My tickets through the same /trpc/* rule.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "apps/api/src/services/tickets.ts",
+              "symbol": "mine"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups"
+        },
+        {
+          "title": "Read only your tickets",
+          "line": "The API reads the signed-in owner\u2019s ticket rows.",
+          "connection": "v3-edge-24",
+          "code": [
+            {
+              "file": "apps/api/src/queries/tickets.ts",
+              "symbol": "listByUser"
+            }
+          ],
+          "console": "DynamoDB \u2192 Tables \u2192 minitickets-dev-processed-jobs / minitickets-dev-tickets \u2192 Indexes"
+        },
+        {
+          "title": "Make a short link",
+          "line": "The API signs a GET link for the private QR image, valid for 120 seconds.",
+          "component": "api-task",
+          "code": [
+            {
+              "file": "apps/api/src/queries/assets.ts",
+              "symbol": "signAssetGet"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 latest active revision \u2192 Containers and Roles"
+        },
+        {
+          "title": "View the QR",
+          "line": "Your browser uses the short link to fetch the QR image from S3.",
+          "connection": "v3-edge-26",
+          "code": [
+            {
+              "file": "apps/api/src/queries/assets.ts",
+              "symbol": "signAssetGet"
+            }
+          ],
+          "console": "S3 \u2192 minitickets-dev-ticket-assets-258237553751 \u2192 Permissions / Lifecycle; Secrets Manager \u2192 signing metadata"
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "title": "2. Search as you type",
+      "steps": [
+        {
+          "title": "Type a little",
+          "line": "You type \u201cj\u201d; the browser waits 250 milliseconds before searching.",
+          "component": "visitors",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "useEventSearch"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 Document and /trpc requests"
+        },
+        {
+          "title": "Send the old search",
+          "line": "After the short wait, \u201cj\u201d travels to the API.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "abortOnUnmount"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups"
+        },
+        {
+          "title": "Keep typing",
+          "line": "You type \u201cjazz\u201d; the browser clears the old timer and waits for a quiet 250 milliseconds.",
+          "component": "visitors",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "clearTimeout"
+            }
+          ],
+          "console": "Browser \u2192 Developer Tools \u2192 Network \u2192 Document and /trpc requests"
+        },
+        {
+          "title": "Send the new search",
+          "line": "The new \u201cjazz\u201d key starts its request; the unused old request is cancelled.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "infiniteQueryOptions"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups"
+        },
+        {
+          "title": "Find the matches",
+          "line": "Postgres finds literal matches and returns a small page.",
+          "connection": "v3-edge-5",
+          "code": [
+            {
+              "file": "apps/api/src/queries/event-search.ts",
+              "symbol": "search"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches"
+        },
+        {
+          "title": "Return the newest answer",
+          "line": "The \u201cjazz\u201d answer returns through the API and load balancer.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "useInfiniteQuery"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups",
+          "reverse": true
+        },
+        {
+          "title": "Newest wins",
+          "line": "The browser shows the active \u201cjazz\u201d key; a late \u201cj\u201d answer can only update its own old key.",
+          "connection": "v3-edge-0",
+          "code": [
+            {
+              "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+              "symbol": "searchKey"
+            }
+          ],
+          "console": "EC2 \u2192 Load balancers \u2192 minitickets-dev \u2192 Listeners and rules; Target groups \u2192 Targets",
+          "reverse": true
+        }
+      ]
+    },
+    {
+      "id": "email-failure",
+      "title": "3. A failing email",
+      "steps": [
+        {
+          "title": "Try the email",
+          "line": "This example assumes SES keeps refusing the message.",
+          "connection": "v3-edge-20",
+          "code": [
+            {
+              "file": "apps/worker/src/ses-mailer.ts",
+              "symbol": "SesMailer"
+            }
+          ],
+          "console": "SES \u2192 Verified identities / Account dashboard \u2192 Sandbox and sending quota"
+        },
+        {
+          "title": "First refusal",
+          "line": "SES refuses; this message is reported as failed while successful messages can finish.",
+          "component": "email-lambda",
+          "code": [
+            {
+              "file": "apps/worker/src/batch.ts",
+              "symbol": "handleBatch"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker \u2192 Configuration and SQS trigger"
+        },
+        {
+          "title": "Wait 10 seconds",
+          "line": "The worker hides the failed message for 10 seconds before the next try.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "apps/worker/src/retry-later.ts",
+              "symbol": "delayFailedMessages"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers",
+          "reverse": true
+        },
+        {
+          "title": "Second try",
+          "line": "The queue delivers the message again; SES still refuses.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "apps/worker/src/lambda.ts",
+              "symbol": "handler"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers"
+        },
+        {
+          "title": "Wait 40 seconds",
+          "line": "The second failure gives this message a 40 second wait.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "apps/worker/src/backoff.ts",
+              "symbol": "backoffSeconds"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers",
+          "reverse": true
+        },
+        {
+          "title": "Third try",
+          "line": "The third delivery fails too.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "apps/worker/src/lambda.ts",
+              "symbol": "handler"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers"
+        },
+        {
+          "title": "Wait 120 seconds",
+          "line": "The third failure sets a 120 second wait; there will be no fourth worker attempt.",
+          "connection": "v3-edge-15",
+          "code": [
+            {
+              "file": "apps/worker/src/backoff.ts",
+              "symbol": "backoffSeconds"
+            }
+          ],
+          "console": "Lambda \u2192 Functions \u2192 minitickets-dev-worker / minitickets-dev-tickets \u2192 Configuration \u2192 Triggers",
+          "reverse": true
+        },
+        {
+          "title": "Move to the DLQ",
+          "line": "After three receives, SQS moves the message to the dead-letter queue.",
+          "connection": "v3-edge-17",
+          "code": [
+            {
+              "file": "infra/src/jobs/queues.ts",
+              "symbol": "maxReceiveCount"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-booking-events \u2192 Subscriptions; SQS \u2192 Queues"
+        },
+        {
+          "title": "Raise the alarm",
+          "line": "A visible message in the email DLQ trips its one-minute CloudWatch alarm.",
+          "connection": "v3-edge-27",
+          "code": [
+            {
+              "file": "infra/src/observability/alarm-specs.ts",
+              "symbol": "ApproximateNumberOfMessagesVisible"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms / Dashboards \u2192 minitickets-dev; SNS \u2192 minitickets-dev-alerts"
+        },
+        {
+          "title": "Tell the alert topic",
+          "line": "The alarm sends its state change to the alerts SNS topic.",
+          "connection": "v3-edge-28",
+          "code": [
+            {
+              "file": "infra/src/observability/alarms.ts",
+              "symbol": "createAlarms"
+            }
+          ],
+          "console": "CloudWatch \u2192 Alarms / Dashboards \u2192 minitickets-dev; SNS \u2192 minitickets-dev-alerts"
+        },
+        {
+          "title": "Alert email",
+          "line": "SNS emails the operator if the alert subscription is confirmed; delivery still needs a live check.",
+          "component": "alert-topic",
+          "code": [
+            {
+              "file": "infra/src/observability/alert-topic.ts",
+              "symbol": "email"
+            }
+          ],
+          "console": "SNS \u2192 Topics \u2192 minitickets-dev-alerts \u2192 Access policy and Subscriptions"
+        }
+      ]
+    },
+    {
+      "id": "sale",
+      "title": "4. Sale day",
+      "steps": [
+        {
+          "title": "A crowd arrives",
+          "line": "Many people press Book at once; this is one example request among them.",
+          "connection": "v3-edge-0",
+          "code": [
+            {
+              "file": "infra/src/entry/https-listener.ts",
+              "symbol": "createHttpsListener"
+            }
+          ],
+          "console": "EC2 \u2192 Load balancers \u2192 minitickets-dev \u2192 Listeners and rules; Target groups \u2192 Targets"
+        },
+        {
+          "title": "Enter the API",
+          "line": "The load balancer sends booking requests to the API.",
+          "connection": "v3-edge-2",
+          "code": [
+            {
+              "file": "infra/src/security.ts",
+              "symbol": "createSecurityGroups"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups"
+        },
+        {
+          "title": "Check the rate",
+          "line": "A shared Redis bucket allows 10 booking tokens per user and adds one token each second.",
+          "connection": "v3-edge-6",
+          "code": [
+            {
+              "file": "apps/api/src/services/rate-limits.ts",
+              "symbol": "booking"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches"
+        },
+        {
+          "title": "Reject excess requests",
+          "line": "An empty bucket returns 429 with Retry-After; those requests stop here.",
+          "component": "api-task",
+          "code": [
+            {
+              "file": "apps/api/src/services/rate-limits.ts",
+              "symbol": "RateLimitedError"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 latest active revision \u2192 Containers and Roles"
+        },
+        {
+          "title": "Try the inventory gate",
+          "line": "A request with a token asks the optional Redis gate for advisory seats.",
+          "connection": "v3-edge-6",
+          "code": [
+            {
+              "file": "apps/api/src/queries/inventory.ts",
+              "symbol": "reserve"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches"
+        },
+        {
+          "title": "Reject when no seats remain",
+          "line": "If no advisory seats remain, the gate can reject before the row lock; an inventory-store failure falls back to SQL.",
+          "component": "api-task",
+          "code": [
+            {
+              "file": "apps/api/src/services/booking-inventory.ts",
+              "symbol": "createGatedBooking"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 latest active revision \u2192 Containers and Roles"
+        },
+        {
+          "title": "Only some reach SQL",
+          "line": "Requests that pass reach the Postgres row lock; SQL is the final seat count.",
+          "connection": "v3-edge-5",
+          "code": [
+            {
+              "file": "apps/api/src/queries/bookings.ts",
+              "symbol": "createBookingTx"
+            }
+          ],
+          "console": "RDS \u2192 Databases \u2192 minitickets-dev-db; ElastiCache \u2192 Valkey caches"
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "title": "5. A deploy",
+      "steps": [
+        {
+          "title": "Push",
+          "line": "A push to main starts CI.",
+          "component": "github",
+          "code": [
+            {
+              "file": ".github/workflows/ci.yml",
+              "symbol": "push"
+            }
+          ],
+          "console": "GitHub \u2192 maheshnd/minitickets \u2192 Actions \u2192 CI"
+        },
+        {
+          "title": "CI passes",
+          "line": "Tests and security gates must pass before automatic CD starts.",
+          "component": "github",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "workflow_run"
+            }
+          ],
+          "console": "GitHub \u2192 maheshnd/minitickets \u2192 Actions \u2192 CD; Settings \u2192 Environments \u2192 dev"
+        },
+        {
+          "title": "Publish with OIDC",
+          "line": "GitHub swaps an OIDC token for a short-lived publish role and stores SHA-tagged images in ECR.",
+          "connection": "v3-edge-9",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Configure AWS credentials (OIDC)"
+            }
+          ],
+          "console": "ECR \u2192 Private repositories \u2192 minitickets-dev-api / web / worker \u2192 Images"
+        },
+        {
+          "title": "Wait for approval",
+          "line": "The deploy job waits for approval on the dev environment before it gets deploy credentials.",
+          "component": "github",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "environment:dev"
+            }
+          ],
+          "console": "GitHub \u2192 maheshnd/minitickets \u2192 Actions \u2192 CD \u2192 Review deployments \u2192 dev"
+        },
+        {
+          "title": "Guard the release",
+          "line": "The current guard refuses old or superseded infrastructure code.",
+          "connection": "v3-edge-10",
+          "code": [
+            {
+              "file": "scripts/deploy-guard.sh",
+              "symbol": "RECORDED"
+            }
+          ],
+          "console": "GitHub \u2192 Actions \u2192 CI / CD; IAM \u2192 Identity providers; SSM \u2192 Parameter Store"
+        },
+        {
+          "title": "Phase A",
+          "line": "Phase A prepares infrastructure and the new migration image while keeping existing app images; SQL-free workers can update now.",
+          "component": "migration-task",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Phase A:"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-migrate \u2192 Container migrate and Command"
+        },
+        {
+          "title": "Migrate",
+          "line": "One ECS task runs the new SQL migrations; failure stops phase B.",
+          "component": "migration-task",
+          "code": [
+            {
+              "file": "scripts/run-migrations.sh",
+              "symbol": "exitCode"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-migrate \u2192 Container migrate and Command"
+        },
+        {
+          "title": "Phase B",
+          "line": "CD writes the new image tag to SSM, then applies it to the app services.",
+          "connection": "v3-edge-11",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Phase B:"
+            }
+          ],
+          "console": "ECS \u2192 Clusters \u2192 minitickets-dev \u2192 Services / Tasks; CloudWatch \u2192 Log groups"
+        },
+        {
+          "title": "Roll the services",
+          "line": "ECS replaces tasks and CD waits until both services are stable.",
+          "component": "api-task",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Wait for the services to be stable"
+            }
+          ],
+          "console": "ECS \u2192 Task definitions \u2192 minitickets-dev-api \u2192 latest active revision \u2192 Containers and Roles"
+        },
+        {
+          "title": "Smoke test",
+          "line": "CD requests the home page and /trpc/events.list before reporting success.",
+          "component": "alb",
+          "code": [
+            {
+              "file": ".github/workflows/cd.yml",
+              "symbol": "Smoke test"
+            }
+          ],
+          "console": "Elastic Load Balancing \u2192 Load balancers \u2192 minitickets-dev \u2192 Listeners and rules"
+        }
+      ]
+    },
+    {
+      "id": "why-connect",
+      "title": "6. Why can it connect?",
+      "checks": true,
+      "defaultConnection": "v3-edge-5"
+    }
   ]
 }
 </script>
@@ -11600,7 +13985,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
   // 9. Global keys: left / right arrows step through the chapters, Escape closes the details.
   document.addEventListener("keydown", (event) => {
     const tag = (event.target.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "select" || tag === "textarea") return;
+    if (tag === "input" || tag === "select" || tag === "textarea" || event.defaultPrevented) return;
     if (event.key === "ArrowRight") step(1);
     if (event.key === "ArrowLeft") step(-1);
     if (event.key === "Escape" && state.sel) {
@@ -11931,6 +14316,18 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
 
   window.miniticketsExplorer = { data: DATA, chapter: () => state.chapter, goTo, fit: fitCity,
     view: () => ({ zoom, fitBounds, viewBounds }),
+    // 13. Playback uses the actual SVG route and its endpoints; it never draws a shortcut.
+    showFlowTarget: step => {
+      const edge = edgeById.get(step.connection);
+      state.sel = { type: edge ? "edge" : "node", id: edge ? edge.id : step.component };
+      update();
+      const entries = edge ? [edgeEls.get(edge.id), nodeEls.get(edge.from), nodeEls.get(edge.to)] : [nodeEls.get(step.component)];
+      const box = union(entries.map(entry => entry.g.getBBox()), 45);
+      const width = Math.max(box.width, 540), height = Math.max(box.height, 390);
+      drawView({ x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height });
+      frame.scrollLeft = 0; frame.scrollTop = 0;
+    },
+    selectConnection: id => { const e=edgeById.get(id); if(e){const chapter=Math.max(e.chapter,byId.get(e.from).chapter,byId.get(e.to).chapter);if(state.chapter<chapter)goTo(chapter);select({type:"edge",id},false)} },
     selectNode: id => { const c=byId.get(id); if(c){goTo(Math.max(state.chapter,c.chapter));select({type:"node",id},false)} } };
   // 14. Start.
   readHash();
@@ -14936,5 +17333,219 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
   ]
 }
 </script>
+<style>
+/* 1. Keep playback on the same paper, ink and route palette as the city plan. */
+.flow-player { border:1px solid var(--rule); border-left:4px solid var(--route); background:var(--paper-raised); padding:10px 12px; margin:12px 0; }
+.flow-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.flow-controls select,.flow-controls button { background:var(--paper); border:1px solid var(--rule); border-radius:3px; padding:5px 9px; }
+.flow-controls button { cursor:pointer; min-width:36px; }
+.flow-controls :disabled { opacity:.55; cursor:default; }
+#flow-select { max-width:100%; }
+#flow-status { margin:8px 0 0; font-weight:600; }
+#flow-help,.flow-note { font-size:12px; color:var(--ink-2); margin:5px 0 0; }
+#map .flow-route .edge-line { stroke:var(--select); stroke-width:4; }
+#map .flow-token { fill:var(--select); stroke:var(--paper-raised); stroke-width:3; pointer-events:none; }
+#map .flow-trail { fill:none; stroke:var(--select); stroke-width:5; opacity:.35; pointer-events:none; }
+.flow-check { padding:10px; margin:9px 0; border:1px solid var(--rule); border-left:4px solid var(--pencil); }
+.flow-check.current { border-left-color:var(--select); background:var(--paper-raised); }
+.flow-check p { margin:5px 0; }
+.flow-check .result { font-weight:700; }
+.flow-ref { overflow-wrap:anywhere; }
+#flow-step-title { margin-bottom:8px; }
+.flow-active .summary { display:none; }
+@media (min-width:1101px) {
+  .flow-active .layout { display:grid; grid-template-columns:minmax(0,1fr) 370px; }
+  .flow-active aside#panel { position:sticky; top:12px; max-height:calc(100vh - 24px); margin:12px 0 0; border-left:1px solid var(--rule); padding:18px; }
+  .flow-active .mapwrap { min-width:0; }
+}
+@media (prefers-reduced-motion:reduce) { #map .flow-token,#map .flow-trail { display:none; } }
+</style>
+<script>
+addEventListener('DOMContentLoaded', () => {
+  'use strict';
+  // 1. Flows contain only catalogue IDs and teaching text. Adding a flow needs no new player code.
+  const bridge = window.miniticketsExplorer, data = bridge.data;
+  const $ = id => document.getElementById(id);
+  const edges = new Map(data.connections.map(edge => [edge.id, edge]));
+  const nodes = new Map(data.components.map(node => [node.id, node]));
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  const NS = 'http://www.w3.org/2000/svg';
+  const overlay = document.createElementNS(NS, 'g');
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.style.pointerEvents = 'none';
+  $('map').append(overlay);
+  const token = document.createElementNS(NS, 'circle');
+  token.setAttribute('r', '7'); token.setAttribute('class', 'flow-token');
+  const trail = document.createElementNS(NS, 'path');
+  trail.setAttribute('class', 'flow-trail');
+  overlay.append(trail, token); overlay.style.display = 'none';
+  let flow = null, steps = [], index = 0, playing = false, progress = 0, frame = 0, lastTime = 0;
+  let selectedConnection = new URLSearchParams(location.hash.slice(1)).get('connection') || 'v3-edge-5', internal = false, route = null;
+  const el = (tag, text, cls) => { const node = document.createElement(tag); node.textContent = text; if (cls) node.className = cls; return node; };
+  for (const item of data.flows) {
+    const option = el('option', item.title); option.value = item.id; $('flow-select').append(option);
+  }
+  function controls() {
+    $('flow-play').textContent = playing ? 'Pause' : 'Play';
+    $('flow-play').disabled = !flow || motion.matches;
+    $('flow-speed').disabled = motion.matches;
+    $('flow-back').disabled = !flow || index === 0;
+    $('flow-next').disabled = !flow || index === steps.length - 1;
+    $('flow-close').hidden = !flow;
+    $('flow-help').textContent = motion.matches
+      ? 'Reduced motion: step with ← → or the arrow buttons. There is no autoplay or moving token.'
+      : 'Space: play / pause. ← →: step. Stops and branches use one token at a time. Timing is shortened for teaching.';
+  }
+  function pause() { playing = false; cancelAnimationFrame(frame); lastTime = 0; controls(); }
+  function clearRoute() {
+    document.querySelectorAll('#map .flow-route').forEach(node => node.classList.remove('flow-route'));
+    overlay.style.display = 'none'; route = null;
+  }
+  function leave() {
+    pause(); clearRoute(); flow = null; steps = []; $('flow-select').value = '';
+    document.body.classList.remove('flow-active');
+    $('flow-status').textContent = 'Follow a request along the city’s real connections.'; controls();
+  }
+  // 2. Permission checks describe committed configuration, including a pass for checks that are not needed.
+  function checkSteps(item) {
+    const edge = edges.get(selectedConnection) || edges.get(item.defaultConnection);
+    selectedConnection = edge.id;
+    return edge.checks.map(check => ({ title: check.name, line: check.line, connection: edge.id, code: check.code, console: check.console, check }));
+  }
+  function begin(id) {
+    pause(); clearRoute();
+    flow = data.flows.find(item => item.id === id) || null;
+    if (!flow) { leave(); return; }
+    document.body.classList.add('flow-active');
+    steps = flow.checks ? checkSteps(flow) : flow.steps;
+    index = 0; progress = 0;
+    internal = true;
+    // All implemented pieces must be ink while a request travels through the complete city.
+    bridge.goTo(Math.max(...data.chapters.filter(chapter => chapter.status === 'written').map(chapter => chapter.n)));
+    internal = false;
+    $('v3-code-map').hidden = true; $('map-frame').hidden = false;
+    showStep();
+  }
+  function references(panel, step) {
+    panel.append(el('h3', 'Code reference'));
+    for (const ref of step.code) {
+      const line = el('p', ref.file + ' → ' + ref.symbol, 'flow-ref');
+      const link = el('a', 'Read the code'); link.href = 'code-tours.html?q=' + encodeURIComponent(ref.file);
+      line.append(document.createTextNode(' · '), link); panel.append(line);
+    }
+    panel.append(el('h3', 'Console path'), el('p', step.console, 'flow-ref'));
+  }
+  function showStep() {
+    clearRoute();
+    const step = steps[index];
+    bridge.showFlowTarget(step);
+    const panel = $('panel'); panel.replaceChildren();
+    panel.append(el('p', flow.title + ' · ' + (index + 1) + ' / ' + steps.length, 'kicker'));
+    const title = el('h2', step.title); title.id = 'flow-step-title'; panel.append(title);
+    const line = el('p', step.line); line.id = 'flow-narration'; line.setAttribute('aria-live', 'polite'); panel.append(line);
+    if (flow.checks) {
+      const edge = edges.get(step.connection);
+      panel.append(el('p', nodes.get(edge.from).name + ' → ' + nodes.get(edge.to).name, 'realname'));
+      panel.append(el('p', 'These checks read the committed rules. They do not probe live AWS. ✓ means allowed or not required; ✕ means this configuration blocks it.', 'flow-note'));
+      edge.checks.forEach((check, i) => {
+        const card = el('section', '', 'flow-check' + (i === index ? ' current' : ''));
+        card.dataset.check = check.name;
+        const revealed = i <= index;
+        card.append(el('p', (revealed ? (check.pass ? '✓ ' : '✕ ') : '○ ') + check.name + (i === index ? ' · now' : ''), 'result'));
+        card.append(el('p', revealed ? check.rule : 'Next check.'));
+        panel.append(card);
+      });
+    }
+    references(panel, step);
+    if (!flow.checks) panel.append(el('p', 'One token follows each branch in turn. A stop inside a building is work done there, not a new network hop.', 'flow-note'));
+    panel.scrollTop = 0;
+    $('flow-status').textContent = (index + 1) + ' / ' + steps.length + ' · ' + step.line;
+    if (step.connection) {
+      const group = document.querySelector('#map .edge[data-id="' + step.connection + '"]');
+      group.classList.add('flow-route', 'visible');
+      route = group.querySelector('.edge-line'); trail.setAttribute('d', route.getAttribute('d'));
+    }
+    controls(); paint();
+  }
+  // 3. Sample the real path, in either direction for a reply; pauses keep the same path position.
+  function paint() {
+    if (!flow || motion.matches) { overlay.style.display = 'none'; return; }
+    overlay.style.display = '';
+    const step = steps[index];
+    let point;
+    if (route) {
+      const length = route.getTotalLength(), fraction = Math.min(1, progress / .8);
+      point = route.getPointAtLength(length * (step.reverse ? 1 - fraction : fraction));
+      trail.style.display = '';
+      trail.setAttribute('stroke-dasharray', (length * fraction) + ' ' + length);
+      trail.setAttribute('stroke-dashoffset', step.reverse ? -length * (1 - fraction) : 0);
+    } else {
+      const box = document.querySelector('#map .node[data-id="' + step.component + '"]').getBBox();
+      point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      trail.style.display = 'none';
+    }
+    token.setAttribute('cx', point.x); token.setAttribute('cy', point.y);
+    token.dataset.progress = String(progress);
+  }
+  function tick(time) {
+    if (!playing) return;
+    if (lastTime) progress += (time - lastTime) * Number($('flow-speed').value) / 3200;
+    lastTime = time;
+    if (progress >= 1) {
+      if (index === steps.length - 1) { progress = 1; paint(); pause(); return; }
+      index++; progress = 0; showStep();
+    }
+    paint(); frame = requestAnimationFrame(tick);
+  }
+  function togglePlay() {
+    if (!flow || motion.matches) return;
+    if (playing) { pause(); return; }
+    if (progress >= 1) { index = 0; progress = 0; showStep(); }
+    playing = true; lastTime = 0; controls(); frame = requestAnimationFrame(tick);
+  }
+  function advance(delta) {
+    if (!flow) return;
+    pause(); index = Math.max(0, Math.min(steps.length - 1, index + delta)); progress = 0; showStep();
+  }
+  $('flow-select').addEventListener('change', () => begin($('flow-select').value));
+  $('flow-play').addEventListener('click', togglePlay);
+  $('flow-back').addEventListener('click', () => advance(-1));
+  $('flow-next').addEventListener('click', () => advance(1));
+  $('flow-close').addEventListener('click', () => { leave(); bridge.goTo(bridge.chapter()); });
+  $('v3-code').addEventListener('click', () => { if (flow) leave(); });
+  // 4. Capture playback keys before chapter keys; leave native text and select editing alone.
+  document.addEventListener('keydown', event => {
+    if (!flow || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName) || event.target.isContentEditable || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (![' ', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.repeat) return;
+    if (event.key === ' ') togglePlay();
+    else advance(event.key === 'ArrowRight' ? 1 : -1);
+  }, true);
+  motion.addEventListener('change', () => { pause(); paint(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  addEventListener('map-chapter', () => { if (!internal && flow) leave(); });
+  addEventListener('map-fit', () => { if (!internal && flow) leave(); });
+  // 5. Every selected connection can launch its own three checks, including from the ledger.
+  addEventListener('map-select', event => {
+    if (internal) return;
+    if (event.detail?.type === 'edge') {
+      selectedConnection = event.detail.id;
+      const restart = flow?.checks;
+      if (flow) leave();
+      queueMicrotask(() => {
+        if (restart) { $('flow-select').value = 'why-connect'; begin('why-connect'); return; }
+        const button = el('button', 'Play REACH → ALLOWED → PASSWORD', 'toggle');
+        button.type = 'button'; button.id = 'flow-check-connection';
+        button.onclick = () => { $('flow-select').value = 'why-connect'; begin('why-connect'); };
+        $('panel').prepend(button);
+      });
+    } else if (flow) leave();
+  });
+  controls();
+});
+</script>
+
 </body>
 </html>
