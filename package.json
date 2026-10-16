@@ -36,7 +36,8 @@
     "demo:p4-assets": "pnpm --filter @minitickets/api demo:p4-assets",
     "demo:search": "pnpm --filter @minitickets/api demo:search",
     "demo:sale": "pnpm --filter @minitickets/api demo:sale",
-    "demo:security": "pnpm --filter @minitickets/api demo:security"
+    "demo:security": "pnpm --filter @minitickets/api demo:security",
+    "docs:build": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-docs.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -392,6 +392,10 @@ function main() {
   // Check 8: guides.
   checkGuides();
 
+  // Generated source snippets are committed and must agree with current anchored code.
+  try { execFileSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/build-docs.ts", "--check"], { cwd: ROOT, stdio: "pipe" }); }
+  catch { problems.push("Generated code tours are stale; run pnpm docs:build"); }
+
   // Report.
   if (problems.length > 0) {
     console.error(`docs:check found ${problems.length} problem(s):`);

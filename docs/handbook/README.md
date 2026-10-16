@@ -236,3 +236,5 @@ the repo's `CLAUDE.md`.
 
 - **Uses:** the step docs in [docs/](..) and the code.
 - **Gives:** the entry point for every reader of the handbook.
+
+- [Generated code tours](guides/code-tours.html): searchable source bookmarks, rebuilt with `pnpm docs:build`.

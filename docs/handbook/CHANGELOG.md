@@ -25,9 +25,19 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · feat(events): add indexed search and virtualized keyset lists (P7)
+## 2026-10-15 · docs(tours): generate source-linked offline code tours (D0)
 
 Commit: filled in by the next handbook commit
+
+Why: source snippets should be rebuilt from anchors, never copied by hand.
+
+- `generated/code-tours.json`, `guides/code-tours.html`, `guides/infra-explorer.html`: deterministic source snippets and offline reader with search, navigation and saved checks.
+- `README.md`: link the code reader and rebuild command.
+- `ROADMAP.md`: D0 built, D1 next; source generator/checker live in scripts/build-docs.ts and check-concepts.ts.
+
+## 2026-10-15 · feat(events): add indexed search and virtualized keyset lists (P7)
+
+Commit: eaf3fe6
 
 Why: narrow the remaining builds to P7, P8 and P10, with deferred features taught through D2 scenarios.
 
