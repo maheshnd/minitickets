@@ -194,7 +194,8 @@ jobs:
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
 
-      # P10. Scan the three locally loaded CI images; never publish from this workflow.
+      # P10. Fail on fixable criticals; --ignore-unfixed omits findings without a fix.
+      # .trivyignore records the dated zlib exception separately; never publish CI images.
       - name: Scan api image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -202,6 +203,8 @@ jobs:
           severity: CRITICAL
           exit-code: '1'
           scanners: vuln
+          ignore-unfixed: true
+          trivyignores: .trivyignore
       - name: Scan web image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -209,6 +212,8 @@ jobs:
           severity: CRITICAL
           exit-code: '1'
           scanners: vuln
+          ignore-unfixed: true
+          trivyignores: .trivyignore
       - name: Scan worker image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -216,3 +221,5 @@ jobs:
           severity: CRITICAL
           exit-code: '1'
           scanners: vuln
+          ignore-unfixed: true
+          trivyignores: .trivyignore

@@ -10,7 +10,7 @@
 #   runtime -> the final image. Only the standalone server, the static files and public/.
 
 # 1. WHAT: official Node "slim" image, pinned to the exact version in .nvmrc.
-#    WHY: same Node on laptop, CI and production. Slim keeps it small.
+#    WHY: keep the laptop/CI build toolchain; runtime gets newer patches within Node 24. Slim keeps it small.
 FROM node:24.13.0-slim AS base
 
 # 2. WHAT: enable corepack and activate the pnpm version from the root package.json.
@@ -75,7 +75,17 @@ RUN pnpm --filter @minitickets/web build
 
 
 # ---- Stage: runtime (the final image) ------------------------------------------------------
-FROM node:24.13.0-slim AS runtime
+# 8b. WHAT: pin the patched Node 24 runtime without changing the Debian Bookworm base distribution.
+#     WHY: the standalone server gets security fixes while the build toolchain stays unchanged.
+FROM node:24.22.0-bookworm-slim AS runtime
+
+# 8c. WHAT: apply Debian's Perl security update, then remove package managers and their shims.
+#     WHY: the latest Node base still has old Perl; standalone needs only node, not installers.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+    && rm -rf /var/lib/apt/lists/* /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
 
 # 9. WHAT: set the working folder of the final image.
 #    WHY: the standalone output keeps the monorepo layout, so the server ends up in /app/apps/web.

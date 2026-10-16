@@ -32,3 +32,14 @@ docs, cards, story chapters and a CHANGELOG entry, then clears this list (see CL
 - Other checks: `pnpm typecheck`, `pnpm lint` and `pnpm test` passed (57 files / 404 tests); baseline `pnpm docs:check` passed (151 cards / 141 slugs / 331 anchor places).
 - Deploy preflight: actionlint 1.7.12 passed; critical-threshold audit passed with 1 high / 1 moderate remaining. Fresh arm64 Docker builds passed, but Trivy 0.70.0 CRITICAL gates failed API/web (7 each), worker passed (0); their official Node amd64 base also failed (7), while full GitHub amd64 images remain unrun.
 - Cleanup: the runner stopped only its web PID 80403 and API PID 80402 and removed its temporary build. No infrastructure, dependencies or owner servers changed.
+
+## Runtime image security and fixable-critical gate
+
+- Runtime: `apps/{api,web}/Dockerfile` pins `node:24.22.0-bookworm-slim`, applies Debian's `perl-base` security update (measured `5.36.0-7+deb12u4`) and removes npm/npx/Corepack/Yarn plus shims; build stages and `.nvmrc` stay unchanged.
+- Policy: `.github/workflows/ci.yml` keeps CRITICAL/exit 1 for all three images with `ignore-unfixed`; `.trivyignore` records only `CVE-2023-45853`, Debian's absent contrib/minizip code, expiring 2026-11-14. The global no-fix filter is independent of that expiry.
+- Images: all six arm64/amd64 builds passed. Trivy 0.70.0 raw CRITICALs before → after: API 7 → 1, web 7 → 1, worker 0 → 0; both architectures have only the unfixed zlib finding, and all six configured gates return 0.
+- Gate probes: old API still fails with 6 fixable CRITICALs; the specific unexpired ignore passes, while an expired copy exposes the zlib finding and fails without `ignore-unfixed`.
+- Audit: `pnpm-workspace.yaml` scopes `@esbuild-kit/core-utils@3.3.2>esbuild` to 0.25.12; lockfile removes 0.18.20. Legacy loader sync/async transforms, Drizzle check and frozen install pass. Audit has 1 high braces (no published fix), 0 moderate/critical; no audit ignore.
+- Browser: shared-database run had 35 passed / 8 failed / 7 skipped from accumulated event fixtures; disposable migrated/seeded database rerun of `pnpm test:e2e:prod` passed 43 / skipped 7 and removed its database/PIDs.
+- Startup: final API/web images on both architectures run Node 24.22.0 as uid 1000, with patched Perl and no package managers; native Argon2, API ready, web SSR/static/CSP/no-store and both Lambda handlers pass. Only recorded test CIDs/PIDs were stopped.
+- Other checks: typecheck, lint, 404 unit tests / 57 files, actionlint and docs:check pass; generated source tours refreshed (332 snippets / 152 files). No AWS changes, image push, new dependency or owner-server restart.

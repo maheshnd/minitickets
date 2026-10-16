@@ -4,3 +4,8 @@ packages:
   - "apps/*"
   - "packages/*"
   - "infra"
+
+# 1. Drizzle Kit's legacy TS loader uses only esbuild's transform API. Keep that one
+#    dependency on the patched version already used by Drizzle Kit itself.
+overrides:
+  "@esbuild-kit/core-utils@3.3.2>esbuild": "0.25.12"

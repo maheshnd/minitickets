@@ -10136,7 +10136,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
 <script type="application/json" id="generated-code">
 {
   "version": 1,
-  "sourceHash": "4b12a97acade09e4e9cc08e50e37426f877a34f5afe98e0c3b95784686873991",
+  "sourceHash": "1257e9bd93f3326303453b5496eb1b599e3f6010f39fe3d5d5e691dc1127b474",
   "snippets": [
     {
       "id": "least-privilege:.github/workflows/ci.yml:8",
@@ -10199,7 +10199,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "line": 2,
       "endLine": 18,
       "symbol": "module",
-      "code": "#\n# @concept: docker-multi-stage\n# Stages (each starts with FROM; later stages copy only what they need from earlier ones):\n#   base    -> Node + pnpm. A shared starting point, produces no files of its own.\n#   deps    -> ALL dependencies installed (dev tools too). Produces node_modules for the build.\n#   build   -> runs esbuild. Produces dist/server.js and dist/migrate.js (plain JavaScript).\n#   prod    -> ONLY production dependencies. Produces a small node_modules for runtime.\n#   runtime -> the final image. dist/ + prod node_modules + SQL migrations. Nothing else.\n# Only the last stage becomes the image we run. The others are thrown away, which is why it is small.\n\n# 1. WHAT: start from the official Node image, the \"slim\" (Debian) variant, pinned to an exact version.\n#    WHY: the version matches .nvmrc (24.13.0), so laptop, CI and production run the same Node.\n#    \"slim\" has Node and little else (small), and it is glibc-based, which the prebuilt\n#    @node-rs/argon2 binary needs (Alpine uses musl and is a common source of native-package trouble).\nFROM node:24.13.0-slim AS base\n\n# 2. WHAT: turn on corepack and activate the pnpm version written in the root package.json."
+      "code": "#\n# @concept: docker-multi-stage\n# Stages (each starts with FROM; later stages copy only what they need from earlier ones):\n#   base    -> Node + pnpm. A shared starting point, produces no files of its own.\n#   deps    -> ALL dependencies installed (dev tools too). Produces node_modules for the build.\n#   build   -> runs esbuild. Produces dist/server.js and dist/migrate.js (plain JavaScript).\n#   prod    -> ONLY production dependencies. Produces a small node_modules for runtime.\n#   runtime -> the final image. dist/ + prod node_modules + SQL migrations. Nothing else.\n# Only the last stage becomes the image we run. The others are thrown away, which is why it is small.\n\n# 1. WHAT: start from the official Node image, the \"slim\" (Debian) variant, pinned to an exact version.\n#    WHY: the build toolchain matches .nvmrc (24.13.0); runtime gets newer patches within Node 24.\n#    \"slim\" has Node and little else (small), and it is glibc-based, which the prebuilt\n#    @node-rs/argon2 binary needs (Alpine uses musl and is a common source of native-package trouble).\nFROM node:24.13.0-slim AS base\n\n# 2. WHAT: turn on corepack and activate the pnpm version written in the root package.json."
     },
     {
       "id": "docker-layer-caching:apps/api/Dockerfile:32",
@@ -10211,29 +10211,29 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "code": "\n# @concept: docker-layer-caching\n# 4. WHAT: copy ONLY the files that decide which packages to install: the lockfile,\n#    the workspace file and the package.json of every workspace package.\n#    WHY (layer caching): Docker caches each instruction as a layer and reuses it if its input\n#    did not change. If we copied all the source code first, every code edit would change the\n#    input and force a full re-install. The package files change rarely, so the slow install\n#    layer below is reused on almost every build.\nCOPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./\nCOPY apps/api/package.json apps/api/package.json\nCOPY packages/shared/package.json packages/shared/package.json\n\n# 5. WHAT: install the API's dependencies (dev ones included, we need esbuild) exactly as the lockfile says.\n#    `--filter @minitickets/api...` means \"the api and the packages it depends on\", so the web\n#    app's packages are skipped. --frozen-lockfile fails if the lockfile and package.json disagree.\n#    WHY: the cache mount keeps pnpm's download store between builds, so even when the package\n#    files change, packages already downloaded are not downloaded again. The mount is not part"
     },
     {
-      "id": "tls-in-transit:apps/api/Dockerfile:100",
+      "id": "tls-in-transit:apps/api/Dockerfile:110",
       "concept": "tls-in-transit",
       "file": "apps/api/Dockerfile",
-      "line": 99,
-      "endLine": 115,
+      "line": 109,
+      "endLine": 125,
       "symbol": "module",
       "code": "\n# @concept: tls-in-transit\n# 11b. WHAT: download AWS's RDS certificate bundle (the certificate authorities, CAs, that sign\n#      every RDS database certificate, in all regions) and tell Node to trust it as well.\n#      WHY: on AWS the API connects to RDS with SSL and VERIFIES the certificate (see\n#      src/config/database.ts). Node only trusts the well-known public CAs, and the RDS CA is\n#      not one of them, so without this file the check fails with \"self-signed certificate in\n#      certificate chain\". The fix is to trust AWS's CA, NEVER to turn the check off.\n#      NODE_EXTRA_CA_CERTS ADDS these CAs to Node's normal list (public sites still work).\n#      --chmod=644: files downloaded by ADD are readable only by root by default, and the app\n#      runs as the \"node\" user (step 15). The target folder /usr/local/share already exists:\n#      ADD would create a missing folder with the same 644 mode, and nobody could open it.\n#      It is harmless locally: the local Postgres uses no SSL, so these CAs are never used there.\n#      Docker checks the URL on every build, so a new bundle from AWS lands in the next image.\nADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /usr/local/share/rds-global-bundle.pem\nENV NODE_EXTRA_CA_CERTS=/usr/local/share/rds-global-bundle.pem\n"
     },
     {
-      "id": "container-hardening:apps/api/Dockerfile:133",
+      "id": "container-hardening:apps/api/Dockerfile:143",
       "concept": "container-hardening",
       "file": "apps/api/Dockerfile",
-      "line": 132,
-      "endLine": 148,
+      "line": 142,
+      "endLine": 158,
       "symbol": "module",
       "code": "\n# @concept: container-hardening\n# 15. WHAT: switch from root to the \"node\" user (already in the official image, uid 1000).\n#     WHY: if someone breaks into the app, they get a user that cannot change the system or\n#     install tools, instead of root inside the container.\nUSER node\n\n# 16. WHAT: document that the API listens on port 4000.\n#     WHY: it does not open the port by itself; it tells people and tools which port to publish\n#     (docker-compose.yml does that with `ports`).\nEXPOSE 4000\n\n# @concept: graceful-shutdown\n# 17. WHAT: start the server by running node directly, in \"exec form\" (a JSON list).\n#     WHY: with this form node is PID 1, the process Docker sends signals to. `docker stop`\n#     sends SIGTERM straight to node, so our graceful shutdown in server.ts runs. With\n#     `pnpm start` or the string form (CMD node ...), a shell or pnpm would be PID 1 and"
     },
     {
-      "id": "graceful-shutdown:apps/api/Dockerfile:144",
+      "id": "graceful-shutdown:apps/api/Dockerfile:154",
       "concept": "graceful-shutdown",
       "file": "apps/api/Dockerfile",
-      "line": 143,
-      "endLine": 151,
+      "line": 153,
+      "endLine": 161,
       "symbol": "module",
       "code": "\n# @concept: graceful-shutdown\n# 17. WHAT: start the server by running node directly, in \"exec form\" (a JSON list).\n#     WHY: with this form node is PID 1, the process Docker sends signals to. `docker stop`\n#     sends SIGTERM straight to node, so our graceful shutdown in server.ts runs. With\n#     `pnpm start` or the string form (CMD node ...), a shell or pnpm would be PID 1 and\n#     would not pass SIGTERM on, so Docker would wait 10 seconds and then kill the app.\nCMD [\"node\", \"dist/server.js\"]\n"
     },
@@ -11252,7 +11252,7 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "line": 4,
       "endLine": 20,
       "symbol": "module",
-      "code": "#\n# @concept: docker-multi-stage\n# Stages (only the last one becomes the image we run):\n#   base    -> Node + pnpm. A shared starting point, produces no files of its own.\n#   deps    -> ALL dependencies installed. Produces node_modules for the build.\n#   build   -> runs `next build`. Produces .next/standalone (a tiny self-contained server).\n#   runtime -> the final image. Only the standalone server, the static files and public/.\n\n# 1. WHAT: official Node \"slim\" image, pinned to the exact version in .nvmrc.\n#    WHY: same Node on laptop, CI and production. Slim keeps it small.\nFROM node:24.13.0-slim AS base\n\n# 2. WHAT: enable corepack and activate the pnpm version from the root package.json.\n#    WHY: the build stages need pnpm, and the same version as the repo gives the same install.\nRUN corepack enable && corepack prepare pnpm@10.33.2 --activate\n\n# 3. WHAT: set the folder where the next instructions run."
+      "code": "#\n# @concept: docker-multi-stage\n# Stages (only the last one becomes the image we run):\n#   base    -> Node + pnpm. A shared starting point, produces no files of its own.\n#   deps    -> ALL dependencies installed. Produces node_modules for the build.\n#   build   -> runs `next build`. Produces .next/standalone (a tiny self-contained server).\n#   runtime -> the final image. Only the standalone server, the static files and public/.\n\n# 1. WHAT: official Node \"slim\" image, pinned to the exact version in .nvmrc.\n#    WHY: keep the laptop/CI build toolchain; runtime gets newer patches within Node 24. Slim keeps it small.\nFROM node:24.13.0-slim AS base\n\n# 2. WHAT: enable corepack and activate the pnpm version from the root package.json.\n#    WHY: the build stages need pnpm, and the same version as the repo gives the same install.\nRUN corepack enable && corepack prepare pnpm@10.33.2 --activate\n\n# 3. WHAT: set the folder where the next instructions run."
     },
     {
       "id": "docker-layer-caching:apps/web/Dockerfile:28",
@@ -11273,20 +11273,20 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "code": "\n# @concept: twelve-factor-config\n# 6. WHAT: declare a build argument and turn it into an environment variable.\n#    WHY: Next.js copies NEXT_PUBLIC_* values INTO the JavaScript sent to browsers while it\n#    builds. The value must therefore exist at BUILD time, and changing it later means a new\n#    image. It is a public address, not a secret.\n#    The default is EMPTY on purpose: empty means \"call /trpc on the same origin as the page\".\n#    On AWS a load balancer routes /trpc/* to the api (Step 11f), so no address is baked in\n#    and one image works everywhere. docker compose still passes the localhost URL.\nARG NEXT_PUBLIC_API_URL=\"\"\n# 6b. WHAT: the ENV line below copies the ARG into an environment variable.\n#     WHY: `next build` reads environment variables, not build arguments.\nENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL\n\n# 7. WHAT: copy the sources, plus tsconfig.base.json (every package's tsconfig.json extends it).\n#    Next needs the API source too, only for its TypeScript types.\n#    WHY: after the install, so editing code does not invalidate the install layer above."
     },
     {
-      "id": "container-hardening:apps/web/Dockerfile:109",
+      "id": "container-hardening:apps/web/Dockerfile:119",
       "concept": "container-hardening",
       "file": "apps/web/Dockerfile",
-      "line": 108,
-      "endLine": 124,
+      "line": 118,
+      "endLine": 134,
       "symbol": "module",
       "code": "\n# @concept: container-hardening\n# 15. WHAT: switch from root to the \"node\" user (already in the official image).\n#     WHY: if someone breaks into the app, they cannot change the system. The files stay\n#     owned by root and are only readable, so the app cannot rewrite its own code either.\nUSER node\n\n# 16. WHAT: document that the web server listens on port 3000.\n#     WHY: it only informs people and tools; docker-compose.yml's `ports` really publishes it.\nEXPOSE 3000\n\n# @concept: graceful-shutdown\n# 17. WHAT: start the standalone server with node directly, in \"exec form\".\n#     WHY: node becomes PID 1, so `docker stop` delivers SIGTERM straight to it and it exits\n#     at once. Through pnpm or a shell, the signal would not arrive.\nCMD [\"node\", \"server.js\"]\n"
     },
     {
-      "id": "graceful-shutdown:apps/web/Dockerfile:119",
+      "id": "graceful-shutdown:apps/web/Dockerfile:129",
       "concept": "graceful-shutdown",
       "file": "apps/web/Dockerfile",
-      "line": 118,
-      "endLine": 124,
+      "line": 128,
+      "endLine": 134,
       "symbol": "module",
       "code": "\n# @concept: graceful-shutdown\n# 17. WHAT: start the standalone server with node directly, in \"exec form\".\n#     WHY: node becomes PID 1, so `docker stop` delivers SIGTERM straight to it and it exits\n#     at once. Through pnpm or a shell, the signal would not arrive.\nCMD [\"node\", \"server.js\"]\n"
     },
@@ -13032,9 +13032,9 @@ position=Math.min(current().steps.length-1,Math.max(0,initial.has('step')?(Numbe
       "concept": "monorepo",
       "file": "pnpm-workspace.yaml",
       "line": 1,
-      "endLine": 7,
+      "endLine": 12,
       "symbol": "module",
-      "code": "# @concept: monorepo\n# Tells pnpm which folders are packages in this monorepo.\npackages:\n  - \"apps/*\"\n  - \"packages/*\"\n  - \"infra\"\n"
+      "code": "# @concept: monorepo\n# Tells pnpm which folders are packages in this monorepo.\npackages:\n  - \"apps/*\"\n  - \"packages/*\"\n  - \"infra\"\n\n# 1. Drizzle Kit's legacy TS loader uses only esbuild's transform API. Keep that one\n#    dependency on the patched version already used by Drizzle Kit itself.\noverrides:\n  \"@esbuild-kit/core-utils@3.3.2>esbuild\": \"0.25.12\"\n"
     },
     {
       "id": "release-guard:scripts/deploy-guard.sh:30",

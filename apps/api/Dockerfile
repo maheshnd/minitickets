@@ -10,7 +10,7 @@
 # Only the last stage becomes the image we run. The others are thrown away, which is why it is small.
 
 # 1. WHAT: start from the official Node image, the "slim" (Debian) variant, pinned to an exact version.
-#    WHY: the version matches .nvmrc (24.13.0), so laptop, CI and production run the same Node.
+#    WHY: the build toolchain matches .nvmrc (24.13.0); runtime gets newer patches within Node 24.
 #    "slim" has Node and little else (small), and it is glibc-based, which the prebuilt
 #    @node-rs/argon2 binary needs (Alpine uses musl and is a common source of native-package trouble).
 FROM node:24.13.0-slim AS base
@@ -82,7 +82,17 @@ RUN pnpm --filter @minitickets/api --prod deploy --legacy /prod/api
 
 
 # ---- Stage: runtime (the final image) ------------------------------------------------------
-FROM node:24.13.0-slim AS runtime
+# 9b. WHAT: pin the patched Node 24 runtime and keep Debian Bookworm for native-package compatibility.
+#     WHY: runtime security updates do not require changing the existing build toolchain.
+FROM node:24.22.0-bookworm-slim AS runtime
+
+# 9c. WHAT: apply Debian's Perl security update, then remove package managers and their shims.
+#     WHY: the latest Node base still has old Perl; the app and migrations need only node, not installers.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+    && rm -rf /var/lib/apt/lists/* /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
 
 # 10. WHAT: set the working folder of the final image.
 #     WHY: the migrate command finds ./drizzle relative to this folder.

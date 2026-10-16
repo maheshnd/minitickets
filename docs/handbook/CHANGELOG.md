@@ -25,9 +25,20 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · chore(e2e): add production runner and refresh code tours
+## 2026-10-16 · fix(security): patch runtime images and gate fixable criticals
 
 Commit: filled in by the next handbook commit
+
+Why: keep generated source tours current after runtime image hardening, the fixable-critical CI gate and the scoped esbuild security update.
+
+- `PENDING.md`: record runtime patches, the dated zlib exception, dependency audit and measured multi-architecture image/browser checks.
+- `generated/code-tours.json`: regenerate the Docker, CI and workspace source snippets and hash.
+- `guides/code-tours.html`: refresh the embedded generated source data.
+- `guides/infra-explorer.html`: refresh the embedded generated source data; no authored infrastructure guide or tour changes.
+
+## 2026-10-15 · chore(e2e): add production runner and refresh code tours
+
+Commit: 59dc60e
 
 Why: make the full production browser suite repeatable without changing the owner's running dev servers, and restore the generated-source freshness gate after the telemetry fix.
 
