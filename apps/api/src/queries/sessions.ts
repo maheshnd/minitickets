@@ -1,43 +1,50 @@
 import { createHash, randomBytes } from "node:crypto";
+import { z } from "zod";
 import { redis } from "../redis/client";
 
-// Queries: the only code that talks to a data store (here: Redis). No business logic.
-
 // @concept: ttl
-// Sessions last 7 days. Redis deletes the key by itself when the time is up.
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-
 // @concept: sessions-vs-jwt
 // @concept: sql-vs-nosql
 // @concept: stateless-servers
-// 1. Redis key for a session: the SHA-256 HASH of the session id, never the raw id.
-//    Why: the raw id lives only in the user's cookie. If someone reads our Redis
-//    (a leak, a backup, a debug dump), they only see hashes. A hash can't be turned back
-//    into the id, so they can't build a cookie and log in as someone else.
-//    SHA-256 is fine here (not argon2): the id is 32 random bytes, so there is nothing to guess.
-function keyFor(sessionId: string) {
-  return `session:${createHash("sha256").update(sessionId).digest("hex")}`;
-}
+const StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });
+const hashId = (id: string) => createHash("sha256").update(id).digest("hex");
+const keyFor = (id: string) => `session:${hashId(id)}`;
+const indexFor = (userId: string) => `user-sessions:${userId}`;
 
-// 2. Create a session for a user. Returns the raw id, which goes into the cookie.
-export async function create(userId: string) {
-  // 32 random bytes = 256 bits, from the operating system's secure random generator.
-  // base64url makes it safe to put in a cookie.
+const CREATE = `
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+redis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])
+redis.call('EXPIRE', KEYS[2], ARGV[2])
+-- Bound per-user revocation work and session storage: retain at most 20 active devices.
+if redis.call('ZCARD', KEYS[2]) > 20 then
+  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]
+  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)
+end
+if ARGV[5] ~= '' then redis.call('DEL', ARGV[5]) end
+return 1
+`;
+const REVOKE = `
+for _, hash in ipairs(redis.call('ZRANGE', KEYS[1], 0, -1)) do redis.call('DEL', 'session:' .. hash) end
+return redis.call('DEL', KEYS[1])
+`;
+// 1. New random id on every login, atomically invalidating the old cookie's record. The user
+//    index is required on reads: if Redis evicts that index, sessions fail closed, never revive.
+export async function create(userId: string, previousId?: string) {
   const sessionId = randomBytes(32).toString("base64url");
-  const value = JSON.stringify({ userId, createdAt: new Date().toISOString() });
-  // "EX" sets the time-to-live in seconds.
-  await redis.set(keyFor(sessionId), value, "EX", SESSION_TTL_SECONDS);
+  await redis.eval(CREATE, 2, keyFor(sessionId), indexFor(userId),
+    JSON.stringify({ userId, createdAt: new Date().toISOString() }), SESSION_TTL_SECONDS,
+    hashId(sessionId), Date.now(), previousId ? keyFor(previousId) : "");
   return sessionId;
 }
-
-// 3. Look up a session. Returns { userId, createdAt }, or null if it is unknown or expired.
+// 2. Legacy records without index membership require a fresh login after P10 deploy.
 export async function get(sessionId: string) {
   const value = await redis.get(keyFor(sessionId));
-  if (value === null) return null;
-  return JSON.parse(value) as { userId: string; createdAt: string };
+  if (!value) return null;
+  const parsed = StoredSession.safeParse(JSON.parse(value));
+  if (!parsed.success) return null;
+  return await redis.zscore(indexFor(parsed.data.userId), hashId(sessionId)) === null ? null : parsed.data;
 }
-
-// 4. Delete a session (used by logout). Deleting a key that doesn't exist is not an error.
-export async function remove(sessionId: string) {
-  await redis.del(keyFor(sessionId));
-}
+export async function remove(sessionId: string) { await redis.del(keyFor(sessionId)); }
+// 3. Membership removal is atomic with token deletion; a later login adds only its fresh id.
+export async function revokeAll(userId: string) { await redis.eval(REVOKE, 1, indexFor(userId)); }

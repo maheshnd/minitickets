@@ -71,7 +71,7 @@ const pool = new Pool({ connectionString: DATABASE_URL, max: 2 });
 async function trpcMutation(path: string, input: unknown, cookie?: string) {
   const response = await fetch(`${API}/trpc/${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    headers: { "content-type": "application/json", origin: process.env.WEB_ORIGIN ?? "http://localhost:3000", ...(cookie ? { cookie } : {}) },
     body: JSON.stringify(input),
   });
   const body = (await response.json()) as { result?: { data: unknown }; error?: { message: string } };

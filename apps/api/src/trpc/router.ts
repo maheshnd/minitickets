@@ -1,3 +1,4 @@
+import { telemetryRouter } from "../procedures/telemetry";
 import { accountRouter } from "../procedures/account";
 import { authRouter } from "../procedures/auth";
 import { bookingsRouter } from "../procedures/bookings";
@@ -12,6 +13,7 @@ import { router } from "./init";
 export const appRouter = router({
   auth: authRouter,
   account: accountRouter,
+  telemetry: telemetryRouter,
   events: eventsRouter,
   bookings: bookingsRouter,
   tickets: ticketsRouter,

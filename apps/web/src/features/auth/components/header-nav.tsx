@@ -13,6 +13,7 @@ const linkClass =
 export function HeaderNav() {
   const me = useMe();
   const logout = useLogout();
+  const logoutEverywhere = useLogout(true);
 
   // 1. While we don't know yet, render an empty nav. Showing Login / Sign up first and
   //    swapping them a moment later would flash the wrong links at a logged-in user.
@@ -42,6 +43,9 @@ export function HeaderNav() {
         {/* Disabled while the request runs, so a double click can't send it twice. */}
         <Button variant="secondary" onClick={() => logout.mutate()} disabled={logout.isPending}>
           Log out
+        </Button>
+        <Button variant="secondary" onClick={() => logoutEverywhere.mutate()} disabled={logoutEverywhere.isPending}>
+          Log out everywhere
         </Button>
       </nav>
     );

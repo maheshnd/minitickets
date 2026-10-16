@@ -26,7 +26,7 @@ test("logout shows Login / Sign up and stays logged out after a reload", async (
   await expect(header.getByText(`Signed in as ${email}`)).toBeVisible();
 
   // 3. Log out: we land on / and the header shows the logged-out links.
-  await header.getByRole("button", { name: "Log out" }).click();
+  await header.getByRole("button", { name: "Log out", exact: true }).click();
   await expect(page).toHaveURL("/");
   await expect(header.getByRole("link", { name: "Login" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Sign up" })).toBeVisible();

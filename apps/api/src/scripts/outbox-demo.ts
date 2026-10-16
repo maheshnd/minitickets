@@ -99,7 +99,7 @@ async function stop(child: ChildProcess) {
 }
 async function mutation(port: number, path: string, input: unknown, cookie?: string) {
   const response = await fetch(`http://127.0.0.1:${port}/trpc/${path}`, {
-    method: "POST", headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) }, body: JSON.stringify(input),
+    method: "POST", headers: { "content-type": "application/json", origin: process.env.WEB_ORIGIN ?? "http://localhost:3000", ...(cookie ? { cookie } : {}) }, body: JSON.stringify(input),
   });
   const body = await response.json() as { result?: { data: { id: string } } };
   return { status: response.status, id: body.result?.data.id, cookie: response.headers.getSetCookie()[0]?.split(";")[0] };

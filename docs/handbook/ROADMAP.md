@@ -52,7 +52,8 @@ flowchart LR
   P8 builds rate limiting + Redis inventory gate + short load test; autoscaling is explain-only in D2. P10 includes web-vitals reporting + axe.
   **P7 is built:** indexed title/venue search, stable keyset pages, debounced stale-safe UI and virtualized 10k lists; 387 unit / 7 related e2e tests pass.
   **P8 is built:** Redis token buckets with 429/Retry-After; advisory inventory debits/refunds, safe reconciliation and bounded load comparison. AWS acceptance pending.
-  **Next: P10**, following [the series prompt](prompts/series-2.md).
+  **P10 is built:** origin/metadata CSRF checks, nonce CSP/private HTML, session rotation/revocation, DB deadlines, CI scanners, anonymous vitals and axe. Local production acceptance passed; live AWS/CI image scans pending.
+  **Next: D0 -> D1 -> D2 -> D3**, following [the series prompt](prompts/series-2.md).
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

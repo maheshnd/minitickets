@@ -1,24 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { securityPolicy } from "./lib/security-policy";
 
-// The proxy runs on the server BEFORE a page is rendered (older Next.js called this file "middleware").
 // @concept: route-guard-proxy
 export function proxy(request: NextRequest) {
-  // 1. Only checks that a "sid" cookie EXISTS. It does not (and cannot) check that the session is real.
-  //    This guard is only for a nicer experience: a logged-out visitor goes to the login page
-  //    at once instead of seeing an empty dashboard (or admin page) first.
-  //    It does not know the user's ROLE either: a logged-in non-admin gets past it to /admin and
-  //    sees a "not allowed" message there. The API's adminProcedure (403) is the real check.
-  //    It is NOT security. Anyone can add a fake "sid" cookie and pass it. The real check is
-  //    `protectedProcedure` on the API, which looks the session up in Redis. Never trust a
-  //    frontend guard alone.
-  if (request.cookies.has("sid")) return NextResponse.next();
-
-  // 2. No cookie: go to /login and remember where the visitor wanted to go.
+  // 1. Replace caller-provided nonce/CSP headers; Next reads this request CSP to nonce its scripts.
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const csp = securityPolicy(nonce, process.env.NODE_ENV !== "production", process.env.NEXT_PUBLIC_API_URL);
+  const headers = new Headers(request.headers);
+  headers.set("x-nonce", nonce); headers.set("Content-Security-Policy", csp);
+  const privatePage = /^\/(dashboard|admin|tickets)(\/|$)/.test(request.nextUrl.pathname);
+  // 2. Cookie presence is only a navigation convenience; API session/authz checks remain decisive.
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("next", request.nextUrl.pathname);
-  return NextResponse.redirect(loginUrl);
+  const response = privatePage && !request.cookies.has("sid")
+    ? NextResponse.redirect(loginUrl) : NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", csp);
+  response.headers.set("Cache-Control", "private, no-store");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
 }
-
-// 3. Run only for the private pages (and anything under them), not for every request:
-//    /dashboard, /admin and /tickets ("My tickets").
-export const config = { matcher: ["/dashboard/:path*", "/admin/:path*", "/tickets/:path*"] };
+// 3. All HTML and RSC routes need fresh nonces. Static assets and the server-only API are excluded.
+export const config = { matcher: ["/((?!api|trpc|_next/static|_next/image|favicon.ico).*)"] };

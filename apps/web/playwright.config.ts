@@ -9,7 +9,8 @@ const isCI = process.env.CI === "true";
 export default defineConfig({
   testDir: "./e2e",
   // E2E_BASE_URL lets you test a second copy of the app on other ports.
-  use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000" },
+  use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    extraHTTPHeaders: { Origin: process.env.E2E_BASE_URL ?? "http://localhost:3000" } },
 
   // 2. In CI only: write an HTML report (uploaded as an artifact when a run fails).
   //    "line" keeps the CI log short; locally we keep the default reporter.

@@ -20,7 +20,8 @@
     "user:make-admin": "tsx --env-file-if-exists=.env src/scripts/make-admin.ts",
     "demo:p4-assets": "tsx --env-file-if-exists=.env src/scripts/p4-assets-demo.ts",
     "demo:search": "tsx --env-file-if-exists=.env src/scripts/search-demo.ts",
-    "demo:sale": "tsx --env-file-if-exists=.env src/scripts/sale-demo.ts"
+    "demo:sale": "tsx --env-file-if-exists=.env src/scripts/sale-demo.ts",
+    "demo:security": "tsx --env-file-if-exists=.env src/scripts/security-demo.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1152.0",

@@ -83,14 +83,14 @@ test.describe("API answers are never stored", () => {
   });
 });
 
-test.describe("/events may be shared by CloudFront", () => {
+test.describe("/events nonce-bearing HTML stays private", () => {
   test.skip(!productionBuild, "next dev always sends no-store for pages");
 
-  test("the HTML page: public, 30 s in shared caches, 5 min stale-while-revalidate, nothing in the browser", async ({ request }) => {
+  test("the HTML page is private, no-store", async ({ request }) => {
     const response = await request.get("/events?venue=pune&utm_source=newsletter");
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).toContain("text/html");
-    expect(response.headers()["cache-control"]).toBe("public, max-age=0, s-maxage=30, stale-while-revalidate=300");
+    expectNeverShared(response.headers()["cache-control"]);
     // A page a shared cache may store must never set a cookie.
     expect(response.headers()["set-cookie"]).toBeUndefined();
   });

@@ -140,10 +140,13 @@ try {
       const id = randomUUID(); const sid = randomUUID(); const key = `session:${createHash("sha256").update(sid).digest("hex")}`;
       await db.query("INSERT INTO users (id,email,password_hash) VALUES ($1,$2,'demo-only')", [id, `p8-${id}@example.com`]);
       ownRedisKeys.add(key); await redis.set(key, JSON.stringify({ userId: id, createdAt: new Date().toISOString() }), "EX", 600);
+      const index = `user-sessions:${id}`; ownRedisKeys.add(index);
+      await redis.zadd(index, Date.now(), createHash("sha256").update(sid).digest("hex"));
+      await redis.expire(index, 600);
       cookies.push(`sid=${sid}`);
     }
     const book = (port: number, id: string, cookie: string, key = randomUUID()) => fetch(`http://127.0.0.1:${port}/trpc/bookings.create`, {
-      method: "POST", headers: { "content-type": "application/json", cookie },
+      method: "POST", headers: { "content-type": "application/json", origin: process.env.WEB_ORIGIN ?? "http://localhost:3000", cookie },
       body: JSON.stringify({ eventId: id, quantity: 1, idempotencyKey: key }),
     });
     // 3. Bounded same-event contention, with identical limits/users/workload on both APIs.

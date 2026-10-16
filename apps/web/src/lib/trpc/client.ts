@@ -1,3 +1,6 @@
+import { z } from "zod";
+// P10. Zod's optional Function probe violates strict CSP even when caught; interpret in the browser.
+z.config({ jitless: true });
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
 // @concept: end-to-end-types

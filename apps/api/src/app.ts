@@ -1,3 +1,4 @@
+import { addSecurity } from "./http/security";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
@@ -65,6 +66,7 @@ export async function buildApp() {
   //     user data, so shared caches (CloudFront, proxies) must never store them. Added FIRST, so it
   //     also covers the plugins below (see ./http/no-store.ts).
   addNoStoreDefault(app);
+  addSecurity(app, env.WEB_ORIGIN);
 
   // @concept: cors
   // 2. CORS: the web app (:3000) and API (:4000) are different origins, so the

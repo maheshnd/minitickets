@@ -1278,6 +1278,47 @@ A short local sample is not a production capacity estimate; report throughput AN
 including worse tail latency. Autoscaling, waiting rooms, queued booking and customer seat holds
 remain explain-only in D2, with where they would go in MiniTickets.
 
+### 3.18 P10: security and anonymous Web Vitals
+
+Roll API/web together through normal CD. No SQL migration, AWS resource, IAM grant or new secret.
+Every non-read API request requires Origin exactly equal to WEB_ORIGIN; Sec-Fetch-Site=cross-site
+is refused even with that origin. CLI/demo callers now send Origin explicitly. CORS remains a
+separate read-permission mechanism; SameSite cookies are defense in depth, not the CSRF check.
+API and web send nosniff/frame-denial/referrer headers; web also sends Permissions-Policy.
+
+Web Proxy generates and forwards a per-request script nonce and CSP; the root waits for a real
+request. All HTML/RSC is private,no-store, including /events. Existing CloudFront min/default TTL
+0 respects this; static assets retain their own caching. Do not restore public HTML caching with
+nonces. Production scripts do not allow unsafe-eval; Zod's browser JIT/probe is disabled. React
+style attributes remain allowed for layouts; script nonces do not sanitize uploaded files or HTML.
+See [Next CSP guidance](https://nextjs.org/docs/app/guides/content-security-policy).
+
+Sessions now require Redis user-index membership; pre-P10 cookies require re-login. Login replaces
+the current cookie's server record; at most 20 devices per user bound index/revocation work. Index
+eviction fails closed. Role changes revoke sessions before/after the role update, and the CLI
+now requires Redis and closes it on exit. Log out everywhere revokes all indexed devices. In-flight
+requests already authorized cannot be recalled; DB role lookup remains the admin authority.
+Postgres pool acquisition/connect is bounded at 2 s and statements (including lock waits) at 5 s.
+
+useReportWebVitals reports bounded LCP/INP/CLS/TTFB/FCP to telemetry.report, which validates and
+writes structured JSON to the existing API log. Paths are normalized, queries/cookies/user ids are
+omitted; client metrics are untrusted observations. No new paid CloudWatch custom metrics. INP
+needs real interaction; a lab run is not evidence of field performance. Axe checks /events,/login,
+/signup in e2e; they complement manual keyboard/screen-reader testing.
+
+CI audits dependencies at the CRITICAL threshold and scans all three loaded CI images with Trivy
+v0.36.0 (CRITICAL fails, unfixed findings included); no CI images are published. Local registry audit
+found no critical issues but one high unfixed braces advisory (eslint tooling) and one moderate
+esbuild advisory through drizzle-kit's old dev loader. Do not describe this as a clean audit.
+Local production security suite passed; GitHub image scans and live AWS remain acceptance work.
+
+AWS acceptance: ALB URL response has fresh CSP nonce plus private,no-store; normal login/booking
+works, forged origins get 403, controlled rate errors still get 429. Two browser devices should both
+lose authorization after logout everywhere/role change. CloudWatch /minitickets/dev/api shows
+webVital JSON with normalized routes, no URL parameters; CLI `AWS_PROFILE=ticketlite aws logs tail
+/minitickets/dev/api --since 10m`. GitHub CI's audit + three image scan steps must be green before
+CD is approved. Rollback through CD can require re-login; never loosen CSP/CSRF or flush Redis.
+
 ## 4. Dependency order
 
 ```mermaid

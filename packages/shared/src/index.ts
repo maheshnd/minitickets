@@ -20,3 +20,4 @@ export { BookingConfirmedMessage, CorrelationId } from "./schemas/jobs";
 export { TicketBookingMessage, TicketClaims, TicketRecord, IssuedTicket, TicketBooking, TicketsMineOutput } from "./schemas/tickets";
 export { MAX_POSTER_BYTES, PosterContentType, PosterUploadInput, PosterUploadOutput, CompletePosterInput, CompletePosterOutput } from "./schemas/posters";
 export { EventSearchCursor, SearchEventsInput, SearchEventsOutput } from "./schemas/event-search";
+export { WebVitalInput } from "./schemas/web-vitals";

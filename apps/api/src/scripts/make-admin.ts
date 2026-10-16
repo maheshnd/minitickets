@@ -1,4 +1,5 @@
 import { EmailSchema } from "@minitickets/shared";
+import { redis } from "../redis/client";
 import { pool } from "../db/client";
 import { AppError } from "../errors";
 import { makeAdmin } from "../services/users";
@@ -19,7 +20,7 @@ if (!parsed.success) {
   try {
     // 2. Same path as the API: service -> query -> Postgres.
     const user = await makeAdmin(parsed.data);
-    console.log(`${user.email} is now an admin. It counts from their next request (no new login needed).`);
+    console.log(`${user.email} is now an admin. Existing sessions were revoked; they must log in again.`);
   } catch (err) {
     // 3. Our own errors (e.g. "no user with this email") have a clear message; anything else is a
     //    real failure, so print all of it.
@@ -28,5 +29,6 @@ if (!parsed.success) {
   } finally {
     // 4. Close the database connections, otherwise Node would wait for them and never exit.
     await pool.end();
+    await redis.quit().catch(() => redis.disconnect());
   }
 }

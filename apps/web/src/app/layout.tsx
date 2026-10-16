@@ -1,3 +1,5 @@
+import { connection } from "next/server";
+import { WebVitals } from "@/features/telemetry/components/web-vitals";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Link from "next/link";
@@ -14,7 +16,7 @@ const inter = Inter({ subsets: ["latin"] });
 // 2. Default metadata for every page. A page can override it with its own `metadata`.
 export const metadata: Metadata = {
   title: { default: "MiniTickets", template: "%s | MiniTickets" },
-  description: "MiniTickets helps your team collect, track, and resolve support requests in one simple place.",
+  description: "Browse events and book tickets with MiniTickets.",
 };
 
 const linkClass =
@@ -25,7 +27,8 @@ const linkClass =
 // Root layout: wraps every page with the same header and footer.
 // It is a Server Component (no "use client") because it has no state or event handlers.
 // Server Components are rendered to HTML on the server and send no component JavaScript to the browser.
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  await connection();
   return (
     <html lang="en">
       <body className={`${inter.className} flex min-h-screen flex-col bg-gray-50 text-gray-900`}>
@@ -33,6 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             into client components. Children passed in as props stay Server Components; the
             provider only renders them in place and adds React context around them. */}
         <QueryProvider>
+          <WebVitals />
           <header className="border-b border-gray-200 bg-white">
             <Container className="flex items-center justify-between py-4">
               <Link href="/" className={`${linkClass} text-lg font-bold`}>

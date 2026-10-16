@@ -4,7 +4,7 @@ import { env } from "../config/env";
 import { enforceRateLimit } from "../services/rate-limits";
 import * as authService from "../services/auth";
 import { SESSION_COOKIE } from "../trpc/context";
-import { publicProcedure, router } from "../trpc/init";
+import { protectedProcedure, publicProcedure, router } from "../trpc/init";
 
 // @concept: layered-api
 // Procedures: validate input, call a service, return. No logic here.
@@ -46,7 +46,7 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       // 1. The service checks the password and creates the session.
       await enforceRateLimit("login", ctx.req.ip);
-      const { user, sessionId } = await authService.login(input);
+      const { user, sessionId } = await authService.login(input, ctx.sessionId);
 
       // 2. Setting the cookie is an HTTP job, so it happens here, not in the service.
       ctx.res.setCookie(SESSION_COOKIE, sessionId, {
@@ -60,6 +60,12 @@ export const authRouter = router({
       return user;
     }),
 
+  // 4. Every stored session for this user is revoked, then the browser forgets its cookie too.
+  logoutEverywhere: protectedProcedure.output(z.object({ ok: z.literal(true) })).mutation(async ({ ctx }) => {
+    await authService.logoutEverywhere(ctx.session.userId);
+    ctx.res.clearCookie(SESSION_COOKIE, cookieOptions);
+    return { ok: true } as const;
+  }),
   // @concept: idempotency
   logout: publicProcedure.output(z.object({ ok: z.literal(true) })).mutation(async ({ ctx }) => {
     // 1. Delete the session in Redis (server-side revocation: the cookie is now useless).

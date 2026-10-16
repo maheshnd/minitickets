@@ -3,12 +3,12 @@ import { useRouter } from "next/navigation";
 import { useTRPC } from "@/lib/trpc/client";
 
 // Wraps the logout mutation so components never call tRPC directly.
-export function useLogout() {
+export function useLogout(everywhere = false) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
   return useMutation(
-    trpc.auth.logout.mutationOptions({
+    (everywhere ? trpc.auth.logoutEverywhere : trpc.auth.logout).mutationOptions({
       onSuccess: () => {
         // @concept: query-invalidation
         // 1. Clear the WHOLE query cache, not just "me": never show the previous user's

@@ -38,7 +38,7 @@ export async function signup(input: { email: string; password: string }) {
 }
 
 // Login: check the password, start a session, return the user and the raw session id.
-export async function login(input: { email: string; password: string }) {
+export async function login(input: { email: string; password: string }, previousSessionId?: string) {
   // 1. Find the user. This may be undefined (unknown email).
   const user = await users.findByEmail(input.email);
 
@@ -53,7 +53,7 @@ export async function login(input: { email: string; password: string }) {
   if (!user || !passwordOk) throw new UnauthorizedError("Invalid email or password");
 
   // 4. Start the session. The raw id goes to the browser as a cookie (procedures/auth.ts).
-  const sessionId = await sessions.create(user.id);
+  const sessionId = await sessions.create(user.id, previousSessionId);
   return { user: { id: user.id, email: user.email, role: user.role }, sessionId };
 }
 
@@ -73,3 +73,6 @@ export async function logout(sessionId: string | undefined) {
   if (!sessionId) return;
   await sessions.remove(sessionId);
 }
+
+// 5. Revoke every device, including the current one; the procedure clears its cookie.
+export async function logoutEverywhere(userId: string) { await sessions.revokeAll(userId); }

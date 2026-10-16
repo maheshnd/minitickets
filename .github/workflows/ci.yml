@@ -36,6 +36,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # P10: fail closed for critical dependency advisories; other severities remain visible.
+      - run: pnpm audit --audit-level=critical
       # The handbook and the code must agree: every @concept anchor has a card and vice versa.
       - run: pnpm docs:check
 
@@ -158,6 +160,8 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: false
+          load: true
+          tags: minitickets-ci-api:scan
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -169,6 +173,8 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: false
+          load: true
+          tags: minitickets-ci-web:scan
           build-args: NEXT_PUBLIC_API_URL=http://localhost:4100
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
@@ -182,5 +188,30 @@ jobs:
           context: .
           file: apps/worker/Dockerfile
           push: false
+          load: true
+          tags: minitickets-ci-worker:scan
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
+
+      # P10. Scan the three locally loaded CI images; never publish from this workflow.
+      - name: Scan api image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: minitickets-ci-api:scan
+          severity: CRITICAL
+          exit-code: '1'
+          scanners: vuln
+      - name: Scan web image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: minitickets-ci-web:scan
+          severity: CRITICAL
+          exit-code: '1'
+          scanners: vuln
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: minitickets-ci-worker:scan
+          severity: CRITICAL
+          exit-code: '1'
+          scanners: vuln

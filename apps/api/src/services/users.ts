@@ -1,3 +1,4 @@
+import * as sessions from "../queries/sessions";
 import { NotFoundError } from "../errors";
 import * as users from "../queries/users";
 
@@ -8,9 +9,14 @@ import * as users from "../queries/users";
 // Postgres on every admin request (getRole, used by trpc/init.ts), it keeps no copy in the session.
 export async function makeAdmin(email: string) {
   // 1. One UPDATE. If no user has this email, nothing changed: say so clearly.
+  const existing = await users.findByEmail(email);
+  if (!existing) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);
+  // Revoke before privilege changes, fail closed on Redis errors, then close the concurrent-login window.
+  await sessions.revokeAll(existing.id);
   const user = await users.setRoleByEmail(email, "admin");
   if (!user) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);
 
+  await sessions.revokeAll(user.id);
   // 2. Only the safe fields.
   return { id: user.id, email: user.email, role: user.role };
 }

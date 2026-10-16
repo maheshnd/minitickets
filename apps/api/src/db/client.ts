@@ -17,6 +17,9 @@ import * as users from "./schema/users";
 export const pool = new Pool({
   ...env.database,
   max: 10,
+  // P10. Bound pool acquisition/connect and SQL work, including row-lock waits.
+  connectionTimeoutMillis: 2000,
+  statement_timeout: 5000,
 });
 
 // @concept: fail-fast

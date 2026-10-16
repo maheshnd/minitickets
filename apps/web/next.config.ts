@@ -69,21 +69,8 @@ const nextConfig: NextConfig = {
       { source: "/admin/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       { source: "/tickets/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
 
-      // 2. /events, the full HTML page only. The same for every visitor, so CloudFront may share it
-      //    (docs: infra/src/entry/cdn.ts, the /events behavior):
-      //    - public:                     a shared cache may store it;
-      //    - max-age=0:                  the BROWSER keeps no fresh copy (asks again every time);
-      //    - s-maxage=30:                a SHARED cache (CloudFront) keeps it 30 s;
-      //    - stale-while-revalidate=300: after that, for up to 5 more minutes, it may still hand out
-      //                                  the old copy while it fetches a new one in the background.
-      //    `missing: rsc` = NOT for Next's client navigation requests (header "RSC: 1"). Those get
-      //    the RSC payload, not HTML, and keep Next's own "private, no-store": the payload depends
-      //    on the page the visitor comes from (Next-Router-State-Tree), so it is never shared.
-      {
-        source: "/events",
-        missing: [{ type: "header", key: "rsc" }],
-        headers: [{ key: "Cache-Control", value: "public, max-age=0, s-maxage=30, stale-while-revalidate=300" }],
-      },
+      // P10. Nonce-bearing HTML is rendered per request and never shared by a cache.
+      { source: "/((?!_next/static|_next/image).*)", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
 
       // 3. HSTS on every path, only in production over https (see hstsRules at the top).
       ...hstsRules,
