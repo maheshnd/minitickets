@@ -227,7 +227,7 @@ function checkGuides() {
     for (const match of text.matchAll(/\]\(([^)#\s]+)(#[^)]*)?\)/g)) {
       const target = match[1];
       if (/^[a-z]+:/i.test(target)) continue;
-      if (!existsSync(path.join(GUIDES, target))) problems.push(`${file}: links to ${target}, but that file does not exist`);
+      if (!existsSync(path.join(GUIDES, target.split("?")[0]))) problems.push(`${file}: links to ${target}, but that file does not exist`);
     }
 
     // 8d. Code paths in backticks exist. Only whole paths count (`infra/src/network.ts`), and a bare
@@ -330,6 +330,25 @@ function checkGuides() {
   }
   for (const component of data.components) {
     if (component.lifecycle !== "explain-only" && !covered.has(component.id)) problems.push(`${explorerName}: built piece ${component.id} is in no tour`);
+  }
+
+  // 8h. Every scenario has a decision, a real tour and a three-choice quiz.
+  const scenarioFile = path.join(HANDBOOK, "generated/scenarios.json");
+  if (existsSync(scenarioFile)) {
+    const scenarios = JSON.parse(readFileSync(scenarioFile, "utf8")) as { id: string; question: string; area: string; status: string; tour: string; answer: string; how: string; why: string; trade: string; scale: string; counter: string; quiz: string; correct: string; wrong: string[]; flow: string[] }[];
+    const tourIds = new Set(data.tours.map(t => t.id));
+    const scenarioIds = new Set<string>();
+    for (const scenario of scenarios) {
+      if (scenarioIds.has(scenario.id)) problems.push(`Duplicate scenario ${scenario.id}`);
+      scenarioIds.add(scenario.id);
+      if (!tourIds.has(scenario.tour)) problems.push(`Scenario ${scenario.id} has missing tour ${scenario.tour}`);
+      if (![scenario.question, scenario.area, scenario.answer, scenario.how, scenario.why, scenario.trade, scenario.scale, scenario.counter, scenario.quiz, scenario.correct].every(validLabel) || scenario.flow.length < 2 || scenario.wrong.length !== 2 || new Set([scenario.correct, ...scenario.wrong]).size !== 3) problems.push(`Incomplete scenario ${scenario.id}`);
+      if (!["built", "partly", "explain-only"].includes(scenario.status)) problems.push(`Invalid scenario status ${scenario.id}`);
+      if (scenario.status === "explain-only" && !scenario.how.includes("WHERE IN MINITICKETS:")) problems.push(`Scenario ${scenario.id} needs a proposed MiniTickets location`);
+    }
+    for (const question of ['typing "a" then "ap" in search: can the old response override the new one?', 'many requests at the same time: how does the DB handle it?', 'no cache and many requests: how to lock and get the latest?', 'caching Next pages that must not be shared (Next server, CloudFront)', 'how to check LCP and other vitals', 'idempotency', 'how Postgres caches', 'rendering 10k events', 'sale day with row locks.']) {
+      if (!scenarios.some(s => s.question === question)) problems.push(`Missing required question: ${question}`);
+    }
   }
 
   const guidePath = path.join(GUIDES, BUILD_ALONG_FILE);

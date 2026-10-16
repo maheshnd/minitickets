@@ -2348,7 +2348,7 @@ flowchart TB
     workers --> outputs["SES / DynamoDB / private S3"]
 ```
 
-GitHub OIDC → publish SHA images → ECR → SSM release tag → migration → ECS/Lambda rollout is the delivery path. CloudFront is optional/inactive. Reminder Scheduler, API Gateway check-in, SSE live seats, autoscaling and Lighthouse CI remain explain-only; the [interview scenarios](../reference-topics.md) will connect their proposed locations.
+GitHub OIDC → publish SHA images → ECR → SSM release tag → migration → ECS/Lambda rollout is the delivery path. CloudFront is optional/inactive. Reminder Scheduler, API Gateway check-in, SSE live seats, autoscaling and Lighthouse CI remain explain-only; the [interview scenarios](interview-scenarios.md) will connect their proposed locations.
 
 ## Map so far
 

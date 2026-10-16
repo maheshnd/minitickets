@@ -1,0 +1,1716 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MiniTickets · interview practice</title>
+<style>
+:root{color-scheme:light dark;--paper:#f7f3e9;--ink:#243739;--muted:#546565;--line:#bdc9c0;--accent:#286a61;--wash:#e9eee4;--mark:#a34737}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 system-ui,sans-serif}body.dark{--paper:#172728;--ink:#e9e7d9;--muted:#a8bcb5;--line:#48625b;--accent:#9fd7b8;--wash:#223b36;--mark:#e99c85}h1,h2,h3{font-family:Georgia,serif;line-height:1.2}h1{font-size:2.5rem;margin:.4em 0}h2{font-size:1.8rem}h3{font-size:1.25rem}a{color:var(--accent);text-underline-offset:3px}button,input,select{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);padding:7px 10px;border-radius:3px}button{cursor:pointer}button:hover,button[aria-current=true]{background:var(--wash)}:focus-visible{outline:3px solid var(--mark);outline-offset:3px}header{max-width:1380px;margin:auto;padding:24px 32px;border-bottom:2px solid var(--ink)}nav,.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.eyebrow{letter-spacing:.15em;text-transform:uppercase;font-size:.75rem;color:var(--muted)}main{max-width:1380px;margin:auto;display:grid;grid-template-columns:minmax(250px,31%) minmax(0,1fr)}aside{padding:24px;border-right:1px solid var(--line)}aside label{display:block;margin:10px 0}aside input,aside select{width:100%}#questions{max-height:70vh;overflow:auto;list-style:none;padding:0}#questions button{border:0;border-bottom:1px solid var(--line);border-radius:0;width:100%;text-align:left;padding:14px 8px}small,.muted{color:var(--muted)}article{padding:28px 40px;min-width:0;border-left:4px solid var(--mark);margin-left:10px}article p{max-width:80ch}code{background:var(--wash);padding:2px 4px;overflow-wrap:anywhere;font-size:.9em}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--wash);padding:14px}.meta{display:flex;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}.status{border:1px solid var(--line);padding:0 8px}#diagram{width:100%;height:auto;max-height:150px;margin:20px 0}#diagram text{fill:var(--ink);font:15px system-ui}#diagram rect{fill:var(--wash);stroke:var(--accent)}#diagram path{stroke:var(--accent);fill:none}fieldset{border:1px solid var(--line);padding:16px}fieldset label{display:block;margin:12px 0}#feedback{border-left:3px solid var(--accent);padding-left:12px}#progress{font-size:.85rem}footer{max-width:1380px;margin:auto;border-top:1px solid var(--line);padding:24px 32px}[hidden]{display:none!important}@media(prefers-color-scheme:dark){body:not(.light){--paper:#172728;--ink:#e9e7d9;--muted:#a8bcb5;--line:#48625b;--accent:#9fd7b8;--wash:#223b36;--mark:#e99c85}}@media(max-width:1050px){article{padding:24px}header{padding:24px}main{grid-template-columns:270px minmax(0,1fr)}}@media(max-width:760px){main{display:block}#questions{max-height:260px}aside{border-right:0;border-bottom:1px solid var(--line)}article{margin:0}}
+</style></head><body>
+<header><p class="eyebrow">MiniTickets field notebook · 55 scenarios</p><nav aria-label="Learning tools"><a href="../README.md">Handbook</a><a href="infra-explorer.html">City explorer</a><a href="code-tours.html">Code tours</a><a href="interview-scenarios.md">Full written guide</a><button id="theme">Switch theme</button></nav><h1>Explain it. Then defend it.</h1><p>Trace a real decision from the question to the code. Proposed features say exactly where they would go.</p><div class="toolbar"><label><input type="checkbox" id="interview"> Interview mode</label><button id="previous">Previous</button><button id="next">Next</button><span id="progress" role="status"></span></div></header>
+<main><aside aria-label="Scenario index"><label>Search questions and code<input type="search" id="search"></label><label>Area<select id="area"><option value="">All areas</option></select></label><label>Status<select id="status"><option value="">All statuses</option><option>built</option><option>partly</option><option>explain-only</option></select></label><p id="count" role="status"></p><ol id="questions"></ol></aside><article id="scenario" aria-live="polite"></article></main>
+<footer>Works offline. Progress is stored only in this browser. Built means locally implemented; live AWS acceptance remains separate. <a href="../../20-deploy-day.md">Owner acceptance runbook</a>.</footer>
+<script>
+addEventListener('DOMContentLoaded',()=>{
+// 1. Authored Markdown is embedded at build time. Render untrusted-looking examples as text.
+const D=JSON.parse(document.getElementById('scenario-data').textContent),$=id=>document.getElementById(id),E=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n};
+let saved={};try{saved=JSON.parse(localStorage.getItem('minitickets-scenario-progress')||'{}')}catch{}let active=decodeURIComponent(location.hash.slice(1)),shown=[];
+const params=new URLSearchParams(location.search);$('search').value=params.get('q')||'';
+for(const area of [...new Set(D.map(x=>x.area))]){const o=E('option',area);o.value=area;$('area').append(o)}if(params.has('area'))$('area').value=params.get('area');$('interview').checked=params.get('mode')==='interview';
+function persist(){try{localStorage.setItem('minitickets-scenario-progress',JSON.stringify(saved))}catch{}updateProgress()}
+function updateProgress(){const read=D.filter(x=>saved[x.id]?.read).length,correct=D.filter(x=>saved[x.id]?.correct).length;$('progress').textContent=read+'/'+D.length+' reviewed · '+correct+' quizzes correct'}
+function inline(parent,text){for(const line of text.split('\n\n')){const p=E('p');for(const token of line.split(/(`[^`]+`|\[[^\]]+\]\([^)]+\))/g)){if(token.startsWith('`'))p.append(E('code',token.slice(1,-1)));else{const m=token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);if(m){const a=E('a',m[1]);a.href=m[2];p.append(a)}else p.append(document.createTextNode(token))}}parent.append(p)}}
+function draw(flow){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.id='diagram';svg.setAttribute('viewBox','0 0 '+(flow.length*210)+' 100');svg.setAttribute('role','img');svg.setAttribute('aria-label',flow.join(' → '));flow.forEach((label,i)=>{const r=document.createElementNS(ns,'rect');for(const[k,v]of Object.entries({x:i*210+4,y:8,width:180,height:80,rx:4}))r.setAttribute(k,v);svg.append(r);const words=label.split(' '),lines=[''];for(const w of words){if((lines.at(-1)+' '+w).length>20)lines.push(w);else lines[lines.length-1]+=(lines.at(-1)?' ':'')+w}lines.slice(0,4).forEach((line,j)=>{const t=document.createElementNS(ns,'text');t.setAttribute('x',i*210+12);t.setAttribute('y',30+j*16);t.textContent=line;svg.append(t)});if(i<flow.length-1){const p=document.createElementNS(ns,'path');p.setAttribute('d','M'+(i*210+184)+' 48 h22 m-5 -5 l5 5 -5 5');svg.append(p)}});return svg}
+function render(){const x=D.find(x=>x.id===active)||shown[0];if(!x){$('scenario').replaceChildren(E('h2','No matching scenarios'));$('previous').disabled=true;$('next').disabled=true;list();return}active=x.id;history.replaceState(null,'','#'+active);const article=$('scenario');article.replaceChildren();const meta=E('p',x.area+' · '+x.status);meta.className='meta';article.append(meta,E('h2',x.question),draw(x.flow));const reveal=E('button','Reveal answer');reveal.id='reveal';reveal.hidden=!$('interview').checked;article.append(reveal);const answer=E('section');answer.id='answer';answer.hidden=$('interview').checked;reveal.onclick=()=>{answer.hidden=false;reveal.hidden=true};for(const[title,key]of [['30-second answer','answer'],['How MiniTickets does it / where it would go','how'],['Why','why'],['Trade-offs and alternatives','trade'],['At 10x / 100x','scale'],['Counter-question and answer','counter']]){answer.append(E('h3',title));inline(answer,x[key])}article.append(answer);
+const links=E('p');for(const[label,url]of [['Explorer tour','infra-explorer.html?tour='+encodeURIComponent(x.tour)],['Source bookmark',x.codeLink],['Written scenario','interview-scenarios.md#'+x.id]]){const a=E('a',label);a.href=url;links.append(a,document.createTextNode(' · '))}if(x.source){const a=E('a','Primary reference');a.href=x.source;links.append(a)}article.append(links);
+const checked=E('input');checked.type='checkbox';checked.id='reviewed';checked.checked=!!saved[x.id]?.read;checked.onchange=()=>{saved[x.id]={...saved[x.id],read:checked.checked};persist();list()};const label=E('label',' I reviewed this decision');label.prepend(checked);article.append(label);
+const form=E('form'),field=E('fieldset');field.append(E('legend',x.quiz));let options=[x.correct,...x.wrong];const rotate=D.indexOf(x)%3;options=options.slice(rotate).concat(options.slice(0,rotate));options.forEach((option,i)=>{const label=E('label',option),r=E('input');r.type='radio';r.name='quiz';r.value=option;r.required=true;label.prepend(r,document.createTextNode(' '));field.append(label)});const submit=E('button','Check answer');submit.type='submit';field.append(submit);form.append(field);const feedback=E('p');feedback.id='feedback';feedback.setAttribute('role','status');form.onsubmit=e=>{e.preventDefault();const result=new FormData(form).get('quiz')===x.correct;saved[x.id]={...saved[x.id],correct:result};persist();feedback.textContent=result?'Correct. Now explain the trade-off without reading.':'Try again. Compare the answer with the decision above.'};article.append(form,feedback);$('previous').disabled=shown.indexOf(x)<=0;$('next').disabled=shown.indexOf(x)>=shown.length-1;list()}
+function list(){const list=$('questions');list.replaceChildren();for(const x of shown){const li=E('li'),b=E('button',(saved[x.id]?.read?'✓ ':'')+x.question);b.setAttribute('aria-current',String(x.id===active));b.onclick=()=>{active=x.id;render()};li.append(b,E('small',x.area+' · '+x.status));list.append(li)}$('count').textContent=shown.length+' scenarios'}
+function filter(){const q=$('search').value.toLowerCase().replaceAll('-',' ');shown=D.filter(x=>(!$('area').value||x.area===$('area').value)&&(!$('status').value||x.status===$('status').value)&&JSON.stringify(x).toLowerCase().replaceAll('-',' ').includes(q));if(!shown.some(x=>x.id===active))active=shown[0]?.id;render()}
+for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?'input':'change',filter);$('interview').onchange=render;$('previous').onclick=()=>{active=shown[shown.findIndex(x=>x.id===active)-1].id;render()};$('next').onclick=()=>{active=shown[shown.findIndex(x=>x.id===active)+1].id;render()};$('theme').onclick=()=>{const dark=getComputedStyle(document.body).backgroundColor==='rgb(23, 39, 40)';document.body.className=dark?'light':'dark';try{localStorage.setItem('minitickets-doc-theme',document.body.className)}catch{}};try{document.body.className=localStorage.getItem('minitickets-doc-theme')||''}catch{}addEventListener('hashchange',()=>{active=decodeURIComponent(location.hash.slice(1));$('search').value='';$('area').value='';$('status').value='';filter()});updateProgress();filter();
+});
+</script>
+<script type="application/json" id="scenario-data">
+[
+  {
+    "id": "search-races",
+    "question": "typing \"a\" then \"ap\" in search: can the old response override the new one?",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "search",
+    "answer": "An old request may finish last. Give each search input its own query key so it can only fill its own cache entry. Cancellation saves work, but identity provides correctness even when a server ignores cancellation. Keep previous results visibly marked while the next input is loading.",
+    "how": "`apps/web/src/features/events/hooks/use-event-search.ts` → `useEventSearch` debounces 250 ms, uses tRPC infinite-query options keyed by all input, consumes cancellation and keeps previous data. The component labels typing/loading. Run `pnpm demo:search`; the related browser spec deliberately delays an older response.",
+    "flow": [
+      "Type a then ap",
+      "Separate query keys",
+      "Late a fills a only",
+      "Visible ap results"
+    ],
+    "why": "A shared results variable with no request identity allows stale completion to win.",
+    "trade": "A monotonically increasing request id also works for manual fetch. Abort alone does not prove the server stopped; debounce does not order responses.",
+    "scale": "10x: measure input-to-result latency and cap retained pages. 100x: add relevance/search infrastructure only after query plans and traffic justify it.",
+    "counter": "Could filters race too? Yes: venue/date/cursor must be in the input key. Should previous rows be bookable? Recheck authoritative availability on booking.",
+    "quiz": "What prevents a late a response from overwriting ap?",
+    "correct": "Separate query keys",
+    "wrong": [
+      "Debounce alone",
+      "Assuming abort always stops the server"
+    ],
+    "files": [
+      "apps/web/src/features/events/hooks/use-event-search.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+  },
+  {
+    "id": "debounce-throttle",
+    "question": "When do you debounce, throttle or cancel?",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "search",
+    "answer": "Debounce waits until input is quiet; throttle bounds how often work runs during a continuous stream. Search uses debounce. Scrolling uses a bounded rendering window. Cancellation removes obsolete work but does not replace response identity or database correctness.",
+    "how": "`apps/web/src/features/events/hooks/use-event-search.ts` clears each pending timer on input change. `apps/web/src/features/events/components/virtual-event-list.tsx` updates the visible fixed-height window. Run `pnpm demo:search` and inspect the number of search requests while typing.",
+    "flow": [
+      "Keystrokes",
+      "Clear previous timer",
+      "Quiet for 250 ms",
+      "Search"
+    ],
+    "why": "Sending every intermediate prefix wastes work.",
+    "trade": "Short delay feels responsive but sends more queries; long delay feels sticky. A leading-edge throttle needs a trailing update to avoid losing final input.",
+    "scale": "10x: tune from actual latency and request counts. 100x: server admission limits still protect the backend; browser debounce is bypassable.",
+    "counter": "Can a malicious client skip it? Yes. Server validation and limits remain necessary.",
+    "quiz": "Which strategy waits for typing to pause?",
+    "correct": "Debounce",
+    "wrong": [
+      "Throttle",
+      "Database row lock"
+    ],
+    "files": [
+      "apps/web/src/features/events/hooks/use-event-search.ts",
+      "apps/web/src/features/events/components/virtual-event-list.tsx"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+  },
+  {
+    "id": "virtual-lists",
+    "question": "rendering 10k events",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "search",
+    "answer": "Pagination bounds transfer and database work; virtualization bounds mounted DOM nodes. They solve different problems. Keep stable event ids, a fixed-height window and overscan. Fetch the next keyset page before the user reaches the end. The full dataset should never become 10,000 React rows.",
+    "how": "`apps/web/src/features/events/components/virtual-event-list.tsx` renders a bounded window. Search returns pages of 50. `pnpm demo:search` seeds an isolated 10k dataset, checks ordering/plans and runs related headless assertions. The virtual-list browser check bounds rendered rows.",
+    "flow": [
+      "10k database rows",
+      "Keyset page",
+      "Visible window plus overscan",
+      "Small DOM"
+    ],
+    "why": "Large DOM trees hurt layout, paint, memory and interaction.",
+    "trade": "Fixed heights are simple but constrain content. Variable-height libraries add measurement. Virtual lists need accessible list position and keyboard testing; pagination is a valid alternative.",
+    "scale": "10x: bound retained pages as well as DOM. 100x: server-side ranking, narrower payloads and a search engine may matter more than another UI optimization.",
+    "counter": "Does virtualization reduce SQL rows scanned? No; indexes and pagination do that.",
+    "quiz": "What does virtualization primarily bound?",
+    "correct": "Mounted DOM nodes",
+    "wrong": [
+      "Total database size",
+      "Concurrent booking locks"
+    ],
+    "files": [
+      "apps/web/src/features/events/components/virtual-event-list.tsx"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx"
+  },
+  {
+    "id": "rendering-models",
+    "question": "SSR, CSR or static rendering for an event catalogue?",
+    "area": "Frontend",
+    "status": "partly",
+    "tour": "search",
+    "answer": "SSR sends useful initial HTML, CSR handles interactive changes and static output suits public content that tolerates rebuilds. MiniTickets combines server-prefetched catalogue data with client queries. P10 nonce security makes HTML dynamic and no-store; explicit public data caching remains a separate choice.",
+    "how": "`apps/web/src/app/layout.tsx` waits for a request; `apps/web/src/features/events/server/prefetch-events.ts` hydrates public data. `apps/web/src/features/events/server/cached-events.ts` provides an explicit public-data cache; the current search-prefetch path bypasses that helper to avoid unbounded cursor/text keys. Run `pnpm demo:security` for production HTML/cache acceptance; there is no static-site export.",
+    "flow": [
+      "Incoming request",
+      "Dynamic nonce HTML",
+      "Hydrated public data",
+      "Interactive client"
+    ],
+    "why": "Initial content and interactivity have different latency and security constraints.",
+    "trade": "Static HTML has cheap delivery but cannot reuse a fresh per-request nonce. CSR adds client work. Dynamic HTML costs server work even when data is cached.",
+    "scale": "10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.",
+    "counter": "Does dynamic HTML forbid cached data? No. Cache only public results with complete keys.",
+    "quiz": "Can public data still be cached inside dynamic HTML rendering?",
+    "correct": "Yes with correct data keys",
+    "wrong": [
+      "No caches are possible",
+      "Only if sessions are cached too"
+    ],
+    "files": [
+      "apps/web/src/app/layout.tsx",
+      "apps/web/src/features/events/server/prefetch-events.ts",
+      "apps/web/src/features/events/server/cached-events.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#server-client-components%3Aapps%2Fweb%2Fsrc%2Fapp%2Flayout.tsx%3A26"
+  },
+  {
+    "id": "hydration",
+    "question": "Why do hydration mismatches happen?",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "search",
+    "answer": "Hydration attaches React behavior to the HTML already sent. The first browser render must agree with the server. Time zones, random values, local storage and different initial data can disagree. Put browser-only changes after mount and seed queries with the same canonical inputs used for SSR.",
+    "how": "`apps/web/src/features/events/components/event-date.tsx` handles date presentation; server prefetch and `apps/web/src/features/events/lib/canonical-input.ts` keep input identity stable. Run `pnpm demo:search` and check the browser console as well as visible rows.",
+    "flow": [
+      "Server HTML and query data",
+      "Same initial client tree",
+      "Hydration",
+      "Browser updates"
+    ],
+    "why": "A mismatch can discard work and hide a real state bug.",
+    "trade": "Suppressing a warning is appropriate only for an understood leaf difference, not a general repair. Client-only rendering avoids mismatches but delays content.",
+    "scale": "10x: test locale/time-zone boundaries. 100x: monitor console/recoverable errors and bundle cost across devices.",
+    "counter": "Why not generate a random id during render? Server and client may generate different values.",
+    "quiz": "Which pair must agree during hydration?",
+    "correct": "Server HTML and initial client tree",
+    "wrong": [
+      "Two random ids",
+      "All later client states forever"
+    ],
+    "files": [
+      "apps/web/src/features/events/components/event-date.tsx",
+      "apps/web/src/features/events/lib/canonical-input.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#hydration%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fevent-date.tsx%3A5"
+  },
+  {
+    "id": "private-page-cache",
+    "question": "caching Next pages that must not be shared (Next server, CloudFront)",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.",
+    "how": "`apps/web/src/proxy.ts` and `apps/web/next.config.ts` guard HTML caching. `apps/web/src/features/events/server/cached-events.ts` only stores public catalogue data. `infra/src/entry/cdn.ts` has zero minimum/default TTL on the events policy. CloudFront is inactive: `cdnEnabled=false`. Run `pnpm demo:security`.",
+    "flow": [
+      "User cookie",
+      "Dynamic private HTML",
+      "Browser only",
+      "No shared CDN page"
+    ],
+    "why": "A cross-user cache leak exposes private data, and cached nonce HTML breaks CSP assumptions.",
+    "trade": "Per-user edge keys are difficult to audit and multiply cache entries. No-store simplifies privacy at server cost. Static JS/images can still be cached.",
+    "scale": "10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.",
+    "counter": "Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.",
+    "quiz": "Which CloudFront setting can override no-store?",
+    "correct": "A positive minimum TTL",
+    "wrong": [
+      "An ETag alone",
+      "A zero minimum TTL"
+    ],
+    "files": [
+      "apps/web/src/proxy.ts",
+      "apps/web/next.config.ts",
+      "apps/web/src/features/events/server/cached-events.ts",
+      "infra/src/entry/cdn.ts"
+    ],
+    "source": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html",
+    "codeLink": "code-tours.html#monorepo%3Aapps%2Fweb%2Fnext.config.ts%3A43"
+  },
+  {
+    "id": "web-vitals",
+    "question": "how to check LCP and other vitals",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "LCP measures the main content appearing, INP interaction responsiveness and CLS unexpected layout shifts. Use field measurements grouped by route/device and percentile, then reproduce slow cases in lab tools. A single fast laptop run is not a user population. Good Core Web Vitals target the 75th percentile: LCP ≤2.5 s, INP ≤200 ms and CLS ≤0.1.",
+    "how": "`apps/web/src/features/telemetry/hooks/use-web-vitals.ts` reports bounded values and normalized routes to telemetry.report; `apps/api/src/services/telemetry.ts` logs webVital without query strings or user ids. Run `pnpm demo:security`; the browser test interacts to produce INP and checks request validation. No reporting dashboard or sampling service is built.",
+    "flow": [
+      "Browser observation",
+      "Normalized bounded report",
+      "API structured log",
+      "Investigate route distribution"
+    ],
+    "why": "Field data catches slow devices, real network conditions and long interactions.",
+    "trade": "Logs are simple but not a percentile analytics product. Client reports are untrusted. Lighthouse is repeatable lab evidence, not field truth.",
+    "scale": "10x: sample ingestion and group by device/network. 100x: dedicated metrics pipeline, retention and privacy budgets.",
+    "counter": "Why no INP on a page never touched? It needs qualifying interactions.",
+    "quiz": "Which metric measures interaction responsiveness?",
+    "correct": "INP",
+    "wrong": [
+      "LCP",
+      "CLS"
+    ],
+    "files": [
+      "apps/web/src/features/telemetry/hooks/use-web-vitals.ts",
+      "apps/api/src/services/telemetry.ts"
+    ],
+    "source": "https://web.dev/articles/vitals",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Ftelemetry%2Fhooks%2Fuse-web-vitals.ts"
+  },
+  {
+    "id": "bundle-size",
+    "question": "How do you keep JavaScript bundles small?",
+    "area": "Frontend",
+    "status": "partly",
+    "tour": "search",
+    "answer": "Keep server-only work on the server, make client boundaries narrow and inspect what is actually shipped. Tree-shaking cannot remove a runtime import that is needed. MiniTickets imports the API router as a type, so database and AWS dependencies do not enter the browser graph.",
+    "how": "`apps/web/src/lib/trpc/client.ts` uses type AppRouter. Heavy QR issuance runs in `apps/worker/src/tickets/assets.ts`. Run `pnpm --filter @minitickets/web build` and inspect route output. A bundle-analysis package and enforced size budget are explain-only, proposed in CI alongside the web build.",
+    "flow": [
+      "Type-only API contract",
+      "Small browser graph",
+      "Production build",
+      "Measure assets"
+    ],
+    "why": "Download, parse and execution time all affect slower devices.",
+    "trade": "Lazy loading trades first-load size for later waterfalls. A client boundary pulls its runtime imports along. Measure before adding an analyzer dependency.",
+    "scale": "10x: budget route chunks. 100x: track field transfer and long tasks, then split heavy interactions.",
+    "counter": "Does importing a type run API initialization? No; TypeScript erases that import.",
+    "quiz": "Which import avoids shipping API runtime code?",
+    "correct": "import type AppRouter",
+    "wrong": [
+      "A runtime database import",
+      "A browser AWS SDK import"
+    ],
+    "files": [
+      "apps/web/src/lib/trpc/client.ts",
+      "apps/worker/src/tickets/assets.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#end-to-end-types%3Aapps%2Fweb%2Fsrc%2Flib%2Ftrpc%2Fclient.ts%3A6"
+  },
+  {
+    "id": "optimistic-ui",
+    "question": "Should buying the last seat use optimistic UI?",
+    "area": "Frontend",
+    "status": "partly",
+    "tour": "booking",
+    "answer": "Show pending feedback immediately, but only confirm a ticket after the authoritative transaction commits. An optimistic seat count may improve perceived speed but must roll back and reconcile. MiniTickets keeps the booking intent key through ambiguous retries and shows pending ticket issuance separately.",
+    "how": "`apps/web/src/features/bookings/hooks/use-book-ticket.ts` owns mutation/retry state; `apps/web/src/features/bookings/components/my-tickets-list.tsx` distinguishes confirmed booking from pending QR issuance. Run `pnpm demo:idempotency`. Optimistic seat decrement is explain-only and would live in this hook with TanStack cache rollback.",
+    "flow": [
+      "Click book",
+      "Pending intent",
+      "Database commit",
+      "Confirmed booking then QR"
+    ],
+    "why": "A false success on scarce inventory is worse than a short pending state.",
+    "trade": "Optimistic likes are easy to undo; paid scarce inventory is different. Do not replace a lost-response retry with a new idempotency key.",
+    "scale": "10x: make pending states resilient to reload. 100x: async admission needs a durable intent/status resource.",
+    "counter": "Can pending QR trigger rebooking? No; poll ticket readiness for the existing booking.",
+    "quiz": "When should a ticket booking be called confirmed?",
+    "correct": "After authoritative commit",
+    "wrong": [
+      "On first click",
+      "After a speculative cache decrement"
+    ],
+    "files": [
+      "apps/web/src/features/bookings/hooks/use-book-ticket.ts",
+      "apps/web/src/features/bookings/components/my-tickets-list.tsx"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fbookings%2Fhooks%2Fuse-book-ticket.ts"
+  },
+  {
+    "id": "accessibility",
+    "question": "What do axe checks prove, and what do they miss?",
+    "area": "Frontend",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "Automated checks catch many structural accessibility errors such as missing names and invalid contrast relationships. They cannot prove the whole experience works with a keyboard, screen reader or cognitive needs. Keep semantic controls and visible focus; test loading/error states and long lists manually too.",
+    "how": "`apps/web/e2e/security.spec.ts` runs axe WCAG 2A/AA/2.1AA on events, login and signup. `pnpm demo:security` passed these three scans. The offline learning pages also use native buttons, labels and keyboard navigation. Comprehensive assistive-technology review remains manual.",
+    "flow": [
+      "Semantic UI",
+      "Automated axe scan",
+      "Keyboard task",
+      "Human review"
+    ],
+    "why": "An accessible control must convey name, role and state, and remain usable under change.",
+    "trade": "Automated gates are fast but incomplete. Virtualized lists need careful position/context; infinite scroll can make navigation harder.",
+    "scale": "10x: component-level semantic conventions. 100x: representative assistive-technology testing across critical journeys.",
+    "counter": "Does zero axe violations certify accessibility? No.",
+    "quiz": "What remains necessary after a clean axe scan?",
+    "correct": "Human keyboard and assistive-technology review",
+    "wrong": [
+      "Nothing",
+      "Only a Lighthouse score"
+    ],
+    "files": [
+      "apps/web/e2e/security.spec.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fweb%2Fe2e%2Fsecurity.spec.ts"
+  },
+  {
+    "id": "live-seats",
+    "question": "P9: how would live seats work with SSE, WebSockets or polling?",
+    "area": "Frontend",
+    "status": "explain-only",
+    "tour": "live-seats",
+    "answer": "Use polling for simplicity, SSE for one-way seat notifications and WebSockets for bidirectional interaction. Seat messages are hints, not a purchase guarantee. Every booking still reaches Postgres. Across API instances, publish committed changes through Redis pub/sub or an outbox-driven channel; Redis pub/sub loses messages while a subscriber is disconnected.",
+    "how": "WHERE IN MINITICKETS: proposed API procedure/service stream in apps/api/src/services/live-seats.ts, Redis adapter in queries/live-seats.ts and browser hook features/events/hooks/use-live-seats.ts. Publish only after commit, include event id and version, snapshot on connect/reconnect, heartbeats and bounded buffers. Backoff with jitter; close idle slow clients. No SSE/WebSocket endpoint or pub/sub deployment exists. Walk the Live seats explain-only explorer tour.\n\n\nExisting integration point: `apps/api/src/services/bookings.ts`.",
+    "flow": [
+      "Committed booking",
+      "Publish event version",
+      "All API subscribers",
+      "Browser refreshes snapshot"
+    ],
+    "why": "A catalogue benefits from fresher hints without weakening booking correctness.",
+    "trade": "SSE supports one-way HTTP streaming; proxy buffering/timeouts need checks. WebSockets add connection protocol/state. Polling costs repeated reads but survives missed notifications.",
+    "scale": "10x: cap connections and reconnect storms. 100x: partition events, fan-out gateways, snapshot/version catch-up and regional ownership.",
+    "counter": "How recover a missed pub/sub message? Reload an authoritative snapshot; do not infer availability from a gap.",
+    "quiz": "Can an SSE seat count authorize a purchase?",
+    "correct": "No; Postgres decides",
+    "wrong": [
+      "Yes if it arrived recently",
+      "Yes if Redis published it"
+    ],
+    "files": [
+      "apps/api/src/services/bookings.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fbookings.ts"
+  },
+  {
+    "id": "lighthouse",
+    "question": "P11: where would Lighthouse CI fit?",
+    "area": "Frontend",
+    "status": "explain-only",
+    "tour": "security-layers",
+    "answer": "Run repeatable audits against a production build with fixed data and explicit budgets. Track trends and regressions, not a perfect score. Lab metrics help diagnose reproducible work; field vitals reveal real user distributions. Axe remains a separate P10 gate already built.",
+    "how": "WHERE IN MINITICKETS: proposed Lighthouse CI config at repo root and a job after web build in .github/workflows/ci.yml, serving isolated API/web ports with seeded public events. Set budgets for LCP/CLS, JS bytes and accessibility; collect several runs and retain reports. No Lighthouse dependency, config or CI job is installed. P10 field telemetry is built separately.\n\n\nExisting integration point: `.github/workflows/ci.yml`.",
+    "flow": [
+      "Published production build",
+      "Fixed audit fixture",
+      "Repeated lab runs",
+      "Budget comparison"
+    ],
+    "why": "A lab gate catches a large regression before release.",
+    "trade": "Shared CI runners are noisy; hard score thresholds can be flaky. Use calibrated metric/asset budgets and compare medians with a baseline.",
+    "scale": "10x: representative routes/devices. 100x: controlled runners, trend storage and field/lab correlation.",
+    "counter": "Can a good lab score prove p75 field INP? No; real interactions and device populations differ.",
+    "quiz": "Which build should an audit measure?",
+    "correct": "Production build",
+    "wrong": [
+      "Next dev with HMR",
+      "An empty mocked page only"
+    ],
+    "files": [
+      ".github/workflows/ci.yml"
+    ],
+    "source": "https://web.dev/articles/vitals",
+    "codeLink": "code-tours.html#least-privilege%3A.github%2Fworkflows%2Fci.yml%3A8"
+  },
+  {
+    "id": "database-concurrency",
+    "question": "many requests at the same time: how does the DB handle it?",
+    "area": "Backend",
+    "status": "built",
+    "tour": "sale-day",
+    "answer": "A connection pool limits concurrent database sessions. Postgres uses row versions for ordinary reads and locks for competing writes. Different event rows can progress together; buyers for one hot event wait on its row. A transaction makes seats, booking and outbox atomic. More connections cannot remove contention on one row.",
+    "how": "`apps/api/src/db/client.ts` caps the pool at 10 with 2 s connection acquisition and 5 s statement timeouts. `apps/api/src/queries/bookings.ts` → `createBookingTx` takes FOR UPDATE. Run `pnpm demo:booking-race` to measure the invariant under concurrent buyers.",
+    "flow": [
+      "Concurrent requests",
+      "Pool of 10",
+      "Lock one event row",
+      "Commit then next buyer"
+    ],
+    "why": "Read-then-write without locking loses updates.",
+    "trade": "MVCC keeps ordinary reads from waiting on row writers, but reads can still wait on schema locks. Serializable adds anomaly detection and transaction retries.",
+    "scale": "10x: observe pool wait and lock wait separately. 100x: partition inventory or queue admissions; do not just multiply pools.",
+    "counter": "Can two different events run together? Yes, unless another shared resource bottlenecks.",
+    "quiz": "Does adding connections remove a hot-row queue?",
+    "correct": "No",
+    "wrong": [
+      "Yes always",
+      "Only with a larger HTTP timeout"
+    ],
+    "files": [
+      "apps/api/src/db/client.ts",
+      "apps/api/src/queries/bookings.ts"
+    ],
+    "source": "https://www.postgresql.org/docs/current/transaction-iso.html",
+    "codeLink": "code-tours.html#connection-pooling%3Aapps%2Fapi%2Fsrc%2Fdb%2Fclient.ts%3A9"
+  },
+  {
+    "id": "locking-latest",
+    "question": "no cache and many requests: how to lock and get the latest?",
+    "area": "Backend",
+    "status": "built",
+    "tour": "sale-day",
+    "answer": "Begin a short transaction, select the event FOR UPDATE, wait for the previous writer, then validate the row returned and update it before commit. At READ COMMITTED the locking read returns the updated row after waiting. An ordinary SELECT snapshot is not a reservation. A conditional atomic UPDATE is another safe design.",
+    "how": "`apps/api/src/queries/bookings.ts` → `createBookingTx` rechecks duplicate intent under the lock before availability checks; it decrements using SQL arithmetic and inserts booking/outbox in the same transaction. `pnpm demo:booking-race` verifies no negative inventory. Cache locks are never used as seat locks.",
+    "flow": [
+      "BEGIN",
+      "SELECT FOR UPDATE",
+      "Validate latest locked row",
+      "Write and COMMIT"
+    ],
+    "why": "The read and decision must remain protected until the write.",
+    "trade": "Conditional UPDATE WHERE seats_left >= quantity RETURNING is shorter but needs separate error classification. Optimistic version columns retry conflicts and can starve under high contention.",
+    "scale": "10x: shorten transaction work. 100x: admission control and inventory partitioning; retain a database constraint.",
+    "counter": "Is Redis SET NX sufficient? No; lease expiry/restart can allow multiple holders.",
+    "quiz": "Where must the seat check run?",
+    "correct": "Inside the transaction on the locked row",
+    "wrong": [
+      "Before taking the lock",
+      "Only in Redis"
+    ],
+    "files": [
+      "apps/api/src/queries/bookings.ts"
+    ],
+    "source": "https://www.postgresql.org/docs/current/transaction-iso.html",
+    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+  },
+  {
+    "id": "idempotency",
+    "question": "idempotency",
+    "area": "Backend",
+    "status": "built",
+    "tour": "booking",
+    "answer": "A retry repeats one intent rather than making another purchase. The browser creates one UUID per intent and keeps it for ambiguous retries. A unique user/key constraint stores identity with the booking transaction. Same input replays the booking; different input with the same key conflicts. Failed transactions store no success.",
+    "how": "`apps/api/src/db/schema/bookings.ts` enforces unique user/idempotency key. `apps/api/src/services/bookings.ts` compares event and quantity on replay; `queries/bookings.ts` handles races across different event rows. `pnpm demo:idempotency` exercises lost responses and concurrent duplicates.",
+    "flow": [
+      "One intent key",
+      "Unique database constraint",
+      "Commit once",
+      "Replay same booking"
+    ],
+    "why": "A network failure cannot tell a caller whether commit happened.",
+    "trade": "Redis TTL keys add a cross-store gap and can expire/evict. A generic response store can replay exact response bodies but adds retention rules. This app reconstructs successful responses and keeps keys with bookings.",
+    "scale": "10x: index/storage retention policy. 100x: explicit idempotency contract for payment providers and async intents.",
+    "counter": "Why scope by user? Two users may coincidentally submit the same client key without sharing a booking.",
+    "quiz": "What should an ambiguous retry keep?",
+    "correct": "The same idempotency key",
+    "wrong": [
+      "A new UUID every retry",
+      "A shared key for every purchase"
+    ],
+    "files": [
+      "apps/api/src/db/schema/bookings.ts",
+      "apps/api/src/services/bookings.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fdb%2Fschema%2Fbookings.ts"
+  },
+  {
+    "id": "retry-backoff",
+    "question": "How do retries avoid amplifying an outage?",
+    "area": "Backend",
+    "status": "built",
+    "tour": "failing-email",
+    "answer": "Retry only failures likely to be temporary, bound attempts/time and retain operation identity. Exponential backoff reduces pressure; jitter prevents synchronized clients. MiniTickets retries ambiguous booking network failures with the same key, caps worker retries into a DLQ and keeps outbox retries durable. Jitter is a proposed improvement, not a claim about current fixed schedules.",
+    "how": "`apps/web/src/features/bookings/lib/booking-retry.ts`, `apps/worker/src/backoff.ts` and `apps/api/src/services/outbox.ts` implement separate policies. Run `pnpm demo:outbox`. Outbox retries cap at 60 s without a maximum attempt count; worker failures use 10/40/120 s and a DLQ after 3 receives.",
+    "flow": [
+      "Temporary failure",
+      "Same operation identity",
+      "Bounded backoff",
+      "Success or inspect backlog"
+    ],
+    "why": "Immediate retries turn a partial failure into more load.",
+    "trade": "Do not retry validation/authorization failures. Layered retries multiply attempts; choose one responsible layer. Proposed jitter belongs in retryInMs/backoff with bounded randomized tests.",
+    "scale": "10x: retry budgets and attempt metrics. 100x: per-destination admission and circuit breakers with durable backlog.",
+    "counter": "What if the response is lost after send? A retry may duplicate delivery; the consumer must be idempotent.",
+    "quiz": "Which error should normally not be retried?",
+    "correct": "Invalid input",
+    "wrong": [
+      "Transient network reset",
+      "Retryable service outage"
+    ],
+    "files": [
+      "apps/web/src/features/bookings/lib/booking-retry.ts",
+      "apps/worker/src/backoff.ts",
+      "apps/api/src/services/outbox.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fservices%2Foutbox.ts%3A12"
+  },
+  {
+    "id": "timeouts-pools",
+    "question": "Pool exhaustion, timeouts and circuit breakers: where are the boundaries?",
+    "area": "Backend",
+    "status": "partly",
+    "tour": "sale-day",
+    "answer": "An acquisition timeout bounds waiting for a connection; a statement timeout bounds SQL execution including lock wait. Network timeouts bound downstream calls. None proves an operation did not commit. A circuit breaker can stop repeated calls to an unhealthy dependency, but critical durable work still needs an eventual retry path.",
+    "how": "`apps/api/src/db/client.ts` sets 2 s connect/acquisition and 5 s statements. `apps/api/src/queues/jobs.ts` bounds SDK connection/request time; Redis adapters bound operations. Run `pnpm demo:outbox` for a silent queue timeout. A breaker is explain-only: proposed state in services/outbox.ts around delivery, with half-open probes and durable rows left pending.",
+    "flow": [
+      "HTTP request",
+      "Pool wait budget",
+      "SQL budget",
+      "Downstream budget"
+    ],
+    "why": "Unbounded waits keep scarce connections and shutdowns occupied.",
+    "trade": "Timeouts need an overall deadline, not independent budgets longer than the request. Circuit breakers can reject useful probes or hide recovery if poorly tuned.",
+    "scale": "10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.",
+    "counter": "Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results.",
+    "quiz": "Does a statement timeout limit pool wait?",
+    "correct": "No; acquisition has a separate timeout",
+    "wrong": [
+      "Yes automatically",
+      "Only when Redis is up"
+    ],
+    "files": [
+      "apps/api/src/db/client.ts",
+      "apps/api/src/queues/jobs.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#connection-pooling%3Aapps%2Fapi%2Fsrc%2Fdb%2Fclient.ts%3A9"
+  },
+  {
+    "id": "rate-limits",
+    "question": "Why token buckets, and which identity do you limit?",
+    "area": "Backend",
+    "status": "built",
+    "tour": "sale-day",
+    "answer": "Token buckets permit a burst then refill at a steady rate. Login limits a trustworthy client IP; booking limits an authenticated user. Redis Lua makes refill and debit atomic across instances. Return 429 and Retry-After. A spoofable forwarded header must not choose someone else’s bucket.",
+    "how": "`apps/api/src/queries/rate-limits.ts` stores buckets; `services/rate-limits.ts` chooses policy. `config/trust-proxy.ts` only trusts configured hops/CIDRs. `pnpm demo:sale` verifies shared quotas, spoof resistance and the inventory gate. Redis failure is an explicit failure policy, not a durable quota guarantee.",
+    "flow": [
+      "Validated identity",
+      "Atomic refill and debit",
+      "Admit or 429",
+      "Retry-After"
+    ],
+    "why": "One instance’s memory cannot enforce a shared quota.",
+    "trade": "Fixed windows permit boundary bursts; sliding windows cost more state. IP limits affect NAT users. Redis allkeys-lru can evict quotas; strict financial quotas need durable accounting.",
+    "scale": "10x: key cardinality/TTL and fairness. 100x: gateway protections, per-tenant budgets and hot-key partitioning.",
+    "counter": "Should auth failures all share one user key? No; unauthenticated identity needs a trusted edge/IP policy.",
+    "quiz": "What makes a bucket update atomic across API tasks?",
+    "correct": "Redis Lua operation",
+    "wrong": [
+      "Browser debounce",
+      "Per-process counter"
+    ],
+    "files": [
+      "apps/api/src/queries/rate-limits.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Frate-limits.ts"
+  },
+  {
+    "id": "api-n-plus-one",
+    "question": "API design, N+1 and graceful shutdown",
+    "area": "Backend",
+    "status": "built",
+    "tour": "booking",
+    "answer": "Keep input validation in procedures, business rules in services and storage in queries. Fetch related records in one intentional query rather than looping through requests. On shutdown stop accepting new work, finish bounded in-flight work, stop the relay and close clients. Health checks must distinguish liveness from dependency readiness.",
+    "how": "`apps/api/src/queries/bookings.ts` → `listByUser` joins bookings/events once. `apps/api/src/trpc/init.ts` handles auth/error translation. `apps/api/src/server.ts` closes relay/Fastify/Redis/Postgres. Run `pnpm test` for API/service and relay lifecycle coverage; live ALB drain timing remains acceptance.",
+    "flow": [
+      "Procedure validates",
+      "Service decides",
+      "Query joins",
+      "Graceful close"
+    ],
+    "why": "Layer boundaries make code understandable; bounded work makes deployment safer.",
+    "trade": "Joining everything can overfetch; pagination and projection still matter. GraphQL/tRPC do not automatically prevent N+1. Liveness that depends on every store can cause restart storms.",
+    "scale": "10x: paginate My tickets/bookings and inspect plans. 100x: per-dependency deadlines, connection budgets and task drain experiments.",
+    "counter": "Can the web import the API database module? No; only its router type crosses that boundary.",
+    "quiz": "Where does SQL belong?",
+    "correct": "Queries",
+    "wrong": [
+      "React components",
+      "Procedure validation schemas"
+    ],
+    "files": [
+      "apps/api/src/queries/bookings.ts",
+      "apps/api/src/trpc/init.ts",
+      "apps/api/src/server.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+  },
+  {
+    "id": "postgres-cache",
+    "question": "how Postgres caches",
+    "area": "Database",
+    "status": "partly",
+    "tour": "database-reach",
+    "answer": "Postgres keeps table/index pages in shared buffers, and the operating system can cache file pages too. A cache hit avoids a storage read, but the query still executes: visibility checks, joins, filtering and sorting cost CPU. This is different from Redis storing the finished public events result. There is no general automatic result cache for arbitrary SELECTs.",
+    "how": "`apps/api/src/queries/events.ts` still executes SQL on a Redis miss. `pnpm demo:search` reports EXPLAIN plans on its isolated data. Inspect EXPLAIN (ANALYZE, BUFFERS) in a controlled read-only session; warm and cold runs answer different questions. Production cache sizing has not been benchmarked.",
+    "flow": [
+      "SQL plan",
+      "Shared buffers",
+      "OS page cache",
+      "Storage if needed"
+    ],
+    "why": "A warm database can be fast without a separate application cache.",
+    "trade": "Larger shared buffers are not unlimited free memory; sorts/work_mem multiply with operations and sessions. Evicting caches just to benchmark can disrupt other workloads.",
+    "scale": "10x: inspect hit/read counts and CPU. 100x: tune working set, queries and IO before assuming Redis solves all load.",
+    "counter": "Does a shared-buffer hit skip SQL execution? No.",
+    "quiz": "What is stored in shared buffers?",
+    "correct": "Database pages",
+    "wrong": [
+      "Every completed SELECT response",
+      "Browser HTML"
+    ],
+    "files": [
+      "apps/api/src/queries/events.ts"
+    ],
+    "source": "https://www.postgresql.org/docs/current/runtime-config-resource.html",
+    "codeLink": "code-tours.html#layered-api%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fevents.ts%3A5"
+  },
+  {
+    "id": "indexes-pagination",
+    "question": "GIN, B-tree, EXPLAIN and keyset versus OFFSET",
+    "area": "Database",
+    "status": "built",
+    "tour": "search",
+    "answer": "Choose an index for the predicate and order. Trigram GIN helps contains search; B-tree on starts_at/id supports stable traversal. Keyset asks for rows after the last pair, avoiding a growing OFFSET scan. A stable cutoff prevents time drift but is not a database snapshot: inserts and edits can still change later pages.",
+    "how": "`apps/api/src/queries/event-search.ts` escapes LIKE metacharacters and uses composite cursor boundaries. Migration `apps/api/drizzle/0008_lethal_amazoness.sql` adds search indexes. `pnpm demo:search` measures 10k rows, index plans and page boundaries including timestamp ties.",
+    "flow": [
+      "Contains predicate",
+      "Matching index",
+      "Ordered cursor pair",
+      "Next bounded page"
+    ],
+    "why": "Deep OFFSET discards earlier rows repeatedly.",
+    "trade": "GIN adds write/storage cost and short/unselective terms can favor a scan. Keyset cannot jump to arbitrary page 200; snapshot semantics need more design.",
+    "scale": "10x: inspect real selectivity and buffers. 100x: retention/partitioning or full-text relevance when product needs it.",
+    "counter": "Why carry id with time? It breaks ties so rows sharing a timestamp are not skipped.",
+    "quiz": "Which cursor is stable for timestamp ties?",
+    "correct": "starts_at plus id",
+    "wrong": [
+      "Timestamp alone",
+      "Row count alone"
+    ],
+    "files": [
+      "apps/api/src/queries/event-search.ts",
+      "apps/api/drizzle/0008_lethal_amazoness.sql"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Fevent-search.ts"
+  },
+  {
+    "id": "migrations",
+    "question": "How do migrations and rollback avoid downtime?",
+    "area": "Database",
+    "status": "partly",
+    "tour": "deploy",
+    "answer": "Run migrations once from the same published SHA before rolling tasks. Prefer expand/contract: add compatible schema, deploy readers/writers, backfill, then remove old columns in a later release. Application rollback must not assume a destructive migration can be undone. MiniTickets runs a dedicated migration task; full zero-downtime backfill orchestration is explain-only.",
+    "how": "`infra/src/compute/migration-task.ts` defines the one-off task; `.github/workflows/cd.yml` invokes it before app rollout. `docs/20-deploy-day.md` explains tag rollback and migration limits. Proposed large backfills belong in explicit resumable scripts with bounded batches and progress, not API startup.",
+    "flow": [
+      "Expand schema",
+      "Run migration task",
+      "Roll compatible apps",
+      "Contract later"
+    ],
+    "why": "Old and new tasks overlap during rolling deployment.",
+    "trade": "CREATE INDEX CONCURRENTLY has transaction restrictions. Long locks can stall traffic. A forward fix may be safer than rolling back code after incompatible data changes.",
+    "scale": "10x: inspect lock duration on a copy. 100x: online index/backfill tooling, compatibility windows and rehearsed restore.",
+    "counter": "Can rollback remove a column safely? Only if no running version uses it and recovery is planned.",
+    "quiz": "Why migrate outside each API startup?",
+    "correct": "Avoid competing migration attempts",
+    "wrong": [
+      "To bypass tests",
+      "To make schema unrelated to image SHA"
+    ],
+    "files": [
+      "infra/src/compute/migration-task.ts",
+      ".github/workflows/cd.yml"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fcompute%2Fmigration-task.ts"
+  },
+  {
+    "id": "replicas-backups",
+    "question": "Read replicas, multi-AZ and backups/PITR: which problem does each solve?",
+    "area": "Database",
+    "status": "explain-only",
+    "tour": "database-reach",
+    "answer": "Replicas scale eligible reads but may lag; multi-AZ improves availability; backups and point-in-time recovery restore past data after deletion/corruption. None replaces another. Booking decisions must use the authoritative writer. A successful booking followed by a lagging replica read can appear missing.",
+    "how": "WHERE IN MINITICKETS: proposed read-only client in queries for public catalogue only, infrastructure options in infra/src/data/postgres.ts, and an owner restore drill in the deploy runbook. Current dev is intentionally small; no read replica, cross-region database or tested PITR recovery SLA is claimed. Inspect RDS configuration read-only before assuming retention or multi-AZ.\n\n\nExisting integration point: `infra/src/data/postgres.ts`.",
+    "flow": [
+      "Writer commit",
+      "Lagging read replica",
+      "Read routing policy",
+      "Backup restore drill"
+    ],
+    "why": "Availability, read scale and historical recovery are distinct requirements.",
+    "trade": "Read-your-writes can route a user to the writer temporarily. Replicas and multi-AZ cost money. A backup without a tested restore is incomplete evidence.",
+    "scale": "10x: define RPO/RTO and test restore. 100x: failover rehearsals, lag-aware routing and regional data ownership.",
+    "counter": "Can a replica stop accidental deletion? No; deletion replicates.",
+    "quiz": "Which protects historical recovery?",
+    "correct": "Backups with tested restore/PITR",
+    "wrong": [
+      "Only a read replica",
+      "Only another API task"
+    ],
+    "files": [
+      "infra/src/data/postgres.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A31"
+  },
+  {
+    "id": "cache-stampede",
+    "question": "How do you stop a cache miss stampede across instances?",
+    "area": "Caching",
+    "status": "built",
+    "tour": "search",
+    "answer": "Use single-flight inside one process and a short distributed rebuild lock across processes. Recheck the cache after taking the lock: another holder may have filled it while this request waited. Release only with the owner token. Bound waiting and fall back to Postgres so a broken cache does not hang the request.",
+    "how": "`apps/api/src/services/single-flight.ts` shares a promise with cleanup on both success/error. `queries/events-cache.ts` uses SET NX PX and Lua compare/delete. `pnpm demo:stampede` previously measured 100 concurrent requests as 1 DB query, including two instances after the double-check fix.",
+    "flow": [
+      "Concurrent cache misses",
+      "Single-flight and lease",
+      "Double-check then rebuild",
+      "One cached result"
+    ],
+    "why": "A fast cache can amplify database load when many entries expire together.",
+    "trade": "The 5 s lease and bounded wait permit duplicate rebuilds if slow or evicted. That is acceptable for public reads, never scarce-seat correctness.",
+    "scale": "10x: TTL jitter and refresh metrics. 100x: hot-key partitioning, stale serving and bounded rebuild queues.",
+    "counter": "Why random owner token? A late old holder must not delete a newer lease.",
+    "quiz": "What must happen after acquiring a rebuild lock?",
+    "correct": "Recheck the cache",
+    "wrong": [
+      "Always query immediately",
+      "Delete every cache key"
+    ],
+    "files": [
+      "apps/api/src/services/single-flight.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fsingle-flight.ts"
+  },
+  {
+    "id": "cache-invalidation",
+    "question": "How do you prevent a stale refill after a write?",
+    "area": "Caching",
+    "status": "built",
+    "tour": "search",
+    "answer": "Commit the write, then increment a cache generation. A reader captures the generation before its database read and stores only under that generation. A slow pre-write reader can fill its old key, but new readers use the new generation. TTL bounds stale data if invalidation fails; errors are logged instead of undoing a committed event.",
+    "how": "`apps/api/src/services/events.ts` → `invalidateUpcomingList` runs after event creation. `queries/events-cache.ts` builds generation/filter keys. `queries/web-cache.ts` calls signed Next revalidation. Run `pnpm demo:stampede`; inspect cache invalidation unit tests for late refill and failure.",
+    "flow": [
+      "Commit event",
+      "Increment generation",
+      "New readers use new key",
+      "Old refill expires"
+    ],
+    "why": "DEL alone allows an in-flight old reader to repopulate the same key.",
+    "trade": "Generation keys increase transient cardinality. Redis and Next/browser caches have separate stale windows; one invalidation does not instantly refresh every tab.",
+    "scale": "10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.",
+    "counter": "Why read generation before SQL? Reading after SQL could place old rows in the new generation.",
+    "quiz": "Which order protects against stale refill?",
+    "correct": "Read generation before database",
+    "wrong": [
+      "Read generation after database",
+      "Only delete after reading"
+    ],
+    "files": [
+      "apps/api/src/services/events.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#cache-aside%3Aapps%2Fapi%2Fsrc%2Fservices%2Fevents.ts%3A20"
+  },
+  {
+    "id": "swr-caches",
+    "question": "SWR, stale-if-error and stacked caches: how stale can a user see?",
+    "area": "Caching",
+    "status": "built",
+    "tour": "search",
+    "answer": "SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.",
+    "how": "`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.",
+    "flow": [
+      "Browser query",
+      "Next public data",
+      "Redis envelope",
+      "Postgres"
+    ],
+    "why": "Bounded stale public listings trade freshness for latency/availability.",
+    "trade": "Never use stale data for authorization or seats. Long independent TTLs can compound staleness. A failing refresh must not reset old data to fresh.",
+    "scale": "10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.",
+    "counter": "Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.",
+    "quiz": "Can stale listings authorize booking?",
+    "correct": "No",
+    "wrong": [
+      "Yes inside TTL",
+      "Yes after SWR refresh starts"
+    ],
+    "files": [
+      "apps/api/src/services/events.ts",
+      "apps/web/src/features/events/server/cached-events.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#cache-aside%3Aapps%2Fapi%2Fsrc%2Fservices%2Fevents.ts%3A20"
+  },
+  {
+    "id": "hot-keys-privacy",
+    "question": "How do hot keys, cache keys and privacy interact?",
+    "area": "Caching",
+    "status": "partly",
+    "tour": "search",
+    "answer": "A cache key must include every input that changes the result. Canonicalize dates/venue so equivalent filters share a key; keep authenticated data out of public keys. A very hot event or generation key still concentrates load. Redis eviction is acceptable for reconstructible public data, but sessions should fail closed and quotas are only advisory under eviction.",
+    "how": "`apps/api/src/services/event-filters.ts` normalizes filters; `queries/events-cache.ts` hashes complete inputs. `queries/sessions.ts` requires session-index membership and never caches private pages. Run `pnpm test` for canonical filter/key and session eviction cases. Dedicated Redis isolation is explain-only.",
+    "flow": [
+      "Validated canonical input",
+      "Complete public key",
+      "Shared result",
+      "TTL or eviction"
+    ],
+    "why": "Missing a venue/date/user dimension can return wrong or private data.",
+    "trade": "Hashing bounds key size but does not fix omitted input. One cache used for sessions/results/quotas shares failure and eviction behavior.",
+    "scale": "10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.",
+    "counter": "Is hashing a key encryption? No; do not put secrets into it assuming privacy.",
+    "quiz": "What must a result cache key include?",
+    "correct": "All result-changing inputs",
+    "wrong": [
+      "Only the route name",
+      "Only a user-visible label"
+    ],
+    "files": [
+      "apps/api/src/services/event-filters.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fevent-filters.ts"
+  },
+  {
+    "id": "outbox",
+    "question": "What if booking commits but publishing fails?",
+    "area": "Async",
+    "status": "built",
+    "tour": "booking",
+    "answer": "Store the booking, seat decrement and confirmation payload in one Postgres transaction. A relay publishes committed outbox rows and marks them sent. A crash after publish but before marking sent produces a duplicate, so consumers stay idempotent. This closes message loss, not exactly-once delivery.",
+    "how": "`apps/api/src/queries/bookings.ts` inserts the outbox row. `queries/outbox.ts` uses FOR UPDATE SKIP LOCKED batches of 10; `services/outbox.ts` retries persisted rows. `pnpm demo:outbox` measured 24/24 recovered after queue restoration and atomic rollback on injected outbox failure.",
+    "flow": [
+      "Booking transaction",
+      "Durable outbox",
+      "Competing relay",
+      "SNS then consumers"
+    ],
+    "why": "Commit-then-send has a gap; send-then-commit can announce a rolled-back purchase.",
+    "trade": "Holding row locks while sending is simple but occupies a pool connection. Leases/CDC decouple IO at greater complexity. Sent rows need retention planning.",
+    "scale": "10x: batch sends/backlog age. 100x: separate relay or CDC, retention and publish throughput budgets.",
+    "counter": "What if SNS accepted before relay crash? Publish again with stable message identity; consumers deduplicate.",
+    "quiz": "Does an outbox guarantee exactly-once delivery?",
+    "correct": "No; at-least-once with idempotent consumers",
+    "wrong": [
+      "Yes always",
+      "Only if a Redis lock exists"
+    ],
+    "files": [
+      "apps/api/src/queries/bookings.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+  },
+  {
+    "id": "fanout",
+    "question": "Queue, topic, event bus or Kafka for booking events?",
+    "area": "Async",
+    "status": "built",
+    "tour": "booking",
+    "answer": "A topic fans one event out to multiple subscriptions. A queue buffers work for competing consumers. MiniTickets publishes to SNS, then separate email/ticket SQS queues; each can retry independently. EventBridge adds richer routing/integrations; Kafka adds retained partitioned replay. Choose those only when the product needs those semantics.",
+    "how": "`infra/src/jobs/booking-events.ts` configures raw SNS deliveries and queue source restrictions. `apps/api/src/queues/jobs.ts` publishes one stable message. Run `pnpm demo:tickets` and `pnpm demo:outbox` separately; P4 local emulators exercise the same SDK boundaries. AWS fan-out acceptance is still manual.",
+    "flow": [
+      "Outbox",
+      "SNS topic",
+      "Independent email and ticket queues",
+      "Independent consumers"
+    ],
+    "why": "Two consumers must each receive the event; competing on one queue would divide work.",
+    "trade": "SNS/SQS are operationally small but standard delivery is unordered/duplicated. A bus is routing, not a replacement for all consumer backpressure.",
+    "scale": "10x: per-consumer backlog/concurrency. 100x: partition ordering domains and retention/replay requirements.",
+    "counter": "Why not two Lambdas on one SQS queue? They compete; each message is not promised to both.",
+    "quiz": "What does a topic add?",
+    "correct": "Fan-out to separate consumers",
+    "wrong": [
+      "A shared SQL transaction",
+      "Guaranteed global ordering"
+    ],
+    "files": [
+      "infra/src/jobs/booking-events.ts",
+      "apps/api/src/queues/jobs.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fjobs%2Fbooking-events.ts"
+  },
+  {
+    "id": "consumer-idempotency",
+    "question": "Can an idempotent email consumer guarantee exactly one email?",
+    "area": "Async",
+    "status": "built",
+    "tour": "booking",
+    "answer": "It can skip known completed message ids, but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.",
+    "how": "`apps/worker/src/handlers/booking-confirmed.ts` and `processed-jobs.ts` mark successful mail after send. `handlers/tickets.ts` reserves a canonical ticket and resumes partial work; `tickets/store.ts` uses conditional writes. `pnpm demo:tickets` checks duplicates and crash-resume behavior.",
+    "flow": [
+      "Receive at least once",
+      "Check canonical identity",
+      "Perform or resume work",
+      "Record completion"
+    ],
+    "why": "At-least-once queues force every side effect to define its duplicate behavior.",
+    "trade": "No distributed transaction spans SES/S3/DynamoDB. TTL cleanup bounds dedup history; an expired old message may run again. External provider idempotency is valuable where supported.",
+    "scale": "10x: bound dedup retention against redrive age. 100x: durable state machines and provider-specific idempotency contracts.",
+    "counter": "Why not use queue message id for tickets? Republishing the same booking can create a different queue id.",
+    "quiz": "What defines ticket identity?",
+    "correct": "Booking id plus seat number",
+    "wrong": [
+      "Queue receive attempt",
+      "Random UUID on every retry"
+    ],
+    "files": [
+      "apps/worker/src/handlers/booking-confirmed.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Fhandlers%2Fbooking-confirmed.ts"
+  },
+  {
+    "id": "dlq-failure",
+    "question": "A customer has no confirmation: retry, DLQ or redrive?",
+    "area": "Async",
+    "status": "built",
+    "tour": "failing-email",
+    "answer": "Find the booking/correlation id, follow structured logs, inspect queue age and failed attempts, then DLQ and alarm. Fix the root cause before redrive. Visibility timeout hides an in-flight message; it is not deletion. Partial-batch reporting retries only failed records. A poison message should not block all useful work.",
+    "how": "`apps/worker/src/batch.ts` returns batchItemFailures; `backoff.ts` sets delay; `infra/src/jobs/queue-trigger.ts` sets worker mapping. `pnpm jobs:dlq` lists local failures; redrive is an explicit owner operation after a fix. Runbook §3.12 has AWS diagnostics; no live alarm drill has been claimed.",
+    "flow": [
+      "Failed consumer",
+      "Visibility delay",
+      "Retry limit",
+      "DLQ and alarm"
+    ],
+    "why": "Durable failure evidence is better than silently dropping work.",
+    "trade": "Too-short visibility can overlap work; too-large visibility delays recovery. Reserved Lambda concurrency and mapping maximumConcurrency must agree or throttling can consume receives.",
+    "scale": "10x: oldest-message age and redrive rate limits. 100x: separate poison-message classes, sampling and SLO-driven alarms.",
+    "counter": "Does an empty queue mean email was delivered? No; inspect completion/provider outcomes too.",
+    "quiz": "What should happen before redrive?",
+    "correct": "Fix the failure cause",
+    "wrong": [
+      "Delete all evidence",
+      "Increase retries forever"
+    ],
+    "files": [
+      "apps/worker/src/batch.ts",
+      "infra/src/jobs/queue-trigger.ts"
+    ],
+    "source": "https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html",
+    "codeLink": "code-tours.html#aws-lambda%3Ainfra%2Fsrc%2Fjobs%2Fqueue-trigger.ts%3A28"
+  },
+  {
+    "id": "ordering-sagas",
+    "question": "What if ordering matters or a multi-step purchase needs compensation?",
+    "area": "Async",
+    "status": "explain-only",
+    "tour": "booking",
+    "answer": "Standard SNS/SQS may duplicate and reorder events. A per-aggregate version can reject stale updates; FIFO groups can serialize a chosen key. For payments plus booking across services, use an explicit saga/state machine with timeouts and compensating actions. Compensation is a business action, not a database rollback across the internet.",
+    "how": "WHERE IN MINITICKETS: proposed purchase-state service in apps/api/src/services/purchases.ts, transaction/outbox queries below it, and workers for payment/refund outcomes. Use bookingId as correlation/ordering scope. No payment workflow, FIFO queue or saga is built. Existing booking transaction remains local atomicity.\n\n\nExisting integration point: `apps/api/src/queries/outbox.ts`.",
+    "flow": [
+      "Purchase intent",
+      "Reserve or pay",
+      "Outcome event",
+      "Confirm or compensate"
+    ],
+    "why": "Independent systems can partially succeed and recover at different times.",
+    "trade": "FIFO ordering reduces parallelism per group and does not eliminate every duplicate side effect. A workflow engine adds operational/cost overhead.",
+    "scale": "10x: define compensation deadlines and reconciliation. 100x: partition by aggregate, version messages and audit state transitions.",
+    "counter": "Is refund identical to undoing history? No; it is a new durable transaction.",
+    "quiz": "What is compensation?",
+    "correct": "A new business action that addresses partial success",
+    "wrong": [
+      "A universal SQL rollback",
+      "Deleting all events"
+    ],
+    "files": [
+      "apps/api/src/queries/outbox.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Foutbox.ts%3A5"
+  },
+  {
+    "id": "sale-day",
+    "question": "sale day with row locks.",
+    "area": "Sale day",
+    "status": "built",
+    "tour": "sale-day",
+    "answer": "One event row serializes buyers even with many API tasks. Rate limits bound callers; an advisory Redis inventory gate rejects obvious sold-out work before the database. All admitted buyers still run the same Postgres transaction. Redis failure, expiry or wrong counts must never create a confirmed seat by itself.",
+    "how": "`apps/api/src/services/booking-inventory.ts` debits an intent-owned reservation and falls back to Postgres on Redis failure. `services/inventory-reconciliation.ts` compares versions before correction so it does not overwrite in-flight work. `pnpm demo:sale` compares gated/ungated short loads and verifies replay at zero stock.",
+    "flow": [
+      "User rate limit",
+      "Redis advisory gate",
+      "Postgres row lock",
+      "Booking and outbox commit"
+    ],
+    "why": "Fewer doomed buyers enter the hot-row queue.",
+    "trade": "Unknown DB commit/refund and worker crashes can skew the hint; reconciliation repairs admission, not correctness. This is not a customer-visible timed seat hold.",
+    "scale": "10x: compare p95/p99 and lock waits. 100x: durable queue admission or partitioned seat rows, keeping DB constraints.",
+    "counter": "Can reconciliation blindly SET database stock? No; compare-and-set against an observed version to avoid clobbering in-flight debits.",
+    "quiz": "Who is final seat authority?",
+    "correct": "Postgres transaction",
+    "wrong": [
+      "Redis hint",
+      "Browser count"
+    ],
+    "files": [
+      "apps/api/src/services/booking-inventory.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fbooking-inventory.ts"
+  },
+  {
+    "id": "waiting-room",
+    "question": "Where would a waiting room, booking queue and expiring seat holds go?",
+    "area": "Sale day",
+    "status": "explain-only",
+    "tour": "sale-day",
+    "answer": "A waiting room controls admission before the hot API. A durable booking queue changes the contract to accepted intent plus later status. A customer seat hold needs an owner, expiry and atomic transition to booking; it is not the Redis inventory hint. State the fairness and abandonment policy before choosing technology.",
+    "how": "WHERE IN MINITICKETS: proposed admission middleware before bookings procedure, durable booking_intents/seat_holds queries in Postgres and a service/worker processing one event shard. Browser hook polls its intent; an expiry job releases only still-held rows by conditional transition. No waiting-room token issuer, booking queue or timed customer hold exists.\n\n\nExisting integration point: `apps/api/src/procedures/bookings.ts`.",
+    "flow": [
+      "Waiting admission",
+      "Durable intent",
+      "Owned expiring hold",
+      "Confirm or release"
+    ],
+    "why": "An unbounded request queue consumes connections and gives poor user feedback.",
+    "trade": "FIFO fairness, bots, token replay and expiry races need explicit rules. An async response cannot claim success until final booking commits.",
+    "scale": "10x: bounded queue depth and abandonment metrics. 100x: sharded processors, capacity tokens and abuse protection.",
+    "counter": "What if expiry races payment? One conditional state transition wins; reconcile external payment/refund.",
+    "quiz": "Is the P8 Redis gate a timed customer hold?",
+    "correct": "No",
+    "wrong": [
+      "Yes always",
+      "Only when a user is logged in"
+    ],
+    "files": [
+      "apps/api/src/procedures/bookings.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fprocedures%2Fbookings.ts"
+  },
+  {
+    "id": "autoscaling",
+    "question": "P8: how would ECS autoscaling help, and what would it cost?",
+    "area": "Sale day",
+    "status": "explain-only",
+    "tour": "sale-day",
+    "answer": "Target tracking can add tasks on CPU or ALB requests per target, with min/max bounds and scale-in/out cooldowns. It helps independent request work; it cannot parallelize a single locked event row. More API tasks also create more database pools. Pick bounds from latency, DB connection budget and cost.",
+    "how": "WHERE IN MINITICKETS: proposed Pulumi module infra/src/compute/autoscaling.ts after ECS service creation, using Application Auto Scaling target/policy for desiredCount. Start with explicit min 1/max 3 for a controlled exercise, account for API and web separately and set cooldowns/alarms. No scaling resource/IAM policy is built. Inspect existing service desiredCount; load test only under an owner budget.\n\n\nExisting integration point: `infra/src/compute/service.ts`.",
+    "flow": [
+      "CPU or ALB demand",
+      "Target tracking policy",
+      "Bounded ECS tasks",
+      "Shared DB bottleneck"
+    ],
+    "why": "Elastic compute reduces overprovisioning for variable independent load.",
+    "trade": "Scale-out is delayed by metrics, image start and health checks. Min tasks cost while idle; max tasks bound but do not fully cap AWS spend. Never blindly scale past RDS pool capacity.",
+    "scale": "10x: load-test cooldowns and connection totals. 100x: scheduled on-sale capacity plus downstream quotas and event sharding.",
+    "counter": "Why not just set max 100? Cost, DB connection limits and downstream saturation.",
+    "quiz": "Can task scaling remove one row lock bottleneck?",
+    "correct": "No",
+    "wrong": [
+      "Yes by itself",
+      "Only with more CPU targets"
+    ],
+    "files": [
+      "infra/src/compute/service.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A43"
+  },
+  {
+    "id": "compute-choices",
+    "question": "ECS, Lambda or EKS? Cold starts, VPC and NAT?",
+    "area": "AWS",
+    "status": "partly",
+    "tour": "booking",
+    "answer": "ECS fits long-running API/web processes and predictable pools. Lambda fits bursty queue handlers with bounded work. EKS provides Kubernetes control at substantial operational cost. Our workers run outside the VPC because they only call managed public AWS APIs; putting a worker in a public subnet does not give it a public IP or automatic internet.",
+    "how": "`infra/src/compute/service.ts` runs Fargate; `infra/src/jobs/worker-lambda.ts` has no vpcConfig and 10 s timeout; ticket Lambda has its own larger budget. Lambdas use container images already published by CI. `pnpm demo:tickets` validates handlers locally, not AWS cold starts. EKS/NAT gateways are not built.",
+    "flow": [
+      "HTTP long-lived process",
+      "ECS pool",
+      "Queue burst",
+      "Lambda handler"
+    ],
+    "why": "Match runtime lifecycle and network needs to workload.",
+    "trade": "VPC Lambda for RDS requires routing/endpoints or NAT for outside services. NAT has fixed and data charges; endpoints also cost. Container image cold start differs from zip, so measure.",
+    "scale": "10x: concurrency/quota and SES limits. 100x: provisioned concurrency only for measured latency needs, reserved concurrency for protection.",
+    "counter": "Is a Lambda in a public subnet publicly addressed? No.",
+    "quiz": "Which runtime currently owns the HTTP API?",
+    "correct": "ECS Fargate",
+    "wrong": [
+      "EKS",
+      "The email Lambda"
+    ],
+    "files": [
+      "infra/src/compute/service.ts",
+      "infra/src/jobs/worker-lambda.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A43"
+  },
+  {
+    "id": "iam-oidc",
+    "question": "IAM roles and OIDC: who can wear which badge?",
+    "area": "AWS",
+    "status": "built",
+    "tour": "iam-badges",
+    "answer": "A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.",
+    "how": "`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.",
+    "flow": [
+      "Repository OIDC subject",
+      "Trust policy",
+      "Scoped role permissions",
+      "Attached job or task"
+    ],
+    "why": "A reachable AWS endpoint is not permission to invoke it.",
+    "trade": "Resource wildcards needed for APIs without resource scoping require conditions where supported. Broad deploy capability is dangerous; do not let old infrastructure runs apply.",
+    "scale": "10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.",
+    "counter": "Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.",
+    "quiz": "What answers who may assume a role?",
+    "correct": "Trust policy",
+    "wrong": [
+      "Security group",
+      "Database password"
+    ],
+    "files": [
+      "infra/src/cicd.ts",
+      "infra/src/publish-policy.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fcicd.ts"
+  },
+  {
+    "id": "network-boundaries",
+    "question": "Routes, SGs, NACLs, ENIs and private DNS: what actually connects?",
+    "area": "AWS",
+    "status": "built",
+    "tour": "database-reach",
+    "answer": "First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.",
+    "how": "`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.",
+    "flow": [
+      "Browser HTTPS ALB",
+      "Target SG and task ENI",
+      "API private route",
+      "DB SG and credentials"
+    ],
+    "why": "A valid password cannot repair a missing route or blocked SG.",
+    "trade": "Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.",
+    "scale": "10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.",
+    "counter": "Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.",
+    "quiz": "Which control is stateful?",
+    "correct": "Security group",
+    "wrong": [
+      "Network ACL",
+      "DNS record"
+    ],
+    "files": [
+      "infra/src/network.ts",
+      "infra/src/compute/service-connect.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#regions-and-azs%3Ainfra%2Fsrc%2Fnetwork.ts%3A35"
+  },
+  {
+    "id": "dynamodb",
+    "question": "How do access patterns choose DynamoDB keys?",
+    "area": "AWS",
+    "status": "built",
+    "tour": "booking",
+    "answer": "Design from queries: an owner lists their tickets and the worker conditionally reserves a canonical ticket. Base keys userId/ticketId support owner-scoped reads; a date index supports event-date access. Conditional writes prevent duplicate reservations. A GSI is eventually consistent and a popular date can become hot.",
+    "how": "`infra/src/tickets/storage.ts` defines the ticket table/index; `apps/worker/src/tickets/store.ts` reserves/marks ready; `apps/api/src/queries/tickets.ts` only reads the authenticated owner. `pnpm demo:tickets` tests duplicate/resume behavior. The API role is not granted arbitrary Scan.",
+    "flow": [
+      "Owner id query",
+      "Base-table ticket keys",
+      "Conditional reservation",
+      "Ready ticket"
+    ],
+    "why": "A table key should serve actual reads rather than mimic a relational schema blindly.",
+    "trade": "A GSI adds write/storage cost and lag. TTL deletion is asynchronous; never use it as exact authorization expiry. On-demand billing still has hot-partition limits.",
+    "scale": "10x: paginate owner queries. 100x: shard hot date indexes/bounded time windows and model reconciliation reads.",
+    "counter": "Can a caller choose another ownerId? No; take it from the verified session.",
+    "quiz": "What is canonical ticket identity?",
+    "correct": "bookingId and seat",
+    "wrong": [
+      "Date alone",
+      "SQS receipt handle"
+    ],
+    "files": [
+      "infra/src/tickets/storage.ts",
+      "apps/worker/src/tickets/store.ts",
+      "apps/api/src/queries/tickets.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=infra%2Fsrc%2Ftickets%2Fstorage.ts"
+  },
+  {
+    "id": "ses-email",
+    "question": "SES deliverability, quotas and duplicate emails",
+    "area": "AWS",
+    "status": "partly",
+    "tour": "failing-email",
+    "answer": "A successful SendEmail means SES accepted the request, not that the recipient read it. Verify identity/DKIM, respect sandbox/production access and sending rate, then handle bounce/complaint outcomes. MiniTickets has a dedicated mail worker and scoped SES permission. Custom MAIL FROM/SPF/DMARC workflows and bounce processing are explain-only.",
+    "how": "`infra/src/jobs/email.ts` configures the SES identity; `apps/worker/src/ses-mailer.ts` sends with a stable configured sender. `docs/20-deploy-day.md` §3.10 covers owner acceptance. Proposed feedback events would fan into a separate queue/service updating suppression preferences. No live inbox delivery claim.",
+    "flow": [
+      "Email queue",
+      "SES accepted send",
+      "Recipient provider",
+      "Delivery or bounce"
+    ],
+    "why": "Offloading mail protects booking latency but delivery is still an external outcome.",
+    "trade": "SES quotas can bottleneck a fast Lambda. Retrying permanent bad addresses wastes work. Mark-after-send leaves a duplicate window.",
+    "scale": "10x: production quota/rate and suppression. 100x: reputation monitoring, templates/localization and provider outcome ingestion.",
+    "counter": "Does more Lambda concurrency increase SES quota? No.",
+    "quiz": "What does SendEmail success prove?",
+    "correct": "SES accepted the request",
+    "wrong": [
+      "The user read it",
+      "Exactly one delivery forever"
+    ],
+    "files": [
+      "infra/src/jobs/email.ts",
+      "apps/worker/src/ses-mailer.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#ses-email%3Aapps%2Fworker%2Fsrc%2Fses-mailer.ts%3A5"
+  },
+  {
+    "id": "presigned-uploads",
+    "question": "Presigned URLs, CORS and untrusted uploads",
+    "area": "Security",
+    "status": "built",
+    "tour": "booking",
+    "answer": "A presigned URL is a short-lived bearer capability with exactly the signer’s allowed action. CORS controls browser cross-origin use, not authorization. Validate the owner/admin before signing, constrain type/size, inspect actual image bytes and publish to an immutable key with conditional version identity. Never treat a declared Content-Type as malware scanning.",
+    "how": "`apps/api/src/services/posters.ts` validates admin workflow; `queries/posters.ts` signs staging/publish operations; `services/poster-image.ts` checks bounded bytes; `queries/assets.ts` signs private reads for 120 s. `pnpm demo:p4-assets` tests owner isolation and constrained upload/publication. No antivirus/re-encoding pipeline is built.",
+    "flow": [
+      "Admin validated",
+      "Signed staging upload",
+      "Byte validation and IfMatch",
+      "Immutable public poster"
+    ],
+    "why": "Direct uploads avoid buffering large files through the API while retaining controlled publication.",
+    "trade": "A leaked URL works until expiry. Exact PUT length differs from POST length ranges. Proposed scanning worker belongs before publication and must quarantine failures.",
+    "scale": "10x: upload quotas and cleanup. 100x: scan/re-encode queues, retention and abuse response.",
+    "counter": "Can another origin with curl use a leaked URL? Yes; CORS does not constrain non-browser callers.",
+    "quiz": "What is a presigned URL?",
+    "correct": "Bearer capability",
+    "wrong": [
+      "Public bucket permission",
+      "Proof a file is harmless"
+    ],
+    "files": [
+      "apps/api/src/services/posters.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fposters.ts"
+  },
+  {
+    "id": "reminders",
+    "question": "P5: where would scheduled reminders go in MiniTickets?",
+    "area": "Async",
+    "status": "explain-only",
+    "tour": "chapter-20",
+    "answer": "Use one daily EventBridge schedule to invoke a reminder Lambda, query a bounded date range and enqueue reminder messages. Use explicit reminder identity such as ticketId plus reminder date/type to prevent duplicate sends. Time zone and missed-run semantics are product decisions. A daily schedule does not guarantee exactly one invocation.",
+    "how": "WHERE IN MINITICKETS: proposed infra/src/jobs/reminders.ts after ticket table, proposed worker reminder handler with paginated date-index queries, and existing SNS/SQS mail boundary extended with a versioned reminder schema. Trust scheduler.amazonaws.com for invoke-only execution role; Lambda role queries only the date index and publishes only the mail destination. No Scheduler, reminder Lambda, IAM grants or reminder UI is built. Do not run a nonexistent demo.\n\n\nExisting integration point: `infra/src/tickets/storage.ts`.",
+    "flow": [
+      "Daily Scheduler",
+      "Paginated date-index Lambda",
+      "Idempotent reminder message",
+      "Existing mail queue"
+    ],
+    "why": "Scheduled work belongs outside user requests and must survive retries.",
+    "trade": "GSI lag means use overlapping windows plus dedup; TTL is not an exact scheduler. Flexible windows spread load but affect delivery timing. Missed schedules need bounded catch-up and DLQ alarms.",
+    "scale": "10x: page sizes and sending rate. 100x: shard date partitions, incremental checkpoints and user-local time-zone batches.",
+    "counter": "What if the schedule runs twice? Dedup by stable reminder identity, not invocation id.",
+    "quiz": "Which id should deduplicate a reminder?",
+    "correct": "Ticket plus reminder date/type",
+    "wrong": [
+      "Lambda request id",
+      "A fresh random id per attempt"
+    ],
+    "files": [
+      "infra/src/tickets/storage.ts"
+    ],
+    "source": "https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-schedule-flexible-time-windows.html",
+    "codeLink": "code-tours.html?q=infra%2Fsrc%2Ftickets%2Fstorage.ts"
+  },
+  {
+    "id": "door-checkin",
+    "question": "P6: where would door check-in go in MiniTickets?",
+    "area": "Security",
+    "status": "explain-only",
+    "tour": "check-in",
+    "answer": "Authenticate the staff/device, verify the signed QR claims and conditionally transition a canonical ticket from unused to used. Two scanners race: exactly one conditional update wins. API Gateway REST usage plans/API keys can meter devices, but keys are not user authentication and quotas are best-effort. Reject replay, wrong event and invalid signatures.",
+    "how": "WHERE IN MINITICKETS: proposed check-in procedure/service/queries under apps/api/src, an API Gateway REST route plus authenticated staff authorizer in infra, and a scanner UI feature. Reuse worker token verification as a deliberate shared server-only module, never browser signing. DynamoDB update condition checks unused state/event; audit actor/time and return already-used explicitly. No gateway, usage plan/key, scanner or used-state transition is built.\n\n\nExisting integration point: `apps/worker/src/tickets/token.ts`.",
+    "flow": [
+      "Authenticated scanner",
+      "Verify QR and event",
+      "Conditional unused-to-used",
+      "One accepted scan"
+    ],
+    "why": "HMAC proves issuance; it cannot stop the same valid QR being shown twice.",
+    "trade": "Offline scanners need a reconciliation/conflict policy and cannot promise global one-time use. API keys leak and are not authorization. Rate limits supplement device/staff identity.",
+    "scale": "10x: per-gate quotas and burst tests. 100x: regional ownership, key revocation and offline conflict procedure.",
+    "counter": "Can two valid scans both succeed? Only if the storage transition is not conditional or checks different identities.",
+    "quiz": "What prevents two simultaneous scans succeeding?",
+    "correct": "One conditional state transition",
+    "wrong": [
+      "QR signature alone",
+      "A browser disabled button"
+    ],
+    "files": [
+      "apps/worker/src/tickets/token.ts"
+    ],
+    "source": "https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html",
+    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+  },
+  {
+    "id": "regions-cost",
+    "question": "Multi-AZ, multi-region and cost: how far should this project go?",
+    "area": "AWS",
+    "status": "explain-only",
+    "tour": "build-order",
+    "answer": "Define availability, recovery time, data loss and budget before adding regions. Two subnets/AZs alone do not make a single-task/single-database dev stack highly available. Multi-region scarce inventory requires a single write owner or a deliberate consistency protocol. Cost includes idle databases, task hours, IPs, endpoints, logs and data transfer.",
+    "how": "WHERE IN MINITICKETS: proposed desired-count/DB availability changes in infra/src/compute/service.ts and data/postgres.ts, failover routing in entry, and a runbook with rehearsed restore/failover. Current committed switches are the environment shape; release SHA stays in SSM. No active-active booking, replicated sessions or cross-region failover is built.\n\n\nExisting integration point: `infra/src/data/postgres.ts`.",
+    "flow": [
+      "Requirements and budget",
+      "Availability domains",
+      "Write ownership",
+      "Tested recovery"
+    ],
+    "why": "Extra copies without failover semantics can create inconsistency and bills.",
+    "trade": "RTO/RPO distinguish recovery time/data loss. Strong global consistency raises latency; regional allocation can sell out unevenly. Cost budgets alert; they do not impose a hard spend cap.",
+    "scale": "10x: right-size and test AZ failure. 100x: explicit regional ownership and capacity planning with measured SLOs.",
+    "counter": "Does a second AZ guarantee two healthy tasks? No; desired counts and dependencies matter.",
+    "quiz": "What must be defined before active-active inventory?",
+    "correct": "Write ownership and consistency",
+    "wrong": [
+      "Only a second DNS record",
+      "Only a larger CDN TTL"
+    ],
+    "files": [
+      "infra/src/data/postgres.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A31"
+  },
+  {
+    "id": "sessions-roles",
+    "question": "Sessions versus JWTs, rotation, revocation and roles",
+    "area": "Security",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "Opaque session cookies keep revocation server-side; JWTs reduce lookup dependence but revocation/role changes need expiry or another authoritative version. MiniTickets hashes random tokens in Redis, rotates login sessions, indexes at most 20 devices and checks membership on every read. Admin authorization reads Postgres; role changes revoke sessions before and after the update.",
+    "how": "`apps/api/src/queries/sessions.ts` implements indexed creation/read/revokeAll; `services/users.ts` revokes around makeAdmin. `pnpm demo:security` checks old-cookie, all-device and role revocation. Cookies are HttpOnly/SameSite with Secure in production. An in-flight authorized request cannot be recalled; two-store role/revocation is not a global transaction.",
+    "flow": [
+      "Random cookie",
+      "Hashed session and user index",
+      "Authoritative role check",
+      "Allowed procedure"
+    ],
+    "why": "A role embedded forever in a session becomes stale after a privilege change.",
+    "trade": "Redis/index eviction fails closed and forces login. The 20-device bound makes revoke work bounded. Session-versioning/transactional role changes are proposed improvements for larger deployments.",
+    "scale": "10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.",
+    "counter": "Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.",
+    "quiz": "What happens if session membership is missing?",
+    "correct": "Authentication fails closed",
+    "wrong": [
+      "Trust the raw token anyway",
+      "Automatically grant admin"
+    ],
+    "files": [
+      "apps/api/src/queries/sessions.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#ttl%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fsessions.ts%3A5"
+  },
+  {
+    "id": "csrf-cors",
+    "question": "CSRF, CORS, SameSite and trusted headers",
+    "area": "Security",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "CSRF tricks a browser into sending an authenticated action from another site. CORS controls whether browser code can read cross-origin responses; it is not a mutation authorization check. SameSite helps but is not the entire policy. MiniTickets requires the exact trusted Origin on mutations and rejects cross-site Sec-Fetch-Site.",
+    "how": "`apps/api/src/http/security.ts` → `mutationAllowed` guards all non-safe methods, including missing-Origin refusal. CLI callers explicitly send Origin. `pnpm demo:security` exercises same/cross/missing metadata and cookie isolation; one isolated inverted-origin mutation made both relevant tests fail.",
+    "flow": [
+      "Cross-site action attempt",
+      "Origin and Fetch Metadata guard",
+      "Session authentication",
+      "Business validation"
+    ],
+    "why": "A request can cause side effects even if its response is unreadable.",
+    "trade": "Non-browser clients must follow the explicit Origin contract; XSS on the trusted origin bypasses CSRF defenses, so output safety/CSP still matter. Proxy headers need their own trust policy.",
+    "scale": "10x: centralize trusted origin/environment validation. 100x: service-to-service auth and tenant origin rules with tests.",
+    "counter": "Is Origin cryptographic API authentication? No; non-browser clients can set it. Sessions still authorize actions.",
+    "quiz": "Does CORS alone stop CSRF side effects?",
+    "correct": "No",
+    "wrong": [
+      "Yes always",
+      "Only on POST"
+    ],
+    "files": [
+      "apps/api/src/http/security.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fhttp%2Fsecurity.ts"
+  },
+  {
+    "id": "csp-xss",
+    "question": "Nonce CSP, XSS and supply-chain gates",
+    "area": "Security",
+    "status": "built",
+    "tour": "security-layers",
+    "answer": "XSS executes unwanted code in a trusted page. Validate input, render escaped text and use a per-request nonce CSP to limit script execution. Production does not allow unsafe-eval. CI dependency and image scanners catch known advisories, not every vulnerability or malicious business rule. Gates need a clear severity policy and honest residual findings.",
+    "how": "`apps/web/src/proxy.ts` generates/overwrites nonce headers; `lib/security-policy.ts` defines script policy; `lib/trpc/client.ts` disables Zod JIT to avoid eval probes. CI audits critical dependencies and scans three images with Trivy CRITICAL. `pnpm demo:security` asserts no CSP violations. Audit: 0 critical, one high braces and one moderate esbuild remain; image scan execution is unverified locally.",
+    "flow": [
+      "Fresh request nonce",
+      "Allowed scripts only",
+      "Escaped React output",
+      "CI advisory gates"
+    ],
+    "why": "Defense in depth reduces damage from accidental injection and known dependency flaws.",
+    "trade": "Nonce pages require dynamic/no-store HTML. Style attributes remain allowed for current UI. Scanners cannot prove safety and unfixed findings need tracked decisions.",
+    "scale": "10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.",
+    "counter": "Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy.",
+    "quiz": "What must differ on each nonce HTML request?",
+    "correct": "The nonce",
+    "wrong": [
+      "The database password",
+      "The static image filename"
+    ],
+    "files": [
+      "apps/web/src/proxy.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#route-guard-proxy%3Aapps%2Fweb%2Fsrc%2Fproxy.ts%3A4"
+  },
+  {
+    "id": "secrets-forgery",
+    "question": "Secrets, ticket forgery, rotation and OWASP checks",
+    "area": "Security",
+    "status": "partly",
+    "tour": "check-in",
+    "answer": "Store signing/database credentials in Secrets Manager, expose them only to the runtime that needs them and never log them. HMAC authenticates the original ticket bytes and constant-time comparison rejects tampering; it does not encrypt the payload or prevent reuse. Authorization still checks owner/role and uploads remain untrusted.",
+    "how": "`apps/worker/src/tickets/token.ts` signs/verifies bounded strict claims; `infra/src/tickets/iam.ts` grants only ticket worker secret access; `services/tickets.ts` owner-scopes reads. Run `pnpm demo:tickets` and `pnpm demo:p4-assets` separately. Proposed rotation adds key id plus verification key ring, staged rollout and old-key retirement; this key-ring is not built.",
+    "flow": [
+      "Secrets Manager",
+      "Scoped worker role",
+      "Signed ticket bytes",
+      "Verify before use"
+    ],
+    "why": "A client must never receive the signing secret or invent a valid ticket.",
+    "trade": "Rotating a single key immediately invalidates old QR tokens unless a key ring is supported. OWASP review also needs abuse, dependency, authorization, logging and incident practices beyond code checks.",
+    "scale": "10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.",
+    "counter": "Are signed QR claims private? No; base64url is readable.",
+    "quiz": "Does a valid HMAC stop ticket reuse?",
+    "correct": "No",
+    "wrong": [
+      "Yes",
+      "Only if base64 is used"
+    ],
+    "files": [
+      "apps/worker/src/tickets/token.ts",
+      "infra/src/tickets/iam.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+  },
+  {
+    "id": "delivery-rollback",
+    "question": "How does build-once delivery and rollback work?",
+    "area": "Delivery",
+    "status": "built",
+    "tour": "deploy",
+    "answer": "Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.",
+    "how": "The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.",
+    "flow": [
+      "CI tests",
+      "Publish SHA once",
+      "Approved CD plus migration",
+      "Roll and smoke test"
+    ],
+    "why": "Rebuilding on deploy can ship bytes that were never reviewed or tested.",
+    "trade": "Rolling deployment overlaps versions. Blue/green gives a switchable target but costs overlap and still needs compatible migrations. Secrets/config are part of release compatibility.",
+    "scale": "10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.",
+    "counter": "Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.",
+    "quiz": "Where is the deployed image tag recorded?",
+    "correct": "SSM release parameter",
+    "wrong": [
+      "Per-image tags committed into Pulumi YAML",
+      "A developer shell variable only"
+    ],
+    "files": [
+      ".github/workflows/cd.yml",
+      "infra/src/image-tag.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=.github%2Fworkflows%2Fcd.yml"
+  },
+  {
+    "id": "old-deploy",
+    "question": "An old approved pipeline would delete new resources: how do you prevent it?",
+    "area": "Delivery",
+    "status": "built",
+    "tour": "deploy",
+    "answer": "Approvals can outlive the commit they refer to. Record the deployed commit and refuse an older ancestor before applying infrastructure. Cancel/supersede waiting runs, but keep a server-side guard: concurrency alone may still leave an old pending run. Allow app rollback explicitly without applying an old infrastructure graph.",
+    "how": "`scripts/deploy-guard.sh` compares ancestry; `infra/src/release.ts` defines the deployed-commit parameter; `.github/workflows/cd.yml` checks it before changes. Unit tests cover stale runs and rollback conditions. Run `pnpm test` and follow runbook bootstrap; current guard permissions still need AWS acceptance.",
+    "flow": [
+      "Approved run SHA",
+      "Read deployed commit",
+      "Ancestry guard",
+      "Apply only valid graph"
+    ],
+    "why": "A stale infrastructure program can interpret newer resources as removed.",
+    "trade": "SSM records AWS release state without granting repo writes. Drift detection finds differences but does not itself prevent a destructive stale apply.",
+    "scale": "10x: approval expiry and environment rules. 100x: policy-as-code denying destructive stateful changes and separate deployment accounts.",
+    "counter": "Why not just cancel pending runs? Human approval and queued concurrency can still select an obsolete run.",
+    "quiz": "What should an ancestor infrastructure run do?",
+    "correct": "Refuse before applying",
+    "wrong": [
+      "Apply then detect deletion",
+      "Ignore the live release record"
+    ],
+    "files": [
+      "scripts/deploy-guard.sh",
+      "infra/src/release.ts",
+      ".github/workflows/cd.yml"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=scripts%2Fdeploy-guard.sh"
+  },
+  {
+    "id": "observability",
+    "question": "How do you debug one booking and avoid alert fatigue?",
+    "area": "Delivery",
+    "status": "built",
+    "tour": "failing-email",
+    "answer": "Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.",
+    "how": "`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.",
+    "flow": [
+      "Booking correlation id",
+      "API and worker JSON",
+      "Logs Insights",
+      "Queue/DLQ alarm"
+    ],
+    "why": "A user symptom spans asynchronous boundaries, not one process log.",
+    "trade": "Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.",
+    "scale": "10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.",
+    "counter": "Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.",
+    "quiz": "Which signal explains a specific failed booking?",
+    "correct": "Correlated structured logs",
+    "wrong": [
+      "Only average CPU",
+      "Only deployment count"
+    ],
+    "files": [
+      "apps/api/src/http/correlation-id.ts",
+      "infra/src/observability"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#correlation-ids%3Aapps%2Fapi%2Fsrc%2Fhttp%2Fcorrelation-id.ts%3A5"
+  },
+  {
+    "id": "tracing-slos",
+    "question": "Where would tracing, SLOs and error budgets fit?",
+    "area": "Delivery",
+    "status": "explain-only",
+    "tour": "failing-email",
+    "answer": "Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.",
+    "how": "WHERE IN MINITICKETS: proposed apps/api/src/tracing.ts loaded before server modules, ADOT sidecar in API task, Lambda tracing config and narrowly scoped X-Ray write IAM. Propagate W3C traceparent through the message envelope. Proposed CloudWatch SLI for booking success/latency and email delay; logs remain current evidence. No OTel collector, tracing grants or SLO resource is built.\n\n\nExisting integration point: `apps/api/src/http/correlation-id.ts`.",
+    "flow": [
+      "User outcome SLI",
+      "Target over window",
+      "Error budget",
+      "Multi-window burn alert"
+    ],
+    "why": "Average latency and raw error counts can hide a failing user journey.",
+    "trade": "Sampling loses individual traces; sidecars cost CPU/memory and collector operations. ALB errors alone do not fully describe business success. Use a business metric where needed.",
+    "scale": "10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.",
+    "counter": "Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.",
+    "quiz": "What is an SLI?",
+    "correct": "A measured user outcome ratio",
+    "wrong": [
+      "A fixed monthly bill",
+      "A retry attempt id"
+    ],
+    "files": [
+      "apps/api/src/http/correlation-id.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#correlation-ids%3Aapps%2Fapi%2Fsrc%2Fhttp%2Fcorrelation-id.ts%3A5"
+  },
+  {
+    "id": "dev-parity",
+    "question": "How do you onboard a developer and keep local/cloud parity?",
+    "area": "Delivery",
+    "status": "built",
+    "tour": "build-order",
+    "answer": "Use one idempotent setup command, env examples as the contract and a checker that prints exact fixes without secrets. Use the same AWS SDK operations locally against emulators, while naming their limits: no real IAM, SES delivery, AWS quotas or managed failover. Keep destructive reset separate and local-only.",
+    "how": "`scripts/stack-up.ts` and `scripts/stack-check.ts` check containers, migrations, queues/table and ports. Run `pnpm stack:check`; owner starts with `pnpm dev`. Local apps use Postgres/Redis, ElasticMQ, DynamoDB Local and Moto for SNS/S3. Existing owner ports/processes are never restarted by agent checks.",
+    "flow": [
+      "Example env contract",
+      "Idempotent setup",
+      "Same SDK with endpoint",
+      "Exact diagnostics"
+    ],
+    "why": "Reproducible setup prevents environment guessing and accidental data loss.",
+    "trade": "Shared emulators are fast for humans; isolated tests avoid cross-test state. Testcontainers/devcontainers are possible later, not installed merely for documentation.",
+    "scale": "10x developers: consistent toolchain/devcontainer. 100x: image checks and documented emulator differences in CI.",
+    "counter": "Why not call the script doctor? pnpm has a built-in command with that name that shadowed it.",
+    "quiz": "Which command diagnoses without resetting?",
+    "correct": "pnpm stack:check",
+    "wrong": [
+      "pnpm stack:reset",
+      "pnpm db:down"
+    ],
+    "files": [
+      "scripts/stack-up.ts",
+      "scripts/stack-check.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html?q=scripts%2Fstack-up.ts"
+  },
+  {
+    "id": "testing-strategy",
+    "question": "Which tests prove correctness, and which need real infrastructure?",
+    "area": "Delivery",
+    "status": "built",
+    "tour": "sale-day",
+    "answer": "Unit-test pure policy and failure decisions, integration-test real transaction/concurrency invariants and browser-test user-visible flows. A demo should print measurable counts rather than only success text. Emulators exercise SDK contracts but cannot prove IAM, ALB proxy behavior, SES delivery or CloudFront policy. Keep those as explicit live acceptance.",
+    "how": "Vitest currently has 404 tests. `pnpm demo:security` passed 24 production e2e; `demo:search`, `demo:sale`, `demo:outbox` isolate scale/failure. Security used one isolated inverted-origin mutation to prove important tests fail. D1 tested 144 offline tour navigations without screenshots. No full-suite or AWS deployment claim is implied.",
+    "flow": [
+      "Policy units",
+      "Real boundary demos",
+      "Production browser flow",
+      "Owner live acceptance"
+    ],
+    "why": "Different failure modes need different evidence; test count alone is not confidence.",
+    "trade": "Overmocked SQL cannot prove row locks; broad slow suites can hide targeted failures. Avoid repeating every test after comment-only docs edits unless source behavior changes.",
+    "scale": "10x: stable fixtures and flake ownership. 100x: contract tests, production canaries and measured risk-based gates.",
+    "counter": "Does local green mean IAM correct? No; only AWS evaluates the deployed policies.",
+    "quiz": "Which test proves real row-lock behavior?",
+    "correct": "Concurrent requests against Postgres",
+    "wrong": [
+      "A mocked service return",
+      "A static screenshot"
+    ],
+    "files": [],
+    "source": "",
+    "codeLink": "code-tours.html?q=testing-strategy"
+  },
+  {
+    "id": "feature-flags",
+    "question": "Feature flags, rolling versus blue/green and incident rollback",
+    "area": "Delivery",
+    "status": "partly",
+    "tour": "deploy",
+    "answer": "An environment switch controls infrastructure shape; a product feature flag controls behavior and needs ownership, expiry and safe defaults. MiniTickets commits data/compute/entry/CDN switches and uses a runtime inventory gate setting. It has rolling ECS deployments; blue/green and a general flag service are explain-only.",
+    "how": "`infra/Pulumi.dev.yaml` commits the shape; `apps/api/src/config/env.ts` validates INVENTORY_GATE_ENABLED. Proposed feature flags belong in validated API config/service policy with browser-safe public values only. Incident response starts from symptom, recent release, health/queue/DB evidence and reversible app rollback, not an unreviewed infrastructure teardown.",
+    "flow": [
+      "Validated flag intent",
+      "Compatible rolling release",
+      "Observe symptoms",
+      "Disable or roll back safely"
+    ],
+    "why": "A reversible behavior switch can reduce blast radius but stale flags create hidden paths.",
+    "trade": "Blue/green costs overlapping capacity and still shares data migration risk. Remote flag services add availability and privacy dependencies.",
+    "scale": "10x: flag owner/expiry and compatibility tests. 100x: staged cohorts, audit history and automated canary criteria.",
+    "counter": "Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.",
+    "quiz": "What must a temporary product flag have?",
+    "correct": "An owner and removal plan",
+    "wrong": [
+      "An undocumented permanent branch",
+      "A secret in client code"
+    ],
+    "files": [
+      "infra/Pulumi.dev.yaml",
+      "apps/api/src/config/env.ts"
+    ],
+    "source": "",
+    "codeLink": "code-tours.html#config-validation%3Aapps%2Fapi%2Fsrc%2Fconfig%2Fenv.ts%3A5"
+  }
+]
+</script>
+</body></html>

@@ -238,3 +238,5 @@ the repo's `CLAUDE.md`.
 - **Gives:** the entry point for every reader of the handbook.
 
 - [Generated code tours](guides/code-tours.html): searchable source bookmarks, rebuilt with `pnpm docs:build`.
+
+- [Interview scenarios](guides/interview-scenarios.md) and [offline interview practice](guides/scenarios.html): 55 source-linked decisions, area/status filters and saved quizzes.

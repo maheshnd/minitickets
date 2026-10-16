@@ -55,7 +55,8 @@ flowchart LR
   **P10 is built:** origin/metadata CSRF checks, nonce CSP/private HTML, session rotation/revocation, DB deadlines, CI scanners, anonymous vitals and axe. Local production acceptance passed; live AWS/CI image scans pending.
   **D0 is built:** generated offline code tours; docs:check rejects stale snippets.
   **D1 is built:** 25 infra chapters, 36 offline map/code tours, connection ledger, concept index and saved checks.
-  **Next: D2 -> D3**, following [the series prompt](prompts/series-2.md).
+  **D2 is built:** 55 scenarios with built/partly/explain-only status, source/tour links and offline flashcards/quizzes.
+  **Next: D3**, following [the series prompt](prompts/series-2.md).
 - **Ticketing + serverless series rule:** until the series is done, steps do not update the
   handbook, the infra guide or the explorer; everything goes into [PENDING.md](PENDING.md), and
   each step's prompt is saved in [prompts/](prompts/f2a.md) (see `CLAUDE.md`, "Workflow").

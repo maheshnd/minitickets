@@ -25,9 +25,21 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · docs(infra): complete the city guide and linked explorer tours (D1)
+## 2026-10-15 · docs(interviews): add source-linked scenarios and offline practice (D2)
 
 Commit: filled in by the next handbook commit
+
+Why: practice the implemented decisions and defend proposed extensions without confusing them with shipped features.
+
+- `guides/interview-scenarios.md`: 55 scenarios, all nine required questions, diagrams, counter-answers, trade-offs and 10x/100x changes; full proposed MiniTickets locations for reminders/check-in/live seats/autoscaling/Lighthouse.
+- `guides/scenarios.html`, `generated/scenarios.json`: Markdown-derived offline reader, area/status/search filters, flashcards, three-choice quizzes and saved progress.
+- `guides/code-tours.html`, `guides/infra-explorer.html`, `guides/infra-build-along.md`: deep links between source, map and scenarios; source reader accepts file searches.
+- `README.md`, `ROADMAP.md`: learning links and D3 next. Build/check scripts enforce freshness, required questions and valid tour/quiz data.
+- Validation: 220 scenario visits across two themes/widths, filters/zero-state/keyboard/quiz persistence pass without browser errors; 55 Mermaid diagrams, 404 unit tests, typecheck/lint/docs checks pass. Fixed a no-results stale-list bug found by this QA.
+
+## 2026-10-15 · docs(infra): complete the city guide and linked explorer tours (D1)
+
+Commit: 9f72a53
 
 Why: the learning map must cover the implemented system and label proposed services honestly.
 
