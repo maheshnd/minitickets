@@ -2,108 +2,58 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Compute · Status: ✅ built · Step docs: [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-When an API worker dies, the MiniTickets [service](../glossary.md#ecs-service) starts a replacement from its saved recipe.
+An [ECS service](../glossary.md#ecs-service) keeps a chosen number of application containers running. It replaces failed tasks and rolls out new versions.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+If the MiniTickets API crashes, somebody must start its replacement and update routing. The service does that automatically instead of relying on an operator to notice and restart it.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    C["minitickets-dev cluster"] -->|"attached FARGATE_SPOT; clusterName"| S["minitickets-dev-api service"]
-    D["minitickets-dev-api revision"] -->|"taskDefinition ARN"| S
-    S -->|"desiredCount=1; FARGATE_SPOT weight=1"| T["api task :4000"]
-    S -->|"loadBalancers: api / 4000"| G["minitickets-dev-api-tg-* IP list"]
-    SG["minitickets-dev-api-sg"] -.->|"4000 from minitickets-dev-alb-sg; 14000 from minitickets-dev-web-sg"| T
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class S focus
+    definition["minitickets-dev-api task definition"] -->|"saved recipe"| service["minitickets-dev-api service"]
+    service -->|"starts or replaces task"| task["api task"]
+    service -->|"registers current task IP"| group["api target group"]
+    task -->|"exit or unhealthy result triggers replacement"| service
+    group -->|"ALB checks /health"| task
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecs-service#chapter=8&piece=api-task).
+1. Compare running tasks with the desired number.
+2. Start replacements from the selected task definition.
+3. Register new task addresses and retire old ones during deployment.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant T as API task
-    participant S as minitickets-dev-api service
-    participant G as API target group
-    T-->>S: Task exits
-    S->>T: Start replacement from same task definition
-    S->>G: Register replacement IP on port 4000
-    G->>T: GET /health every 15 seconds
-    T-->>G: HTTP 200
-    Note over S,G: ECS ignores unhealthy ALB checks for first 60 seconds
-```
+Separate api and web services each want one Spot task. ECS maintains their target-group membership. New task definitions trigger rolling deployments; a failed startup can trigger rollback. Service Connect provides private application calls.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `minitickets-dev-api` and `minitickets-dev-web` each want one task.
-2. Both run on Spot, in public subnets with a public IP for outgoing AWS calls.
-3. ECS adds each task IP to its API :4000 or web :3000 target group.
-4. Failed tasks are replaced. New recipes trigger a rolling change; a startup failure can trigger automatic rollback.
+“The ECS service is MiniTickets' shift manager: it keeps the desired API or web task running, replaces failures and updates load-balancer targets. It also rolls new task definitions and can roll back failed deployments. One interruptible task per application is a dev cost trade-off, so replacement can still leave an outage.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** public subnets and task security groups.
+- **Service versus task?** The service manages continuity; a task is one running copy.
+- **Why might a service never stabilize?** Inspect service events and stopped-task reasons for image, secret, health or network failures.
+- **Does successful startup prove booking works?** No. Current liveness checks deliberately avoid shared stores.
+- **When use a standalone task?** For finite work such as a database migration, which should finish rather than stay running.
 
-**Allowed:** ECS’s service-linked role manages task interfaces and target registration.
-
-**Password:** not needed by the manager; ECS injects each app’s secrets at startup.
-
-## 6. In our code
-
-`infra/src/compute/service.ts` → `createApiService`.
-
-`infra/src/compute/web-service.ts` → `createWebService`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → ECS → Clusters → `minitickets-dev` → Services → `minitickets-dev-api` → Deployments / Events / Tasks. Open a task’s Networking details to see its subnet, interface and guards. Live health was not checked.
-
-## 8. Good / Bad
-
-**Good:** Replaces failed workers. Registers changing task IPs automatically.
-
-**Bad:** One Spot copy can go away. A healthy process does not prove booking works.
-
-## 9. Other choices
-
-- Two or more tasks: pick them when one lost worker must not stop the app.
-- Standalone task: pick it when work runs once, like migrations.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Cluster](ecs-cluster.md) | In ← | Attached provider | ECS → cluster → Infrastructure |
-| [Task recipe](task-definition.md) | In ← | taskDefinition ARN | ECS → service → Deployments |
-| [Target groups](target-groups.md) | Out → | containerName + containerPort mapping | EC2 → Target groups → Targets |
-
-## 11. When it breaks
-
-Never becomes stable → service Events and stopped-task reason → repair the image, secret access or network path before retrying.
-
-## 12. Say it in 30 seconds
-
-“The service is our shift manager. It keeps one API or web task alive, replaces failures and registers task IPs with the load balancer. It rolls new task definitions and can roll back a failed startup. One Spot task is a dev cost choice, so I do not claim high availability.”
-
-## 13. Likely follow-ups
-
-- Service versus task? The manager versus one running worker.
-- What does 60 seconds protect? Startup from early failed load-balancer checks.
-
-## 14. Remember it
-
-A task does one shift; the service fills the next shift.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Configuration, permissions and operations
+
+`infra/src/compute/service.ts` → `createApiService` and `infra/src/compute/web-service.ts` → `createWebService` create the two services in `minitickets-dev`. Each uses `desiredCount: 1`, `FARGATE_SPOT` weight 1, public subnets and `assignPublicIp: true` for outgoing AWS access. Selected task-definition ARNs supply the recipes; cluster/provider dependencies supply capacity.
+
+ALB mappings select container `api` 4000 or `web` 3000. API ingress allows ALB 4000 and web's Service Connect proxy traffic on 14000; the reverse private proxy receives on web 13000. ECS's service-linked role manages network interfaces and target registration, not the app task role. ECS injects app secrets at startup.
+
+In `us-east-1`: ECS → Clusters → `minitickets-dev` → Services → named service → Deployments / Events / Tasks. Task Networking shows subnet/interface/security groups. Live health was not checked. Repair the image, secret access or network path identified by stopped-task reasons before retrying an unstable rollout.
 
 - Anchor: `infra/src/compute/service.ts` · `createApiService`: the api service.
 - Anchor: `infra/src/compute/web-service.ts` · `createWebService`: the web service.
@@ -118,9 +68,17 @@ The ECS service itself adds no separate compute charge. Task CPU, memory, public
 
 [Official ECS task networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html).
 
-</details>
+### Related reading
+
+- [Cluster](ecs-cluster.md)
+- [Task recipe](task-definition.md)
+- [Target groups](target-groups.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecs-service#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

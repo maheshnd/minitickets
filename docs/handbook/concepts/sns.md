@@ -3,113 +3,56 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Events · Status: ✅ built in repository; live AWS acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets publishes one booking notice to [SNS](../glossary.md#sns); SNS copies it into separate email and ticket work trays.
+[SNS](../glossary.md#sns) distributes one published message to several destinations. MiniTickets uses it to give email and ticket workers their own copy of a booking notice.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Every booking needs both an email and tickets. Two workers reading one queue would split the jobs between them. SNS copies each notice into two queues so both jobs can happen.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    api["minitickets-dev-api<br/>outbox relay"] -->|"HTTPS 443; minitickets-dev-api-task-role sns:Publish on this topic"| topic["minitickets-dev-booking-events"]
-    role["minitickets-dev-api-task-role"] -.->|"trust ecs-tasks.amazonaws.com; account restriction"| api
-    topic -->|"raw SQS subscription; queue policy allows this topic/account sqs:SendMessage"| email["minitickets-dev-jobs"]
-    topic -->|"raw SQS subscription; queue policy allows this topic/account sqs:SendMessage"| tickets["minitickets-dev-tickets"]
-    email -->|"SQS mapping; worker-role ReceiveMessage"| worker["minitickets-dev-worker"]
-    tickets -->|"SQS mapping; tickets-role ReceiveMessage"| issuer["minitickets-dev-tickets Lambda"]
-    classDef focus fill:#fff0b3,stroke:#8a5700,stroke-width:3px
-    class topic focus
+    relay["MiniTickets outbox relay"] -->|"api task role: sns:Publish"| sns["minitickets-dev-booking-events"]
+    sns -->|"subscription and topic-scoped queue policy"| email["minitickets-dev-jobs"]
+    sns -->|"subscription and topic-scoped queue policy"| ticket["minitickets-dev-tickets"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=sns#chapter=24&piece=sns-bookings).
+1. The relay publishes a notice saved with the booking.
+2. SNS sends its body to both subscribed queues.
+3. Each queue keeps work until its own consumer finishes.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant R as API outbox relay
-    participant S as minitickets-dev-booking-events
-    participant E as minitickets-dev-jobs
-    participant T as minitickets-dev-tickets
-    R->>S: Publish stable booking JSON, api task role
-    S-->>R: SNS accepted
-    S->>E: Raw JSON, subscription + source-restricted policy
-    S->>T: Same raw JSON, separate subscription/policy
-    Note over E,T: Each queue now retries independently
-```
+`publishBookingConfirmed` publishes the stored booking JSON. SNS acceptance lets the relay mark its outbox row sent; it does not mean either worker finished. Separate queues let email fail and recover without blocking ticket creation.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. The outbox relay reads a committed booking notice.
-2. `publishBookingConfirmed` calls SNS once with its stored JSON.
-3. Two subscriptions copy the same body to `minitickets-dev-jobs` and `minitickets-dev-tickets`.
-4. Each queue holds its own backlog. Email failure does not stop ticket creation.
-5. SNS acceptance lets the relay mark its row sent; it does not prove either worker finished.
+“SNS provides MiniTickets' fan-out: one booking event becomes a copy for email and another for tickets. SQS then holds each consumer's backlog independently. This differs from competing workers on one queue, which divide work. Publish acceptance is only one boundary; consumers still need retries, monitoring and duplicate-safe behavior.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** API task uses HTTPS 443 to SNS's public API.
+- **Where does backpressure live?** Each SQS queue holds its consumer's backlog.
+- **Can messages repeat or change order?** Yes. Our standard SNS/SQS path needs stable identities and cannot assume ordering.
+- **What if one queue stays empty?** Inspect that subscription and its queue policy; publish acceptance does not prove delivery.
+- **Why raw delivery?** Workers receive our versioned JSON directly, without an extra SNS message wrapper.
 
-**Allowed:** API task role grants `sns:Publish` on one topic; queue policies allow SNS from that topic/account.
-
-**Password:** temporary ECS task credentials; no SNS password.
-
-## 6. In our code
-
-`apps/api/src/queues/jobs.ts` → `publishBookingConfirmed`.
-
-`infra/src/jobs/booking-events.ts` → `createBookingEvents`; `infra/src/compute/iam.ts` → `createIamRoles`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → **Amazon SNS → Topics → minitickets-dev-booking-events → Subscriptions**. Expect two `sqs` subscriptions with raw delivery enabled. **SQS → Queues → each queue → Access policy** shows the topic ARN and source account restrictions.
-
-## 8. Good / Bad
-
-**Good:** publish once; consumers recover independently.
-
-**Bad:** messages can repeat or arrive out of order; accepting a publish is separate from queue delivery.
-
-## 9. Other choices
-
-- Pick one SQS queue when workers share one job rather than each needing a copy.
-- Pick EventBridge when many event patterns need richer routing.
-- Pick Kafka when retained, ordered partitions and replay justify its extra work.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Outbox](outbox.md) | in | Task role `sns:Publish` | IAM → minitickets-dev-api-task-role → Permissions |
-| [SQS](sqs.md) | out | Subscription + queue policy | SNS → topic → Subscriptions |
-| [IAM roles](execution-vs-task-role.md) | guard | Task trust + topic grant | IAM → Roles → minitickets-dev-api-task-role |
-
-## 11. When it breaks
-
-- SNS accepts but one tray stays empty → subscriptions and queue policy → repair missing route or wrong source ARN.
-- Both copies reach one worker → queue layout → give each kind of work its own subscription and queue.
-
-## 12. Say it in 30 seconds
-
-“SNS is our notice copier; SQS is our waiting tray. MiniTickets publishes one booking event to SNS. Email and ticket queues each receive a copy, then retry at their own pace. Two workers on one queue would divide the work. Standard fan-out can duplicate or reorder events, so consumers use stable booking identities.”
-
-## 13. Likely follow-ups
-
-**Why raw delivery?** The queue body stays our versioned JSON, without an SNS wrapper.
-
-**Does SNS hold our consumer backlog?** SQS does.
-
-## 14. Remember it
-
-A copier gives each team a copy; a shared tray lets teams take turns.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Provisioning order, local evidence and growth</summary>
+<summary>Technical reference</summary>
+
+### Configuration and security
+
+The API task role `minitickets-dev-api-task-role` trusts `ecs-tasks.amazonaws.com` with an account restriction. It grants `sns:Publish` on the booking-events topic. Each SQS mapping invokes only its own worker: `minitickets-dev-worker` for jobs and `minitickets-dev-tickets` for tickets.
+
+The two raw subscriptions target `minitickets-dev-jobs` and `minitickets-dev-tickets`; both get the stored booking JSON. The relay marks sent after publish acceptance, not consumer completion. API reaches SNS over HTTPS 443 with temporary task-role credentials; there is no SNS password.
+
+### Implementation and operational limits
 
 - Anchor: `apps/api/src/queues/jobs.ts` — `jobsEnabled`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/jobs/booking-events.ts` — `createBookingEvents`; follow the numbered comments at this boundary.
@@ -117,8 +60,36 @@ A copier gives each team a copy; a shared tray lets teams take turns.
 `createBookingEvents` waits for queue policies before subscriptions, then returns the topic ARN only after both subscriptions exist. This keeps a newly started API from publishing into a topic with no routes and marking the outbox row sent. Policies name `sns.amazonaws.com`, `sqs:SendMessage`, the exact queue, `aws:SourceArn` and `aws:SourceAccount`. IAM permission belongs to the API task role, not its execution role or worker roles.
 
 The shared message schema carries a version and stable message/booking/correlation identities. SNS/SQS are standard delivery: duplicates and reordering remain possible. A topic supplies routing, not each consumer's backpressure. `pnpm demo:tickets` and `pnpm demo:outbox` exercise local emulator SDK boundaries separately; they do not prove managed AWS delivery. At greater load, measure each queue's age and provider capacity. If ordering or replay becomes a requirement, define its business scope before choosing FIFO or a retained log. SNS/SQS charge by use; historical cost figures are not current quotes. [Fan-out scenario](../guides/interview-scenarios.md#fanout). Live AWS fan-out remains owner acceptance.
-</details>
+
+### Source references
+
+`apps/api/src/queues/jobs.ts` → `publishBookingConfirmed`.
+
+`infra/src/jobs/booking-events.ts` → `createBookingEvents`; `infra/src/compute/iam.ts` → `createIamRoles`.
+
+### Console and troubleshooting
+
+`us-east-1` → **Amazon SNS → Topics → minitickets-dev-booking-events → Subscriptions**. Expect two `sqs` subscriptions with raw delivery enabled. **SQS → Queues → each queue → Access policy** shows the topic ARN and source account restrictions.
+
+- SNS accepts but one tray stays empty → subscriptions and queue policy → repair missing route or wrong source ARN.
+- Both copies reach one worker → queue layout → give each kind of work its own subscription and queue.
+
+### Trade-offs and related concepts
+
+- Pick one SQS queue when workers share one job rather than each needing a copy.
+- Pick EventBridge when many event patterns need richer routing.
+- Pick Kafka when retained, ordered partitions and replay justify its extra work.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Outbox](outbox.md) | in | Task role `sns:Publish` | IAM → minitickets-dev-api-task-role → Permissions |
+| [SQS](sqs.md) | out | Subscription + queue policy | SNS → topic → Subscriptions |
+| [IAM roles](execution-vs-task-role.md) | guard | Task trust + topic grant | IAM → Roles → minitickets-dev-api-task-role |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=sns#chapter=24&piece=sns-bookings).
 
 ## Where it appears in the story
 
 - [app-story: 9c. Side path: outbox, fan-out and recoverable work](../app-story.md#9c-side-path-outbox-fan-out-and-recoverable-work)
+
+</details>

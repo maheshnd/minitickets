@@ -3,115 +3,57 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built in repository; live AWS acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets can put [CloudFront](../glossary.md#cloudfront), AWS edge delivery, before its ALB; `cdnEnabled=false` means visitors currently use the HTTPS ALB path.
+[CloudFront](../glossary.md#cloudfront) is AWS's worldwide delivery layer. It can serve reusable files near visitors instead of fetching every copy from our app.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+If many visitors download the same MiniTickets JavaScript file, nearby copies can reduce delay and origin work. A person's login data or page security nonce must not become a shared copy.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    browser["Browser<br/>optional CDN mode"] -->|"distribution domain; HTTPS 443; default certificate"| cf["minitickets-dev-cdn<br/>optional CloudFront"]
-    cf -->|"origin HTTP 80; prefix-list ingress + X-Origin-Verify"| alb["minitickets-dev ALB"]
-    policy["Cache behaviors / policies"] -.->|"path chooses key, forwarding and TTL"| cf
-    cert["*.cloudfront.net certificate"] -.->|"cloudfrontDefaultCertificate"| cf
-    alb -->|"header + /trpc/*; minitickets-dev-api-sg TCP 4000 from minitickets-dev-alb-sg"| api["api"]
-    alb -->|"header; minitickets-dev-web-sg TCP 3000 from minitickets-dev-alb-sg"| web["web"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class cf focus
+    browser["Browser in optional CDN mode"] -->|"request over HTTPS"| edge["CloudFront"]
+    edge -->|"public static-file cache hit"| browser
+    edge -->|"miss or uncached request; origin guard and header"| alb["MiniTickets ALB"]
+    alb -->|"route pages or API calls"| apps["web and api"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cloudfront#chapter=24&piece=cloudfront).
+1. CloudFront chooses the rules for the requested path.
+2. It can reuse safe public static files.
+3. Other requests reach the ALB; private responses must stay unshared.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant B as Browser in optional CDN mode
-    participant C as CloudFront edge
-    participant L as ALB port 80
-    participant W as web port 3000
-    B->>C: HTTPS GET /events
-    C->>L: HTTP, origin prefix list + X-Origin-Verify
-    L->>W: Header rule 200, minitickets-dev-web-sg permits minitickets-dev-alb-sg
-    W-->>C: Nonce HTML, private, no-store
-    C-->>B: Forward without shared storage, minimum TTL 0
-```
+The optional distribution is implemented but currently disabled; visitors use HTTPS directly to the load balancer (ALB). If enabled, hashed static files can be cached, while API calls and today's nonce-bearing HTML remain uncached. Live CDN acceptance is pending.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. Committed CDN mode is off, pending account verification; live AWS was not checked.
-2. If enabled, browsers use the distribution's HTTPS address.
-3. `/_next/static/*` can reuse copies of hashed files at the edge.
-4. `/trpc/*` and ordinary pages disable caching. `/events` has minimum/default TTL `0` and honors today's `private,no-store` HTML.
-5. Origin misses travel to ALB `80` with `X-Origin-Verify`. Its prefix-list guard and header check both apply.
+"CloudFront can deliver MiniTickets' public static files from nearby locations. It is implemented but off today. Our API and nonce-bearing HTML must remain private, so cache keys and caching rules matter as much as speed. The optional origin also needs its own access protection; a CDN alone does not secure it."
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** in optional mode, CloudFront origin IPs reach ALB `80`; ALB reaches app ports.
+- **Does every request become faster?** No. Uncached requests still reach the origin and add another hop.
+- **Can cookies alone protect privacy?** No. Configured cache behavior must prevent unsafe reuse.
+- **What if private content is cached?** Stop unsafe caching and inspect keys, response headers and policy lifetimes.
+- **Does browser HTTPS encrypt every hop?** No. The optional origin currently uses HTTP; that needs a separate design decision.
 
-**Allowed:** no per-visitor IAM; cache rules decide whether a response may be reused.
-
-**Password:** CloudFront adds the origin header. This is separate from the visitor's login cookie.
-
-## 6. In our code
-
-`infra/src/entry/cdn.ts` → `createCdn` (`distribution`).
-
-`infra/src/entry/listener.ts` → `createListener`.
-
-`apps/web/src/proxy.ts` → `proxy` sets nonce and privacy headers.
-
-## 7. In the AWS console
-
-CloudFront → Distributions → the matching distribution, if deployed → Origins / Behaviors. Check origin protocol, paths and attached policies; Policies → Cache lists `minitickets-dev-events-page`. Current committed mode should not create it. ALB Resource map shows only the origin’s next hops. Live distribution/account status was not verified.
-
-## 8. Good / Bad
-
-**Good:** static files can arrive from nearby edges; origin load can fall for reusable content.
-
-**Bad:** wrong cache keys can mix responses; our optional origin hop is HTTP.
-
-## 9. Other choices
-
-- Pick direct HTTPS ALB when regional delivery is sufficient; that is our current choice.
-- Pick a custom-domain HTTPS origin when enabling CDN and requiring encrypted origin hops.
-- Pick a private ALB VPC origin when removing the public origin fits the design.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ALB](alb.md) | Optional edge → origin | TCP 80 prefix list + secret header | ALB → Security / listener rules |
-| [Origin protection](origin-protection.md) | Guards origin | Prefix list + `X-Origin-Verify` | CloudFront → Origins; ALB rules |
-| [Cache privacy](cdn-caching.md) | Response → edge copy | Cache policy + origin headers | Distribution → Behaviors |
-| [TLS](tls-termination.md) | Browser → edge | Distribution certificate | Distribution → Settings |
-
-## 11. When it breaks
-
-- No CDN header today → check committed mode → diagnose direct ALB first.
-- Optional mode returns 403 → origin header/listener rules → align the secret references.
-- Mixed/private content reused → inspect key and minimum TTL → disable unsafe caching.
-
-## 12. Say it in 30 seconds
-
-“CloudFront is implemented but off for MiniTickets today. If enabled it can cache hashed static assets, while API and nonce-bearing HTML remain private. Its key must distinguish response variants, and minimum TTL must allow no-store. Prefix-list ingress and a secret header protect the ALB origin.”
-
-## 13. Likely follow-ups
-
-- **Does `Vary: Cookie` alone protect privacy?** No; CloudFront uses its configured key.
-- **What can override no-store?** A positive minimum TTL. [AWS policy rule](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-key-understand-cache-policy.html).
-
-## 14. Remember it
-
-Share copies of public files, never a visitor’s page or its nonce.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Configuration and security
+
+In optional CDN mode, the ALB routes the verified header plus `/trpc/*` to API and the verified-header default to web. App security groups permit TCP 4000/3000 from `minitickets-dev-alb-sg`. The historical web listener rule has priority 200. The explorer link describes the optional path, not the current active front door.
+
+Committed `cdnEnabled=false` disables the distribution pending account verification. Optional viewer HTTPS uses the default CloudFront certificate; origin reach uses the CloudFront prefix list on TCP 80 plus `X-Origin-Verify`. The header is separate from visitor cookies. No per-visitor IAM check applies. `Vary: Cookie` alone does not define the configured cache key.
+
+### Implementation and operational limits
 
 - Anchor: `infra/src/entry/cdn.ts` — `distribution`; follow the numbered comments at this boundary.
 
@@ -127,12 +69,43 @@ The events policy has minimum/default/maximum TTL `0/0/330` seconds. Cache key q
 
 Those historical cache settings remain in infra, but current `proxy.ts` and `next.config.ts` mark HTML/RSC `private,no-store` with a fresh CSP nonce. Earlier comments promising a shared 30-second events page are historical and do not describe current privacy behavior. The explicit public-data helper in `features/events/server/cached-events.ts` is separate; current search SSR bypasses it. Hashed static assets remain cacheable.
 
-CloudFront does not use arbitrary Vary headers as a cache key. Next HTML and RSC can share a URL but require different response handling. Dropping RSC headers or `_rsc` can cause mismatched payloads or redirect loops. A positive minimum TTL can override private/no-store; keep minimum zero for this policy. Default zero also avoids caching responses without explicit lifetime. Managed CachingDisabled does not negotiate the compression key flags, so `compress: true` alone does not guarantee compression on those behaviors.
+CloudFront does not use arbitrary Vary headers as a cache key. Next HTML and RSC can share a URL but require different response handling. Dropping RSC headers or `_rsc` can cause mismatched payloads or redirect loops. A positive minimum TTL can override private/no-store ([AWS policy rule](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-key-understand-cache-policy.html)); keep minimum zero for this policy. Default zero also avoids caching responses without explicit lifetime. Managed CachingDisabled does not negotiate the compression key flags, so `compress: true` alone does not guarantee compression on those behaviors.
 
 No app-triggered CloudFront invalidation is implemented. The old 30-second edge-fresh plus 300-second stale-window rationale belonged to public HTML before nonce privacy. At scale inspect HTML/RSC headers, test policy/key alignment centrally and keep public-data strategy separate. `pnpm demo:security` is a local privacy demonstration, not a CDN acceptance test. CloudFront usage and transfer pricing depend on requests/region; no live bill was checked.
 
-</details>
+### Source references
+
+`infra/src/entry/cdn.ts` → `createCdn` (`distribution`).
+
+`infra/src/entry/listener.ts` → `createListener`.
+
+`apps/web/src/proxy.ts` → `proxy` sets nonce and privacy headers.
+
+### Console and troubleshooting
+
+CloudFront → Distributions → the matching distribution, if deployed → Origins / Behaviors. Check origin protocol, paths and attached policies; Policies → Cache lists `minitickets-dev-events-page`. Current committed mode should not create it. ALB Resource map shows only the origin’s next hops. Live distribution/account status was not verified.
+
+- No CDN header today → check committed mode → diagnose direct ALB first.
+- Optional mode returns 403 → origin header/listener rules → align the secret references.
+- Mixed/private content reused → inspect key and minimum TTL → disable unsafe caching.
+
+### Trade-offs and related concepts
+
+- Pick direct HTTPS ALB when regional delivery is sufficient; that is our current choice.
+- Pick a custom-domain HTTPS origin when enabling CDN and requiring encrypted origin hops.
+- Pick a private ALB VPC origin when removing the public origin fits the design.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [ALB](alb.md) | Optional edge → origin | TCP 80 prefix list + secret header | ALB → Security / listener rules |
+| [Origin protection](origin-protection.md) | Guards origin | Prefix list + `X-Origin-Verify` | CloudFront → Origins; ALB rules |
+| [Cache privacy](cdn-caching.md) | Response → edge copy | Cache policy + origin headers | Distribution → Behaviors |
+| [TLS](tls-termination.md) | Browser → edge | Distribution certificate | Distribution → Settings |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cloudfront#chapter=24&piece=cloudfront).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

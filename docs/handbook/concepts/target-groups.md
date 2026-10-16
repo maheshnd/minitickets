@@ -3,115 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step doc: [18 ALB + web](../../18-infra-alb-web.md) (sections 3.4-3.7)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The MiniTickets ALB chooses an api or web worker from a [target group](../glossary.md#target-group): a changing list of task IPs and their health.
+A [target group](../glossary.md#target-group) is a list of application destinations that a load balancer can call. It tracks task addresses and whether they answer health checks.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A replaced MiniTickets task gets a new address. We need requests to follow the replacement without changing the website's public address or manually updating a server list.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    alb["minitickets-dev ALB"] -->|"rule 100: /trpc/*"| atg["minitickets-dev-api-tg-…<br/>HTTP 4000; IP targets"]
-    alb -->|"default HTTPS action"| wtg["minitickets-dev-web-tg-…<br/>HTTP 3000; IP targets"]
-    ecs["api / web ECS services"] -->|"service-linked role: RegisterTargets / DeregisterTargets"| atg
-    ecs -->|"service-linked role: RegisterTargets / DeregisterTargets"| wtg
-    atg -->|"minitickets-dev-api-sg 4000 from minitickets-dev-alb-sg; GET /health every 15 s"| api["api task IPs"]
-    wtg -->|"minitickets-dev-web-sg 3000 from minitickets-dev-alb-sg; GET / every 15 s"| web["web task IPs"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class atg,wtg focus
+    ecs["api ECS service"] -->|"registers new task IP; removes old IP"| group["minitickets-dev-api-tg-…"]
+    alb["minitickets-dev ALB"] -->|"/trpc/* selects group"| group
+    alb -->|"GET /health; SG: 4000 from alb-sg"| task["api task"]
+    group -->|"eligible task IP for forwarding"| task
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=target-groups#chapter=24&piece=api-tg).
+1. ECS adds a new task's private address.
+2. ALB checks whether it answers the configured health request.
+3. During replacement, the old address drains existing requests and leaves the group.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant E as api ECS service
-    participant T as api target group
-    participant L as ALB
-    participant A as New api task
-    E->>T: Register new task IP on 4000
-    L->>A: GET /health, minitickets-dev-api-sg permits minitickets-dev-alb-sg 4000
-    A-->>L: 200 (initial health pass)
-    L->>A: Forward matching /trpc request
-    E->>T: Deregister old task, 30 s draining setting
-```
+Separate groups serve api and web. API checks `/health`; web checks `/`. These deliberately avoid shared data stores. ECS manages membership through its service-linked role, rather than the application role.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createTargetGroups` creates api `4000` and web `3000` lists inside our VPC.
-2. ECS registers each task's private IP. The ALB never needs its public IP.
-3. ALB checks api `/health` and web `/`, every `15 s`, with a `5 s` timeout.
-4. Three failed checks mark unhealthy; two passes recover it. A new registered target needs one initial pass.
-5. Removal stops new work and allows existing requests to drain, with `30 s` configured.
+“MiniTickets target groups separate routing from changing task addresses. ECS registers each task, and the ALB probes it before normal routing. Deregistration allows requests to drain during replacement. Our checks prove the process responds, not that bookings work, so we also need dependency and user-error monitoring.”
 
-## 5. Reach / Allowed / Password
-
-**Reach:** ALB-to-worker source-group rules on `4000/3000`.
-
-**Allowed:** ECS's service-linked role manages target registration; not the app task role.
-
-**Password:** not needed by target checks; they bypass listener header rules.
-
-## 6. In our code
-
-`infra/src/entry/target-groups.ts` → `createTargetGroups`.
-
-`infra/src/compute/service.ts` → `createApiService` (`loadBalancers`).
-
-`infra/src/compute/web-service.ts` → `createWebService`.
-
-## 7. In the AWS console
-
-EC2 → Target Groups → `minitickets-dev-api-tg-…` → Targets / Health checks / Attributes. See actual IPs, reason codes and draining delay. EC2 → Load Balancers → `minitickets-dev` → Resource map joins both lists to rules and workers. [AWS health guide](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html). Live targets were not checked.
-
-## 8. Good / Bad
-
-**Good:** worker addresses update automatically; bad workers can be removed without changing public DNS.
-
-**Bad:** `/health` cannot prove database access; when all registered targets are unhealthy, ALB can send to them anyway.
-
-## 9. Other choices
-
-- Pick readiness checks when one worker can be broken while others work, and removing it is safe.
-- Pick instance targets when routing to owned EC2 instances.
-- Pick slow start when new workers need gradual traffic to warm up.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ALB](alb.md) | Listener → list | Forward action | ALB → Resource map |
-| [ECS service](ecs-service.md) | Service → list | Service-linked role + `loadBalancers` | ECS → Service → Configuration |
-| [Health checks](health-checks.md) | ALB → task | SG 4000/3000 + HTTP 200 | Target group → Health checks |
-| [Deploys](zero-downtime-deploys.md) | Old target leaves | Deregistration delay 30 s | Target group → Attributes |
-
-## 11. When it breaks
-
-- `Target.Timeout` → worker bind address and guard rules → fix listening/network path.
-- `Target.ResponseCodeMismatch` → check path and returned code → restore `/health` or `/`.
-- Empty list → ECS service events and attachment → restore running attached tasks.
-
-## 12. Say it in 30 seconds
-
-“Our two staff lists hold Fargate task IPs: api on 4000 and web on 3000. ECS maintains membership; ALB probes health. Thirty-second draining protects requests during removal. Liveness avoids shared-database restart cascades, but all-unhealthy fail-open remains an explicit limit.”
-
-## 13. Likely follow-ups
+## 6. Important follow-up questions
 
 - **Why IP targets?** Fargate gives each task its own network interface.
-- **Why generated names?** Replacement can create a new group before removing the old one.
+- **What if every registered target is unhealthy?** ALB can fail open and send traffic to them anyway.
+- **What if the group is empty?** Check ECS service events, running tasks and its load-balancer attachment.
+- **What if health checks time out?** Check listening address and security rules; a localhost-only server can pass its own probe but reject ALB traffic.
 
-## 14. Remember it
-
-The list changes when workers move; the public reception desk stays the same.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Implementation and operational checks
+
+`infra/src/entry/target-groups.ts` → `createTargetGroups` creates `minitickets-dev-api-tg-…` on HTTP 4000 and `minitickets-dev-web-tg-…` on HTTP 3000, both in our VPC. `infra/src/compute/service.ts` → `createApiService` and `infra/src/compute/web-service.ts` → `createWebService` attach them through `loadBalancers`. ECS's service-linked role registers/deregisters task private IPs; ALB does not need task public IPs. Direct HTTPS routes priority 100 `/trpc/*` to api and default to web.
+
+EC2 → Target Groups → actual group → Targets / Health checks / Attributes shows IPs, reason codes and draining settings. ALB → Resource map joins rules and targets. Live targets were not checked. Source-group rules admit ALB 4000/3000; target probes bypass listener origin-header rules and require no application password. `Target.ResponseCodeMismatch` points to the configured path/response. An empty list requires inspecting ECS events and attachment.
 
 - Anchor: `infra/src/entry/target-groups.ts` · `createTargetGroups`: the api and web target groups and their health checks.
 
@@ -131,9 +71,18 @@ Changing a health-check path to `/nope` would produce `Target.ResponseCodeMismat
 
 Read-only inspection uses `aws elbv2 describe-target-health --target-group-arn <actual-arn>` and `describe-target-group-attributes`. Do not manually register ECS-managed tasks as a repair. Target groups are billed within load balancing rather than as a separate hourly group charge. Slow start, alternative algorithms and instance targets are choices, not current settings.
 
-</details>
+### Related reading
+
+- [ALB](alb.md)
+- [ECS service](ecs-service.md)
+- [Health checks](health-checks.md)
+- [Deploys](zero-downtime-deploys.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=target-groups#chapter=24&piece=api-tg).
 
 ## Where it appears in the story
 
 - [Infra story: 3. Target groups](../infra-story.md#3-target-groups)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

@@ -100,9 +100,8 @@ const INTERVIEW_CARDS = [
   "cd-oidc", "zero-downtime-deploys", "csr-vs-ssr",
 ];
 const INTERVIEW_HEADINGS = [
-  "In one line", "Where it sits", "How it works", "What happens in MiniTickets",
-  "Reach / Allowed / Password", "In our code", "In the AWS console", "Good / Bad", "Other choices",
-  "Connected to", "When it breaks", "Say it in 30 seconds", "Likely follow-ups", "Remember it", "More detail",
+  "What is it?", "Why do we need it?", "How does it work?", "How do we use it in MiniTickets?",
+  "Interview-ready answer", "Important follow-up questions", "Advanced details",
 ];
 
 function checkInterviewCards(cardSlugs: string[]) {
@@ -117,47 +116,50 @@ function checkInterviewCards(cardSlugs: string[]) {
     ...[...glossary.matchAll(/<a id="([^"]+)"/g)].map(match => match[1]),
   ]);
   for (const slug of new Set([...INTERVIEW_CARDS, ...cardSlugs.filter(slug =>
-    readFileSync(path.join(CARDS, `${slug}.md`), "utf8").includes("<!-- interview-card: v1 -->"))])) {
+    /<!-- interview-card: v[12] -->/.test(readFileSync(path.join(CARDS, `${slug}.md`), "utf8")))])) {
     const name = `concepts/${slug}.md`;
     if (!cardSlugs.includes(slug)) { problems.push(`${name}: missing interview card`); continue; }
     const text = readFileSync(path.join(CARDS, `${slug}.md`), "utf8");
-    if (!text.includes("<!-- interview-card: v1 -->")) problems.push(`${name}: missing interview format marker`);
+    if (!text.includes("<!-- interview-card: v2 -->")) problems.push(`${name}: missing v2 interview format marker`);
     if (!/^# .+: .+/m.test(text)) problems.push(`${name}: title needs a city nickname after a colon`);
     if (!/^Area: .+ · Status: /m.test(text)) problems.push(`${name}: missing area/status line`);
-    // 6a. Compare all visible headings in order, then require content under each one.
+    // 6a. Keep the seven learning sections visible and all reference notes in one closed fold.
     const visible = text.replace(/<details>[\s\S]*?<\/details>/g, "");
     const expected = INTERVIEW_HEADINGS.map((heading, index) => `${index + 1}. ${heading}`);
     const actual = [...visible.matchAll(/^## (.*)/gm)].map(match => match[1]);
-    if (JSON.stringify(actual) !== JSON.stringify([...expected, "Where it appears in the story"])) {
-      problems.push(`${name}: needs the 15 interview sections in order, then story placement`);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      problems.push(`${name}: needs the seven interview sections in order; story placement belongs in Advanced details`);
     }
-    const sections = new Map([...text.matchAll(/^## ([^\n]+)\n([\s\S]*?)(?=^## |$(?![\s\S]))/gm)]
+    const sections = new Map([...visible.matchAll(/^## ([^\n]+)\n([\s\S]*?)(?=^## |$(?![\s\S]))/gm)]
       .map(match => [match[1], match[2].trim()]));
-    for (const heading of expected) if (!sections.get(heading)) problems.push(`${name}: empty section ${heading}`);
-    // 6b. Two readable pictures: a highlighted neighborhood and one chronological flow.
-    const diagrams = [...visible.matchAll(/```mermaid\n([\s\S]*?)```/g)].map(match => match[1]);
-    if (diagrams.length !== 2 || !sections.get("2. Where it sits")?.includes("```mermaid\nflowchart ") ||
-        !sections.get("3. How it works")?.includes("```mermaid\nsequenceDiagram")) {
-      problems.push(`${name}: needs a flowchart in Where it sits and sequence diagram in How it works`);
+    for (const heading of expected.slice(0, 6)) if (!sections.get(heading)) problems.push(`${name}: empty section ${heading}`);
+    const advancedStart = text.indexOf("\n## 7. Advanced details\n");
+    const advanced = advancedStart < 0 ? "" : text.slice(advancedStart + "\n## 7. Advanced details\n".length).trim();
+    const fold = advanced.match(/^<details>\s*<summary>[^<]+<\/summary>\s*([\s\S]+)\s*<\/details>$/);
+    if (!fold || (text.match(/<details\b/g) ?? []).length !== 1 || (text.match(/<\/details>/g) ?? []).length !== 1) {
+      problems.push(`${name}: Advanced details needs one closed, nonempty <details> fold containing all reference notes`);
     }
+    if (!/^## Where it appears in the story\s*$/m.test(fold?.[1] ?? "")) problems.push(`${name}: keep story placement inside Advanced details`);
+    // 6b. One picture to redraw from memory; numbered steps explain the same flow.
+    const diagrams = [...text.matchAll(/```mermaid\n([\s\S]*?)```/g)].map(match => match[1]);
+    if (diagrams.length !== 1 || !sections.get("3. How does it work?")?.includes("```mermaid\nflowchart ")) {
+      problems.push(`${name}: needs exactly one Mermaid flowchart, in How does it work?`);
+    }
+    const steps = sections.get("3. How does it work?")?.replace(/```[\s\S]*?```/g, "") ?? "";
+    if ((steps.match(/^\d+\. .+/gm) ?? []).length < 2) problems.push(`${name}: How does it work? needs short numbered flow steps`);
     const flow = diagrams[0] ?? "";
     const shapes = flow.replace(/"[^"\n]*"/g, '""').replace(/\|[^|\n]*\|/g, "||");
     const boxes = new Set([...shapes.matchAll(/\b([A-Za-z][\w-]*)\s*(?:\[|\(|\{)/g)].map(match => match[1]));
-    if (boxes.size > 8) problems.push(`${name}: Where it sits has ${boxes.size} boxes; maximum 8`);
-    const highlighted = [...flow.matchAll(/^\s*class\s+([\w, -]+?)\s+focus\b/gm)]
-      .flatMap(match => match[1].split(",").map(id => id.trim()));
-    if (!/classDef\s+focus\b/.test(flow) || !highlighted.length || highlighted.some(id => !boxes.has(id))) {
-      problems.push(`${name}: highlight the focal piece with classDef focus and class … focus`);
-    }
+    if (boxes.size < 2 || boxes.size > 8) problems.push(`${name}: How does it work? has ${boxes.size} boxes; use 2–8`);
     for (const line of flow.split("\n").filter(line => /-->|-\.->|==>/.test(line))) {
       for (const arrow of line.matchAll(/-->|-\.->|==>/g)) {
         if (!/^\s*\|[^|]+\|/.test(line.slice(arrow.index + arrow[0].length))) {
-          problems.push(`${name}: label every flowchart arrow with |what allows it|: ${line.trim()}`);
+          problems.push(`${name}: label every flowchart arrow with |what happens / what allows it|: ${line.trim()}`);
         }
       }
     }
-    // 6c. A real map piece and chapter are required; app concepts also open their source notes.
-    const links = [...visible.matchAll(/\]\(\.\.\/guides\/infra-explorer\.html\?concept=([^#)]+)#([^)]*)\)/g)];
+    // 6c. Reference navigation stays machine-readable even when it is folded away.
+    const links = [...(fold?.[1] ?? "").matchAll(/\]\(\.\.\/guides\/infra-explorer\.html\?concept=([^#)]+)#([^)]*)\)/g)];
     if (links.length !== 1) problems.push(`${name}: needs one focused explorer link with ?concept=${slug}#chapter=…&piece=…`);
     for (const link of links) {
       const params = new URLSearchParams(link[2]);
@@ -165,19 +167,22 @@ function checkInterviewCards(cardSlugs: string[]) {
         problems.push(`${name}: explorer link names a wrong concept, missing chapter or missing piece`);
       }
     }
-    // 6d. This is a word budget, not an exact printer-page guarantee. Diagrams and folded notes
-    //     have their own space; 550 words keeps the first read short at normal handbook type size.
-    const prose = visible.replace(/```[\s\S]*?```/g, "").replace(/^#+ .*$/gm, "")
-      .replace(/^(?:History:|Area:|<!--|\|\s*---).*$/gm, "");
+    // 6d. Count sections 1–6 only. Reference material has no cap so facts need not be discarded.
+    const main = expected.slice(0, 6).map(heading => sections.get(heading) ?? "").join("\n");
+    const prose = main.replace(/```[\s\S]*?```/g, "");
     const words = prose.match(/[\p{L}\p{N}][^\s]*/gu)?.length ?? 0;
-    const allWords = text.match(/[\p{L}\p{N}][^\s]*/gu)?.length ?? 0;
-    if (words > 550) problems.push(`${name}: ${words} first-read words; maximum 550 (diagrams/folded notes excluded)`);
-    if (allWords > 2200) problems.push(`${name}: ${allWords} total words; maximum 2200 including folded notes`);
-    if (!/<details>\s*<summary>[^<]+<\/summary>[\s\S]+<\/details>/.test(sections.get("15. More detail") ?? "")) {
-      problems.push(`${name}: More detail needs folded useful source notes`);
-    }
+    if (words > 350) problems.push(`${name}: ${words} first-read words; maximum 350 (diagram excluded)`);
+    const followups = sections.get("6. Important follow-up questions") ?? "";
+    const questions = followups.match(/^(?:[-*] )?\*\*[^\n]+?\?\*\*\s*\S.+/gm) ?? [];
+    if (questions.length < 3 || questions.length > 5) problems.push(`${name}: needs 3–5 short answered follow-up questions`);
     for (const link of text.matchAll(/\]\(\.\.\/glossary\.md#([^)]*)\)/g)) {
       if (!glossaryIds.has(link[1])) problems.push(`${name}: broken glossary term #${link[1]}`);
+    }
+    for (const link of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = link[1].split(/[?#]/)[0];
+      if (target && !/^(?:[a-z]+:|\/)/i.test(target) && !existsSync(path.resolve(CARDS, target))) {
+        problems.push(`${name}: broken relative link ${link[1]}`);
+      }
     }
     // Source pairs remain easy to check without requiring app code changes or new anchors.
     for (const ref of text.matchAll(/`([\w./-]+\.[a-z]+)` → `([\w.:-]+)`/g)) {

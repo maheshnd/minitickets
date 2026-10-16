@@ -4,182 +4,82 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live AWS acceptance is separate
 
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets first draws `/events` on the server ([SSR](../glossary.md#ssr)); the browser then handles typing and drawing updates ([CSR](../glossary.md#csr)).
+Server-side rendering (SSR) builds a page’s initial HTML on the server. Client-side rendering (CSR) lets browser JavaScript draw and update the interface.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A MiniTickets visitor wants events to appear quickly, then wants responsive searching. Sending the first list already rendered helps the first visit; browser updates handle later typing.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    browser["MiniTickets browser"] -->|"HTTPS 443; domain DNS + ACM certificate"| alb["minitickets-dev ALB"]
-    alb -->|"minitickets-dev-web-sg TCP 3000 from minitickets-dev-alb-sg"| web["EventsPage / prefetchEvents"]
-    web -->|"api:4000 DNS; minitickets-dev-api-sg TCP 14000 from minitickets-dev-web-sg"| api["events.search"]
-    web -->|"same query key carries public data into HTML"| client["EventList / useEventSearch"]
-    policy["Fresh CSP nonce; private,no-store"] -.->|"script authorization and HTML cache policy"| web
-    classDef focus fill:#fff1a8,stroke:#8a6100,stroke-width:3px
-    class web focus
+    B["MiniTickets browser"] -->|"request /events"| W["EventsPage / prefetchEvents"]
+    W -->|"fetch first public search page"| A["events.search"]
+    A -->|"return events"| W
+    W -->|"stream HTML and matching query data"| C["EventList / useEventSearch"]
+    C -->|"typing triggers later searches"| A
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=csr-vs-ssr#chapter=24&piece=web-task).
+1. The server sends the page shell while fetching the first list.
+2. It sends list HTML and saved query data.
+3. The browser attaches interaction and reuses that data, then searches as input changes.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant W as EventsPage / prefetchEvents
-    participant A as events.search
-    B->>W: GET /events via ALB
-    W-->>B: Shell and waiting-list skeleton
-    W->>A: Service Connect api:4000, q empty, limit 50
-    A-->>W: First search page
-    W-->>B: List HTML + saved query state
-    Note over B: Hydrate same key, no immediate second data fetch
-    B->>A: Later typing: new search after 250 ms
-```
+`prefetchEvents` and `useEventSearch` use the same search inputs and cache key, the name identifying those results. This avoids an immediate repeat fetch. Each request keeps its server data separate. A fresh code authorizes scripts for each response, so HTML cannot be shared between visitors; public data caching is separate.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `EventsPage` validates URL filters and sends the page shell while its list waits.
-2. `prefetchEvents` calls `events.search` with `q: ""`, `limit: 50`, through `http://api:4000`.
-3. The response carries list HTML and saved query data. Hydration means attaching browser behavior and reusing that data.
-4. `useEventSearch` uses the same query key, with 30-second freshness. Typing waits **250 ms** before a new search.
-5. Fresh script nonces make each HTML response private and `no-store`; data caching is a separate choice.
+“MiniTickets combines server and browser rendering. The server fetches the first search page and sends useful HTML with its query data. The browser reuses that state, attaches interaction and handles later searches. Matching query keys prevent duplicate fetching. Our per-request script security makes HTML dynamic and no-store, while correctly keyed public data can still have its own cache.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** browser → HTTPS ALB; web → Service Connect `api:4000`, minitickets-dev-api-sg :14000 from minitickets-dev-web-sg.
+- **Does a Client Component render only in the browser?** No. Next.js can produce its initial HTML on the server.
+- **Why does the browser immediately fetch again?** Check whether server and browser inputs/query keys match.
+- **What if server prefetch fails?** Inspect internal API reach and logs; the browser can retry.
+- **When is static HTML better?** When content tolerates rebuilds and the script-security design supports it.
 
-**Allowed:** public `events.search`; identical input identifies reusable browser data.
-
-**Password:** not needed for this public catalogue call.
-
-## 6. In our code
-
-`apps/web/src/app/events/page.tsx` → `EventsPage`, `EventListWithServerData`
-
-`apps/web/src/features/events/server/prefetch-events.ts` → `prefetchEvents`
-
-`apps/web/src/features/events/hooks/use-event-search.ts` → `useEventSearch`
-
-## 7. In the AWS console
-
-ECS → Clusters → `minitickets-dev` → Services → `minitickets-dev-web` → Tasks → task → Networking: task address. Service → Configuration and networking: Service Connect. Browser rendering itself is inspected in browser developer tools, not AWS.
-
-## 8. Good / Bad
-
-**Good:** useful list arrives without a second browser fetch; typing stays interactive.
-
-**Bad:** initial HTML costs server work; hydration sends data and JavaScript.
-
-## 9. Other choices
-
-- Pick pure CSR when a private tool can tolerate a slower first screen.
-- Pick static HTML when public content can wait for rebuilds and its script policy permits it.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ALB](alb.md) | → web HTML | minitickets-dev-web-sg :3000 from minitickets-dev-alb-sg | EC2 → ALB → Resource map |
-| [ECS service](ecs-service.md) | → API data | Service Connect name + minitickets-dev-api-sg :14000 from minitickets-dev-web-sg | ECS → web service |
-| [Cache-aside](cache-aside.md) | separate list path | search bypasses old list cache | CloudWatch → API logs |
-
-## 11. When it breaks
-
-- List fetched again immediately → compare server/browser query keys → use identical input.
-- Server list missing → web prefetch logs → fix internal API reach; browser can retry.
-- Another visitor’s HTML reused → cache headers → retain private,no-store with fresh nonces.
-
-## 12. Say it in 30 seconds
-
-“MiniTickets combines server and browser rendering. The server fetches the first search page and sends useful HTML plus query data. The browser reuses that data, attaches interaction and makes later searches. The query keys must match. Our script security uses a fresh nonce, so HTML is dynamic and no-store even when public data could be cached separately.”
-
-## 13. Likely follow-ups
-
-- **Does a Client Component render only in the browser?** No. Next.js can first render its HTML on the server.
-- **Does dynamic HTML ban cached data?** No. Correctly keyed public data can still be cached.
-
-## 14. Remember it
-
-Send the catalogue already printed; let the visitor turn and search its pages.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Source notes, earlier detail and code anchors</summary>
+<summary>Technical reference</summary>
 
+### Current rendering and data flow
 
+[SSR](../glossary.md#ssr) and [CSR](../glossary.md#csr) share the catalogue. `apps/web/src/app/events/page.tsx` → `EventsPage`, `EventListWithServerData` validates URL filters and streams a shell/skeleton while the list waits. `apps/web/src/app/layout.tsx` waits for a request; there is no static-site export.
 
-The catalogue SSR prefetches events.search into a per-request QueryClient and the browser hydrates the same infinite key. HTML is now dynamically nonced/no-store; client search remains interactive and data caches are separate.
+`apps/web/src/features/events/server/prefetch-events.ts` → `prefetchEvents` calls `events.search` with `q: ""`, `limit: 50`, through `http://api:4000`. A per-request QueryClient dehydrates the same infinite-query identity used by `apps/web/src/features/events/hooks/use-event-search.ts` → `useEventSearch`. Hydration attaches browser behavior and reuses data; freshness is **30 seconds**, search debounce **250 ms**.
 
-### Earlier card: 2. Real-life comparison
+P10 creates a fresh CSP nonce and marks HTML/RSC **private,no-store**. Sharing another request’s HTML is unsafe. Dynamic rendering still permits correctly keyed public-data caches. `apps/web/src/features/events/server/cached-events.ts` provides an explicit public-data cache, but current search prefetch bypasses that helper and the old list cache to avoid unbounded text/cursor keys. [Cache-aside](cache-aside.md) describes the separate legacy path.
 
-A catalogue with a bookmark: each question and position has its own identity, and only the visible page lies open.
+### Reach and investigation
 
-### Earlier card: 3. Picture it
+Browser → [ALB](alb.md) uses HTTPS 443, domain DNS and ACM. ALB → web TCP 3000 is admitted by `minitickets-dev-web-sg` from `minitickets-dev-alb-sg`. Web → API uses Service Connect `api:4000`; `minitickets-dev-api-sg` admits TCP **14000** from `minitickets-dev-web-sg`. [ECS service](ecs-service.md) configures this private call. Search is public and needs no password.
 
+Console: ECS → Clusters → `minitickets-dev` → Services → `minitickets-dev-web` → Tasks → task → Networking; service → Configuration and networking → Service Connect. Browser developer tools inspect rendering itself. Missing server lists suggest prefetch logs/internal reach; immediate duplicate fetches suggest mismatched query identity; cross-visitor HTML reuse suggests incorrect cache headers.
 
-### Earlier card: 4. Where in our code
+### Trade-offs, evidence and growth
+
+SSR costs server work even when data is cached; hydration transfers data and JavaScript. Pure CSR can suit a private tool that tolerates a slower first screen. Static HTML is cheap to deliver but cannot reuse a fresh per-request nonce. A hash-based static CSP or separate public/static routes would be a deliberate redesign.
+
+`pnpm demo:security` covers production-mode HTML/cache acceptance locally; this is not live AWS/CI proof and was not rerun by this rewrite. At 10x, measure time to first byte and cache hit rate; at 100x, evaluate the static-policy redesign deliberately. Read the [current system](../00-big-picture.md), [rendering scenario](../guides/interview-scenarios.md#rendering-models) and [search tour](../guides/infra-explorer.html?tour=search).
+
+### Code anchors
 
 - Anchor: `apps/web/e2e/events.spec.ts` — `response`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/app/events/page.tsx` — `dynamic`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/features/events/hooks/use-events.ts` — `useEvents`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/features/events/server/prefetch-events.ts` — `prefetchEvents`; follow the numbered comments at this boundary.
 
-`apps/web/src/app/layout.tsx` waits for a request; `apps/web/src/features/events/server/prefetch-events.ts` hydrates public data. `apps/web/src/features/events/server/cached-events.ts` provides an explicit public-data cache; the current search-prefetch path bypasses that helper to avoid unbounded cursor/text keys. Run `pnpm demo:security` for production HTML/cache acceptance; there is no static-site export.
-
-### Earlier card: 5. See it yourself
-
-Run `pnpm demo:security` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does dynamic HTML forbid cached data? No. Cache only public results with complete keys. Do not change a live stack to demonstrate it.
-
-### Earlier card: 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#rendering-models) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-### Earlier card: 7. Our settings and WHY
-
-The catalogue SSR prefetches events.search into a per-request QueryClient and the browser hydrates the same infinite key. HTML is now dynamically nonced/no-store; client search remains interactive and data caches are separate. Initial content and interactivity have different latency and security constraints.
-
-### Earlier card: 8. Trade-offs
-
-Static HTML has cheap delivery but cannot reuse a fresh per-request nonce. CSR adds client work. Dynamic HTML costs server work even when data is cached.
-
-### Earlier card: 9. Alternatives and when to choose them
-
-10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
-
-### Earlier card: 10. What breaks and how we notice
-
-Does dynamic HTML forbid cached data? No. Cache only public results with complete keys.
-
-### Earlier card: 13. Interview answers at 3 levels
-
-- **Simple:** The catalogue SSR prefetches events.search into a per-request QueryClient and the browser hydrates the same infinite key.
-- **Senior:** SSR sends useful initial HTML, CSR handles interactive changes and static output suits public content that tolerates rebuilds. MiniTickets combines server-prefetched catalogue data with client queries. P10 nonce security makes HTML dynamic and no-store; explicit public data caching remains a separate choice.
-- **Lead:** 10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
-
-### Earlier card: 14. Follow-up questions with answers
-
-Does dynamic HTML forbid cached data? No. Cache only public results with complete keys.
-
-Can public data still be cached inside dynamic HTML rendering? **Yes with correct data keys.**
-
-### Earlier card: 15. Say it in 30 seconds
-
-SSR sends useful initial HTML, CSR handles interactive changes and static output suits public content that tolerates rebuilds. MiniTickets combines server-prefetched catalogue data with client queries. P10 nonce security makes HTML dynamic and no-store; explicit public data caching remains a separate choice.
-
-### Earlier card: 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=csr-vs-ssr#chapter=24&piece=web-task).
 
 ## Where it appears in the story
 
 - [app-story: 1b. Search input, hydration and bounded rows](../app-story.md#1b-search-input-hydration-and-bounded-rows)
+
+</details>

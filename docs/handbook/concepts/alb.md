@@ -3,115 +3,58 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step docs: [18 ALB + web](../../18-infra-alb-web.md), [19 CloudFront](../../19-infra-cloudfront.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Opening MiniTickets reaches an [ALB](../glossary.md#alb) (Application Load Balancer), the AWS reception desk that reads the path and chooses web or api workers.
+An [ALB](../glossary.md#alb), or Application Load Balancer, receives web requests and chooses an application to handle them. It is MiniTickets' public reception desk.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A visitor should use one website address while pages and API calls reach different applications. The ALB handles that choice and keeps the public address stable when tasks change.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    visitor["Browser<br/>minitickets.theversehub.in"] -->|"owner DNS CNAME to ALB; HTTPS 443"| alb["minitickets-dev ALB"]
-    guard["minitickets-dev-alb-sg"] -.->|"TCP 80 / 443 from allowedCidrs; default 0.0.0.0/0"| alb
-    cert["ACM certificate<br/>minitickets.theversehub.in"] -.->|"certificateArn on HTTPS listener; DNS validation"| alb
-    alb -->|"HTTPS rule 100: /trpc/*; forward"| atg["minitickets-dev-api-tg-…"]
-    alb -->|"HTTPS default action; forward"| wtg["minitickets-dev-web-tg-…"]
-    atg -->|"minitickets-dev-api-sg TCP 4000 from minitickets-dev-alb-sg; healthy IP"| api["api worker"]
-    wtg -->|"minitickets-dev-web-sg TCP 3000 from minitickets-dev-alb-sg; healthy IP"| web["web worker"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class alb focus
+    browser["Browser"] -->|"HTTPS; ACM certificate"| alb["minitickets-dev ALB"]
+    alb -->|"/trpc/*"| apiGroup["api target group"]
+    alb -->|"other paths"| webGroup["web target group"]
+    apiGroup -->|"SG: 4000 from alb-sg"| api["api"]
+    webGroup -->|"SG: 3000 from alb-sg"| web["web"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=alb#chapter=24&piece=alb).
+1. The browser connects to the ALB over HTTPS.
+2. A listener rule reads the request path and selects a target group.
+3. That group supplies task addresses; the selected task handles the request.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant L as minitickets-dev ALB
-    participant A as api target on 4000
-    B->>L: HTTPS /trpc/events.search, allowedCidrs admits 443
-    Note over B,L: ACM certificate protects browser connection
-    L->>A: Rule 100, HTTP, minitickets-dev-api-sg admits minitickets-dev-alb-sg on 4000
-    A-->>L: Query response
-    L-->>B: HTTPS response
-```
+The current design sends `/trpc/*` to api and other paths to web. HTTP redirects to HTTPS. ECS maintains changing task addresses. HTTPS ends at the ALB; task connections use HTTP inside the VPC. Live acceptance remains pending.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. The owner points the domain CNAME, a name record, at the ALB's generated DNS name.
-2. Current `cdnEnabled=false` uses HTTPS `443`. ACM, AWS's certificate service, supplies the certificate.
-3. Rule `100` sends `/trpc/*` to api `4000`. The default sends other paths to web `3000`.
-4. Target groups supply current worker IPs and check their health.
-5. HTTP `80` returns a `301` redirect to HTTPS; it forwards no app request.
+“MiniTickets uses an ALB as one HTTPS entry point for pages and API calls. Path rules send requests to separate target groups, while ECS maintains task membership. This separates public routing from task lifetimes. Health checks help choose targets, but application monitoring is still needed because a live task can fail real work.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** public subnet routes, ALB ingress `80/443`, then source-group rules to workers.
+- **What if all targets are unhealthy?** ALB can route to those registered targets anyway; health checks are not an absolute safety barrier.
+- **What if users see 503?** Check target registration and listener actions; an empty target group is a common cause.
+- **Why not an NLB?** ALB understands HTTP paths; NLB fits lower-level network forwarding.
+- **Does a two-zone ALB make us highly available?** No. Our single desired task per application can still leave a gap.
 
-**Allowed:** no IAM check per visitor request; ECS separately manages target registration.
-
-**Password:** no origin password in current mode; app login still applies. Optional CDN mode checks `X-Origin-Verify`.
-
-## 6. In our code
-
-`infra/src/entry/alb.ts` → `createAlb`.
-
-`infra/src/entry/https-listener.ts` → `createHttpsListener`.
-
-`infra/src/entry/alb-public-ingress.ts` → `createAlbPublicIngress`.
-
-## 7. In the AWS console
-
-In `us-east-1`: EC2 → Load Balancers → `minitickets-dev` → **Resource map**. Follow listeners → rules → target groups → targets; switch to Unhealthy Target Map for failures. Listeners and rules shows `80/443`. [AWS map guide](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/view-resource-map.html). Live ALB/DNS/certificate state was not checked.
-
-## 8. Good / Bad
-
-**Good:** one public address serves pages and api; health checks usually steer away from broken workers.
-
-**Bad:** standing cost remains at low traffic; the encrypted connection ends here, so task hops use HTTP.
-
-## 9. Other choices
-
-- Pick NLB when forwarding TCP rather than reading HTTP paths.
-- Pick API Gateway when a managed API front door and its API features fit.
-- Pick optional CloudFront when edge caching or distribution is useful.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Security groups](security-groups.md) | Visitor → ALB | `allowedCidrs`, 443 | ALB → Security |
-| [Target groups](target-groups.md) | ALB → workers | Rule 100 / default + healthy IPs | ALB → Resource map |
-| [TLS](tls-termination.md) | Certificate guards ALB | `certificateArn`; issued certificate | ALB → Listeners and rules |
-| [CloudFront](cloudfront.md) | Optional edge → ALB | Different ingress/header rules | CloudFront → Origins |
-
-## 11. When it breaks
-
-- Domain times out → DNS, network mapping and minitickets-dev-alb-sg → repair CNAME or route/rule.
-- `503` → Resource map targets → restore healthy registered workers.
-- TLS warning → listener certificate and domain → fix issuance or name.
-
-## 12. Say it in 30 seconds
-
-“Our current reception desk is an HTTPS ALB named minitickets-dev. It sends /trpc to api on 4000 and everything else to web on 3000. ECS keeps target IP lists current. ACM secures the public connection; door guards restrict the private HTTP hops.”
-
-## 13. Likely follow-ups
-
-- **Where do health checks enter?** ALB calls targets directly, outside listener rules.
-- **Why two public subnets?** ALB spans two zones; that alone does not duplicate our single desired app task.
-
-## 14. Remember it
-
-The receptionist reads the path; the staff list chooses the worker.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Direct HTTPS: exact configuration and operations
+
+`infra/src/entry/alb.ts` → `createAlb` creates internet-facing `minitickets-dev` in the public subnet pair. `infra/src/entry/https-listener.ts` → `createHttpsListener` configures HTTPS 443: priority 100 forwards `/trpc/*` to api HTTP 4000; default forwards web HTTP 3000. HTTP 80 returns 301 to HTTPS without forwarding application work.
+
+`infra/src/entry/alb-public-ingress.ts` → `createAlbPublicIngress` allows TCP 80/443 from `allowedCidrs` (default `0.0.0.0/0`). Task groups allow traffic from `minitickets-dev-alb-sg`: api 4000/web 3000. The owner points the Cloudflare CNAME for `minitickets.theversehub.in` to the generated ALB DNS name. ACM provides the matching certificate. No per-visitor IAM check or origin password applies in direct mode; application login still applies.
+
+In `us-east-1`: EC2 → Load Balancers → `minitickets-dev` → **Resource map** links listeners, rules, groups and targets; Unhealthy Target Map helps narrow failures. Listeners and rules shows 80/443. Live ALB/DNS/certificate state was not checked. A domain timeout requires checking CNAME, public subnet routes and ALB ingress. A TLS warning requires checking issuance, domain match and listener certificate. Target groups probe tasks directly, outside listener/header rules.
 
 - Anchor: `infra/src/entry/alb.ts` · `createAlb`: the load balancer itself.
 - Anchor: `infra/src/entry/listener.ts` · `listener`: the HTTP :80 listener with the fixed 403 default.
@@ -130,11 +73,20 @@ Target group ARNs return only after listeners/rules attach them, avoiding ECS's 
 
 ALB bills standing time, capacity units and public IPv4 usage. The earlier roughly $0.035/hour entry estimate is a historical dev snapshot, not a current quote. An ALB understands HTTP paths/headers (layer 7); an NLB forwards network connections (layer 4). A normal API call does not assume an IAM role at the ALB.
 
-The earlier estimate broke down as about $0.0225/hour fixed, capacity-unit usage, and two IPv4 addresses at $0.005/address-hour; the whole entry layer was roughly $0.04/hour. These historical figures are preserved for comparison, not capacity planning. An all-unhealthy target group can fail open to its registered targets; see [target groups](target-groups.md). A private ALB with CloudFront VPC origins is another design to investigate; direct CloudFront-to-Fargate-task routing was not established by the old card.
+The earlier estimate broke down as about $0.0225/hour fixed, capacity-unit usage, and two IPv4 addresses at $0.005/address-hour; the whole entry layer was roughly $0.04/hour. These historical figures are preserved for comparison, not capacity planning. [AWS documents fail-open](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html): an all-unhealthy target group can route to its registered targets; see [target groups](target-groups.md). API Gateway is an alternative when its managed API features fit. A private ALB with CloudFront VPC origins is another design to investigate; direct CloudFront-to-Fargate-task routing was not established by the old card.
 
-</details>
+### Related reading
+
+- [AWS map guide](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/view-resource-map.html)
+- [Security groups](security-groups.md)
+- [TLS](tls-termination.md)
+- [CloudFront](cloudfront.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=alb#chapter=24&piece=alb).
 
 ## Where it appears in the story
 
 - [Infra story: 2. The ALB: security group, listener, rules, secret header](../infra-story.md#2-the-alb-security-group-listener-rules-secret-header)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

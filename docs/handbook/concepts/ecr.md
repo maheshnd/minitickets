@@ -2,117 +2,58 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Compute · Status: ✅ built in repository; live acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets publishes a [container image](../glossary.md#ecr), a ready-to-run app package, once under a commit tag in ECR.
+[ECR](../glossary.md#ecr) stores container images: ready-to-run packages containing an app and what it needs.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A release needs the same software in every task. MiniTickets publishes an image once, then deploys those exact bytes instead of rebuilding separately on each machine.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    G["GitHub CD publish"] -->|"gh-publish role: ECR upload + PutImage; SHA tag"| R["minitickets-dev-api / web / worker ECR"]
-    R -->|"execution role: BatchGetImage + GetDownloadUrlForLayer"| T["ECS API / web / migration"]
-    R -->|"repository policy: lambda.amazonaws.com pull"| L["worker + tickets Lambdas"]
-    P["IMMUTABLE + lifecycle policy"] -.->|"tag cannot move; deployed retention rules"| R
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class R focus
+    publish["GitHub CD publish"] -->|"publish role uploads commit-tagged images"| registry["MiniTickets ECR repositories"]
+    registry -->|"execution role permits pulls"| ecs["ECS api, web and migration"]
+    registry -->|"repository policy permits Lambda pulls"| lambda["Email and ticket Lambdas"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecr#chapter=7&piece=ecr).
+1. Publish checks whether an image already exists for the commit.
+2. Missing images are built and uploaded; existing ones are reused.
+3. Deployment selects images for running containers in ECS and triggered functions in Lambda.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant G as CD publish job
-    participant R as minitickets-dev-api ECR
-    participant D as Approved deploy
-    participant E as ECS
-    G->>R: Inspect seven-character SHA tag
-    alt Tag absent
-        G->>R: Build ARM64 image and push once
-    else Tag exists
-        R-->>G: Digest, skip rebuild
-    end
-    D->>R: Add deployed-SHA tag to same image
-    E->>R: Pull chosen SHA with execution role
-    R-->>E: Same published image
-```
+Separate API, web and worker repositories keep releases traceable. Both Lambdas share the worker image. Immutable tags stop a commit tag being changed to different bytes; deployed-image retention keeps a limited rollback history.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createRegistry` creates three private repositories: `minitickets-dev-api`, `minitickets-dev-web`, `minitickets-dev-worker`.
-2. Publish checks each seven-character SHA tag. Existing images are reused; missing ones are built for ARM64.
-3. Immutable tags cannot be moved to different bytes. Approved deploy adds `deployed-<sha>` retention tags.
-4. ECS pulls API/web images; both Lambdas pull the worker image through a separate repository policy.
+“ECR is MiniTickets' image registry. We publish API, web and worker images under immutable commit tags and reuse them during deployment. That makes releases traceable and rollback repeatable while the images remain retained. Upload permission, ECS pull permission and Lambda's repository policy are separate access checks.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** HTTPS 443 to ECR; ECS uses public IP plus internet gateway.
+- **Why publish once?** Rebuilding can change dependencies or base images even for the same source commit.
+- **Does immutability mean secure?** No. An unchanged image can still contain vulnerabilities; scanning and updates remain necessary.
+- **What if an image is missing?** New tasks cannot pull it. Inspect task errors and repository retention before choosing a release.
+- **Can every old release be restored?** Only if its image remains available and its code is compatible with today's database.
 
-**Allowed:** publish role uploads; execution role or Lambda repository policy permits pulling.
-
-**Password:** Docker receives a temporary ECR login token; no saved registry password.
-
-## 6. In our code
-
-`infra/src/registry.ts` → `createRegistry`, `createRepo`.
-
-`infra/src/image-repos.ts` → `imageServices`, `repoName`.
-
-`.github/workflows/cd.yml` → `publish`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → ECR → Private registry → Repositories → `minitickets-dev-api` → Images / Lifecycle policy / Permissions. Expect SHA tags, digests and scan results. Repeat for web/worker. Stored images not checked live.
-
-## 8. Good / Bad
-
-**Good:** Trace a running image to its commit. Reuse exact bytes on rollback.
-
-**Bad:** Retention still limits rollback history. A stored image can contain vulnerabilities.
-
-## 9. Other choices
-
-- Another registry: pick it when portability outweighs AWS integration.
-- Digest pinning: pick it when releases need the full content fingerprint.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [OIDC](cd-oidc.md) | In ← | gh-publish ECR policy | IAM → Roles → minitickets-dev-gh-publish |
-| [Task recipe](task-definition.md) | Out → | image URI + execution role | ECS → Task definitions → revision |
-| [Lambda](aws-lambda.md) | Out → | Worker repository resource policy | ECR → worker → Permissions |
-
-## 11. When it breaks
-
-Image pull fails → task stopped reason and ECR Images → restore missing release or repair pull permission.
-
-Publish denied → role policy → include manifest reads as well as upload actions.
-
-## 12. Say it in 30 seconds
-
-“ECR is our sealed image shelf. Three private repositories hold immutable SHA-tagged API, web and worker images. Publish builds missing tags once; deploy reuses those bytes. Deployed tags protect a limited rollback history. Publishing permission, ECS pulling permission and Lambda’s repository policy are different gates.”
-
-## 13. Likely follow-ups
-
-- Why does publish need `BatchGetImage`? It checks manifests before deciding to rebuild.
-- Is scanning a guarantee? No; it finds known issues under the configured policy.
-
-## 14. Remember it
-
-A tag names the sealed box; its digest fingerprints the contents.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
 
-- Anchor: `infra/src/registry.ts` · `createRepo`, `lifecyclePolicy`: two repositories, each with a lifecycle policy.
+### Configuration and security
+
+ECS pull grants include `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`. The worker repository policy separately permits `lambda.amazonaws.com` to use those pull actions for the worker/tickets functions. Current `createRegistry` creates three repositories (API, web and worker).
+
+`createRegistry` and the shared service list create `minitickets-dev-api`, `minitickets-dev-web` and `minitickets-dev-worker`. Publish checks seven-character SHA tags; approved deploy adds `deployed-<sha>` to the same bytes. ECS needs HTTPS 443 via public IP/internet gateway. Docker uses a temporary ECR login token, not a saved registry password. Publish needs `BatchGetImage` to check existing manifests before rebuilding.
+
+### Implementation and operational limits
+
+- Anchor: `infra/src/registry.ts` · `createRepo`, `lifecyclePolicy`: three repositories, each with a lifecycle policy.
 
 Each repository sets `imageTagMutability: "IMMUTABLE"`, basic `scanOnPush: true` and dev-only `forceDelete: true`. Production should not make accidental repository deletion easy. `imageServices` is the shared API/web/worker list used by creation and permission code, reducing forgotten-repository errors.
 
@@ -124,9 +65,38 @@ CI builds and scans images without publishing them; CD builds the release ARM64 
 
 [Official ECR console repositories](https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html).
 
-</details>
+### Source references
+
+`infra/src/registry.ts` → `createRegistry`, `createRepo`.
+
+`infra/src/image-repos.ts` → `imageServices`, `repoName`.
+
+`.github/workflows/cd.yml` → `publish`.
+
+### Console and troubleshooting
+
+`us-east-1` → ECR → Private registry → Repositories → `minitickets-dev-api` → Images / Lifecycle policy / Permissions. Expect SHA tags, digests and scan results. Repeat for web/worker. Stored images not checked live.
+
+Image pull fails → task stopped reason and ECR Images → restore missing release or repair pull permission.
+
+Publish denied → role policy → include manifest reads as well as upload actions.
+
+### Trade-offs and related concepts
+
+- Another registry: pick it when portability outweighs AWS integration.
+- Digest pinning: pick it when releases need the full content fingerprint.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [OIDC](cd-oidc.md) | In ← | gh-publish ECR policy | IAM → Roles → minitickets-dev-gh-publish |
+| [Task recipe](task-definition.md) | Out → | image URI + execution role | ECS → Task definitions → revision |
+| [Lambda](aws-lambda.md) | Out → | Worker repository resource policy | ECR → worker → Permissions |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ecr#chapter=7&piece=ecr).
 
 ## Where it appears in the story
 
 - [Infra story: 12. ECR](../infra-story.md#12-ecr)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

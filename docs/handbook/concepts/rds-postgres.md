@@ -2,114 +2,56 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-When MiniTickets sells seats, [Postgres](../glossary.md#rds) commits the booking, seat count and outbox together inside our private RDS vault.
+[RDS](../glossary.md#rds) runs our Postgres database while AWS maintains the database host. Postgres permanently records who booked each seat.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Two people may try to buy the last seat together. MiniTickets needs one place that can check availability and save the whole sale together, without selling that seat twice.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    A["minitickets-dev-api / migrate"] -->|"VPC local route; TLS 5432; user minitickets"| D["minitickets-dev-db Postgres 17"]
-    SG["minitickets-dev-db-sg"] -.->|"5432 from minitickets-dev-api-sg only"| D
-    N["minitickets-dev-db-subnets"] -.->|"private-1 + private-2; publiclyAccessible=false"| D
-    S["RDS-managed password secret"] -.->|"execution role GetSecretValue; DB_USER / DB_PASSWORD"| A
-    D -->|"same SQL transaction commit"| B["events + bookings + outbox rows"]
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class D focus
+    api["MiniTickets API"] -->|"SG: 5432 from api; verified TLS"| db["minitickets-dev-db"]
+    db -->|"lock event; commit together"| saved["Seat count, booking and outbox"]
+    saved -->|"commit succeeds"| answer["API confirms booking"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rds-postgres#chapter=5&piece=rds).
+1. The API starts a transaction and locks the event row.
+2. It checks seats and saves seats, booking and outgoing notice.
+3. Commit makes all changes durable together; failure rolls them back.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant A as API createBookingTx
-    participant D as minitickets-dev-db
-    A->>D: BEGIN over verified TLS :5432
-    A->>D: SELECT event FOR UPDATE
-    D-->>A: Current seats, row lock held
-    A->>D: Update seats, insert booking and outbox
-    A->>D: COMMIT
-    D-->>A: All three saved, release lock
-```
+Postgres is our final seat authority. Redis availability is only a hint. The API uses database queries such as `createBookingTx`; the migration task uses the same permitted network path to apply schema changes.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. RDS runs Postgres 17 as `minitickets-dev-db`, `db.t4g.micro`, with 20 GB encrypted gp3 storage.
-2. Its subnet group contains both private subnets; the instance itself is single-AZ.
-3. Only the API security group reaches :5432. The migration task wears that same group.
-4. ECS injects the RDS-managed username/password. Node checks the server certificate.
-5. Postgres is the final seat authority; Redis hints cannot overrule its locked transaction.
+“MiniTickets uses private RDS Postgres for booking truth. A transaction locks the event row, checks seats and saves the booking, seat count and outbox together. Competing buyers wait for that decision. AWS manages the database host, but we still own query performance, credentials, migrations and a recovery plan.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** private VPC route plus db guard allowing 5432 from minitickets-dev-api-sg.
+- **Does a row lock solve every race?** Only work that follows the same locking and validation rules is protected; constraints provide another safeguard.
+- **What if the API loses the commit response?** Retry the same booking intent so durable idempotency can resolve the outcome.
+- **Do two subnet choices mean a standby?** No. Our dev database is single-AZ.
+- **What if Redis disagrees?** The locked Postgres transaction decides whether the sale can proceed.
 
-**Allowed:** SQL login uses no IAM database authentication; execution role reads its secret first.
-
-**Password:** user `minitickets`, RDS-managed password, verified TLS.
-
-## 6. In our code
-
-`infra/src/data/postgres.ts` → `createPostgres`.
-
-`apps/api/src/config/database.ts` → `DatabaseEnvSchema`; `apps/api/src/db/client.ts` → `pool`.
-
-`apps/api/src/queries/bookings.ts` → `createBookingTx`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → RDS → Databases → `minitickets-dev-db` → Connectivity & security / Configuration / Maintenance & backups. See private endpoint, attached guards, encryption and single-AZ setting. These settings are from code; live state not checked.
-
-## 8. Good / Bad
-
-**Good:** Transactions protect seat truth. AWS handles database host maintenance.
-
-**Bad:** One AZ can fail. Dev deletion settings can discard all data.
-
-## 9. Other choices
-
-- Multi-AZ RDS: pick it when a lost AZ must fail over.
-- Aurora PostgreSQL: pick it when its scaling and availability model justify the cost.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Security groups](security-groups.md) | Guard | 5432 from minitickets-dev-api-sg | RDS → Connectivity & security → VPC security groups |
-| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | RDS → Configuration → Master credentials |
-| [Outbox](outbox.md) | In/out ↔ | Same DB transaction | RDS → Monitoring; inspect SQL inside VPC |
-
-## 11. When it breaks
-
-Timeout → guards/routes and pool → restore intended private path.
-
-Password failure → secret rotation/task age → refresh task credentials.
-
-Missing relation → migration logs → apply the release’s migration through the authorized workflow.
-
-## 12. Say it in 30 seconds
-
-“RDS is our booking vault: private Postgres 17 with verified TLS. Only the API guard reaches it, including our migration task. A transaction locks the event row and saves seats, booking and outbox together. It is single-AZ with short backups for dev; that is not a production recovery plan.”
-
-## 13. Likely follow-ups
-
-- Two subnets means two databases? No; placement choices are not a standby.
-- Why not trust Redis seats? Only the database transaction commits the sale.
-
-## 14. Remember it
-
-The vault decides who owns the seat; the noticeboard only suggests availability.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Configuration and security
+
+The instance is Postgres 17, `db.t4g.micro`, with 20 GB encrypted gp3 storage. The database guard is `minitickets-dev-db-sg`; its only database ingress is TCP 5432 from `minitickets-dev-api-sg`. `minitickets-dev-db-subnets` contains private-1 and private-2.
+
+The migration task uses `minitickets-dev-api-sg`, just like API. RDS-managed secret fields are injected into ECS as `DB_USER` / `DB_PASSWORD`; secret reading uses the execution role. SQL uses password authentication, not IAM database authentication. VPC routing, the database guard and verified TLS are all needed; having valid credentials does not bypass the network guard.
+
+### Implementation and operational limits
 
 - Anchor: `infra/src/data/postgres.ts` · `createPostgres`: the subnet group and the database instance.
 
@@ -125,9 +67,40 @@ ECS resolves the secret at startup. Rotation can leave a long-running task holdi
 
 [Official RDS encryption console check](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.html).
 
-</details>
+### Source references
+
+`infra/src/data/postgres.ts` → `createPostgres`.
+
+`apps/api/src/config/database.ts` → `DatabaseEnvSchema`; `apps/api/src/db/client.ts` → `pool`.
+
+`apps/api/src/queries/bookings.ts` → `createBookingTx`.
+
+### Console and troubleshooting
+
+`us-east-1` → RDS → Databases → `minitickets-dev-db` → Connectivity & security / Configuration / Maintenance & backups. See private endpoint, attached guards, encryption and single-AZ setting. These settings are from code; live state not checked.
+
+Timeout → guards/routes and pool → restore intended private path.
+
+Password failure → secret rotation/task age → refresh task credentials.
+
+Missing relation → migration logs → apply the release’s migration through the authorized workflow.
+
+### Trade-offs and related concepts
+
+- Multi-AZ RDS: pick it when a lost AZ must fail over.
+- Aurora PostgreSQL: pick it when its scaling and availability model justify the cost.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Security groups](security-groups.md) | Guard | 5432 from minitickets-dev-api-sg | RDS → Connectivity & security → VPC security groups |
+| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | RDS → Configuration → Master credentials |
+| [Outbox](outbox.md) | In/out ↔ | Same DB transaction | RDS → Monitoring; inspect SQL inside VPC |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rds-postgres#chapter=5&piece=rds).
 
 ## Where it appears in the story
 
 - [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

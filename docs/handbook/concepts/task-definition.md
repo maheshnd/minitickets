@@ -2,109 +2,58 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Compute · Status: ✅ built in repository; live acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Before MiniTickets starts a [task](../glossary.md#task-definition), ECS reads a numbered recipe saying which image, settings and badges to use.
+A [task definition](../glossary.md#task-definition) is a saved, numbered recipe for running a container. It describes the image, resources, settings and permissions to use.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+MiniTickets must start replacement tasks consistently. A saved recipe prevents one API copy from getting a different image or missing configuration, and lets us identify what a release intended to run.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    E["ECR api SHA image"] -->|"image URI in containerDefinitions"| D["minitickets-dev-api task definition"]
-    S["RDS / redis-url / revalidate secrets"] -.->|"execution role: secretsmanager:GetSecretValue"| D
-    R["API execution + task roles"] -.->|"executionRoleArn + taskRoleArn"| D
-    D -->|"service.taskDefinition ARN; Spot strategy"| A["api task :4000"]
-    D -->|"awslogs-group configuration"| L["/minitickets/dev/api"]
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class D focus
+    image["ECR api SHA image"] -->|"image reference"| recipe["minitickets-dev-api definition"]
+    roles["API execution + task roles"] -->|"role attachments"| recipe
+    secrets["Secrets Manager"] -->|"startup references; execution-role access"| recipe
+    recipe -->|"service selects revision and starts"| task["api task"]
+    task -->|"configured log output"| logs["/minitickets/dev/api"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=task-definition#chapter=8&piece=api-task).
+1. Save the container recipe as a revision.
+2. A service selects that revision.
+3. ECS obtains the image and allowed secrets, then starts a running copy.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant E as ECS
-    participant D as API task definition revision
-    participant S as Secrets Manager
-    participant A as API container
-    E->>D: Read image, roles, size and settings
-    E->>S: GetSecretValue with execution role
-    S-->>E: Current DB, Redis and revalidation values
-    E->>A: Start image with injected environment
-    E->>A: Node fetch localhost:4000/health
-    A-->>E: Exit 0 means healthy
-```
+API and web have separate recipes. The migration task has another, so the new image can update the database before application rollout. The service decides how many copies run and where.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createApiTask` saves family `minitickets-dev-api`; changes create a new revision.
-2. Current entry-on API and web recipes each request ARM64, 512 CPU units and 1024 MiB memory.
-3. ECS pulls the chosen SHA image and injects allowed secret values before Node starts.
-4. The service runs that revision. `minitickets-dev-migrate` has its own recipe so migration can use a new image first.
+“A task definition is MiniTickets' versioned container recipe: image, CPU, memory, ports, logs and roles. ECS resolves its secret references at startup. A service then chooses the revision and runs copies. Migrations use a separate recipe so delivery can apply schema changes before switching the applications.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** `awsvpc` gives each task its own network interface; the service chooses subnets and guards.
+- **Definition versus task?** The recipe versus one running copy; saving a recipe starts nothing.
+- **Does changing a secret update a task?** No. Existing processes retain their startup values.
+- **Why does image architecture matter?** The task's CPU type must match the built image.
+- **What if it stops before startup?** Inspect the stopped reason, image compatibility, execution-role access and secret references.
 
-**Allowed:** separate execution and task role fields.
-
-**Password:** secret references become environment values at startup.
-
-## 6. In our code
-
-`infra/src/compute/task.ts` → `createApiTask`; `infra/src/compute/web-task.ts` → `createWebTask`.
-
-`infra/src/compute/migration-task.ts` → `createMigrationTask`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → ECS → Task definitions → `minitickets-dev-api` → revision → Containers / JSON. Expect image URI, role ARNs, secret references and port 4000. Actual running revision: Clusters → `minitickets-dev` → Tasks. Not checked live.
-
-## 8. Good / Bad
-
-**Good:** Complete saved recipe. Old revisions help explain and reverse releases.
-
-**Bad:** A recipe runs nothing itself. Secret rotation does not refresh an existing task’s environment.
-
-## 9. Other choices
-
-- Separate migration recipe: pick it when schema must change before app rollout.
-- More task resources: pick them when measured CPU or memory pressure warrants it.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ECR](ecr.md) | In ← | Image URI + execution-role pull permissions | ECR → repository → Images |
-| [Roles](execution-vs-task-role.md) | Guard | executionRoleArn / taskRoleArn | IAM → Roles |
-| [Service](ecs-service.md) | Out → | Task-definition revision ARN | ECS → service → Deployments |
-
-## 11. When it breaks
-
-Stopped before startup → ECS stopped reason → inspect image architecture, execution-role access and secret references.
-
-## 12. Say it in 30 seconds
-
-“A task definition is our saved worker recipe. It pins image, CPU, memory, ports, logs and two roles. ECS resolves secret references at startup. The service chooses how many copies run and where. Migrations have a separate recipe so their new image can run before the app changes.”
-
-## 13. Likely follow-ups
-
-- Definition versus task? Recipe versus running copy.
-- Why ARM64? The recipe must match the built image’s CPU type.
-
-## 14. Remember it
-
-Changing the recipe creates a revision; the manager decides when to cook it.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Source, attachment and console view
+
+`infra/src/compute/task.ts` → `createApiTask`, `infra/src/compute/web-task.ts` → `createWebTask` and `infra/src/compute/migration-task.ts` → `createMigrationTask` create the recipes. Families include `minitickets-dev-api` and `minitickets-dev-migrate`; changes produce revisions. The service's `taskDefinition` field selects a revision ARN.
+
+The execution role supplies image pulls, startup-secret reads and logs; `taskRoleArn` supplies app runtime permissions. `awsvpc` gives each task a network interface; the service selects subnets and security groups. Secret values become process environment values before Node starts; recipe JSON stores references.
+
+In `us-east-1`: ECS → Task definitions → `minitickets-dev-api` → revision → Containers / JSON shows image URI, role ARNs, secret references and port 4000. Clusters → `minitickets-dev` → Tasks shows the actual running revision; it was not checked live. Increase resources only when measured CPU/memory pressure warrants it. Old revisions support explaining and reversing compatible releases.
 
 - Anchor: `infra/src/compute/task.ts` · `createApiTask`: the api recipe.
 - Anchor: `infra/src/compute/web-task.ts` · `createWebTask`: the web recipe.
@@ -117,9 +66,17 @@ API secrets select `username` and `password` from the RDS JSON secret; Redis URL
 
 API container health uses Node fetch, `/health`, interval 15 s, timeout 5 s, retries 3, start period 15 s. It deliberately avoids `/ready`: a brief store failure must not kill every working process. `initProcessEnabled` supports clean child-process handling for ECS Exec. Current live revision and readiness remain owner acceptance.
 
-</details>
+### Related reading
+
+- [ECR](ecr.md)
+- [Roles](execution-vs-task-role.md)
+- [Service](ecs-service.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=task-definition#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

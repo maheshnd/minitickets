@@ -2,109 +2,57 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Compute · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.2)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets asks [Fargate](../glossary.md#fargate) for a sized worker; AWS supplies and maintains its hidden host machine.
+[Fargate](../glossary.md#fargate) runs our containers while AWS maintains the machines underneath them. We still choose what runs and how it connects.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+MiniTickets needs a web app and API running all day. Fargate lets us run those apps without choosing servers, installing their operating systems or patching their hosts.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    S["minitickets-dev-api / web services"] -->|"FARGATE_SPOT strategy; one task each"| F["AWS Fargate capacity"]
-    M["minitickets-dev-migrate"] -->|"run-task launchType FARGATE; 256 CPU / 512 MiB"| F
-    F -->|"ARM64 recipe; 512 CPU / 1024 MiB per app"| T["api :4000 / web :3000 tasks"]
-    SG["minitickets-dev-api-sg / minitickets-dev-web-sg door guards"] -.->|"awsvpc interfaces; 4000 / 3000 from minitickets-dev-alb-sg"| T
-    E["ECR / Secrets / CloudWatch"] -->|"HTTPS 443 via public IP + IGW; execution role"| T
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class F focus
+    service["MiniTickets ECS services"] -->|"request running tasks"| capacity["Fargate"]
+    image["MiniTickets ECR images"] -->|"execution role permits image pull"| capacity
+    capacity -->|"start and supply resources"| tasks["api and web tasks"]
+    tasks -->|"report health"| service
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=fargate#chapter=8&piece=api-task).
+1. ECS, our container manager, asks for tasks using our recipes.
+2. Fargate supplies resources and starts the containers.
+3. ECS checks health and requests replacements when needed.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant S as API ECS service
-    participant F as FARGATE_SPOT capacity
-    participant E as ECR and Secrets Manager
-    participant T as ARM64 API task
-    S->>F: Need one task, 512 CPU units / 1024 MiB
-    F->>E: Pull image and read secrets with execution role
-    E-->>F: Image and allowed values
-    F->>T: Start container plus Service Connect proxy
-    T-->>S: Running and healthy
-    Note over S,T: Spot can be interrupted, service requests replacement
-```
+API and web run as ECS services. A separate migration task runs database changes before a release. Their networking, permissions and secrets remain our responsibility; Fargate does not make an unhealthy app healthy.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. API and web task recipes require `FARGATE`, `awsvpc` networking and ARM64 images.
-2. Current services choose cheaper `FARGATE_SPOT`; each task gets 0.5 vCPU and 1 GiB including the private-call proxy.
-3. Each task receives a network interface, a public IP for outgoing calls and its own security group.
-4. The migration job uses regular Fargate with 0.25 vCPU and 512 MiB.
+“Fargate lets MiniTickets run containers without managing host machines. ECS decides how many tasks we need, and Fargate supplies their resources. We still manage images, permissions, networking and availability. Our dev services use interruptible Spot capacity, so replacement capacity and downtime remain real concerns.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** task interface, subnet routes, public IP and door guard.
+- **What if a host disappears?** ECS requests a replacement; one running copy can leave an outage during recovery.
+- **Does Fargate secure our code?** AWS maintains hosts; we maintain images, application security and access rules.
+- **Why use Lambda too?** Lambda suits our short email and ticket jobs; ECS keeps our HTTP apps running.
+- **Can we inspect the host?** No. ECS Exec can inspect an authorized running container.
 
-**Allowed:** execution role starts the worker; task role authorizes app AWS calls.
-
-**Password:** ECS injects the task’s allowed secrets.
-
-## 6. In our code
-
-`infra/src/compute/task.ts` → `createApiTask`; `infra/src/compute/web-task.ts` → `createWebTask`.
-
-`infra/src/compute/service.ts` → `createApiService`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → ECS → Clusters → `minitickets-dev` → Tasks → task → Configuration / Networking. Expect ARM64, resource size and capacity provider `FARGATE_SPOT`. Migration shows `FARGATE`. Live values not inspected.
-
-## 8. Good / Bad
-
-**Good:** No host patching. Each task has its own network guard.
-
-**Bad:** Less host control. Spot loss plus one copy can stop service.
-
-## 9. Other choices
-
-- ECS on EC2: pick it when steady use makes packing owned machines worthwhile.
-- Lambda: pick it for short triggered work, like our email jobs.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Cluster](ecs-cluster.md) | In ← | Attached FARGATE providers | ECS → cluster → Infrastructure |
-| [Task recipe](task-definition.md) | In ← | Compatible size, ARM64, awsvpc | ECS → Task definitions |
-| [Service](ecs-service.md) | Out → | Capacity strategy + desired count | ECS → cluster → Services |
-
-## 11. When it breaks
-
-Cannot start → stopped-task reason → check valid CPU/memory pairing, ARM64 image and HTTPS route to AWS services.
-
-## 12. Say it in 30 seconds
-
-“Fargate supplies the machine behind each MiniTickets task. We manage container code, resource size, networking and roles. Today the API and web use half a vCPU and one GiB on Spot because their private-call proxies share the task. Migrations use regular Fargate. We still own availability and application security.”
-
-## 13. Likely follow-ups
-
-- Can you SSH to its host? No; API debugging uses ECS Exec inside the container.
-- Is serverless free when idle? Running tasks still cost while waiting.
-
-## 14. Remember it
-
-A hired crew removes host maintenance, not responsibility for the work.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Configuration and security
+
+API and web tasks request 512 CPU units and 1024 MiB each; their Service Connect proxies share that budget. App ingress permits TCP 4000/3000 from `minitickets-dev-alb-sg` into `minitickets-dev-api-sg` / `minitickets-dev-web-sg`. Migration uses `launchType: FARGATE`, not the service Spot strategy.
+
+Migration requests 256 CPU units (0.25 vCPU) and 512 MiB. App tasks use `FARGATE_SPOT`; API and web recipes require `FARGATE`, `awsvpc` and ARM64. Subnet routes, public IP and security groups provide reach; execution roles pull images and read allowed secrets, while task roles authorize application AWS calls. Running tasks are billed even while waiting.
+
+### Implementation and operational limits
 
 - Anchor: `infra/src/compute/task.ts` · `requiresCompatibilities: ["FARGATE"]`, `networkMode: "awsvpc"`: the api runs on Fargate.
 - Anchor: `infra/src/compute/web-task.ts` · same fields: the web app runs on Fargate.
@@ -119,9 +67,34 @@ Costs depend on region, CPU architecture, memory, duration and public IPv4. Old 
 
 [Official Fargate networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html).
 
-</details>
+### Source references
+
+`infra/src/compute/task.ts` → `createApiTask`; `infra/src/compute/web-task.ts` → `createWebTask`.
+
+`infra/src/compute/service.ts` → `createApiService`.
+
+### Console and troubleshooting
+
+`us-east-1` → ECS → Clusters → `minitickets-dev` → Tasks → task → Configuration / Networking. Expect ARM64, resource size and capacity provider `FARGATE_SPOT`. Migration shows `FARGATE`. Live values not inspected.
+
+Cannot start → stopped-task reason → check valid CPU/memory pairing, ARM64 image and HTTPS route to AWS services.
+
+### Trade-offs and related concepts
+
+- ECS on EC2: pick it when steady use makes packing owned machines worthwhile.
+- Lambda: pick it for short triggered work, like our email jobs.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Cluster](ecs-cluster.md) | In ← | Attached FARGATE providers | ECS → cluster → Infrastructure |
+| [Task recipe](task-definition.md) | In ← | Compatible size, ARM64, awsvpc | ECS → Task definitions |
+| [Service](ecs-service.md) | Out → | Capacity strategy + desired count | ECS → cluster → Services |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=fargate#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

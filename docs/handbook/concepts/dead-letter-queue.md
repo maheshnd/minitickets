@@ -3,85 +3,85 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: ✅ built in repository; live AWS acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets keeps repeatedly failed email work in a [dead-letter queue](../glossary.md#dead-letter-queue), a repair tray that a person must investigate.
+A [dead-letter queue](../glossary.md#dead-letter-queue), or DLQ, holds messages that kept failing. It gives us time to investigate and recover unfinished work.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Suppose our email provider keeps rejecting a booking email. Retrying forever would keep spending effort on the same problem. MiniTickets moves it aside so someone can repair the cause and try again.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    source["minitickets-dev-jobs"] -->|"source redrive policy; maxReceiveCount 3"| dlq["minitickets-dev-jobs-dlq"]
-    dlq -->|"SQS metric; visible count at least 1"| alarm["minitickets-dev-jobs-dlq-not-empty"]
-    alarm -->|"alarm action; topic policy allows cloudwatch.amazonaws.com from our alarm/account"| alerts["minitickets-dev-alerts SNS"]
-    owner["Owner after fixing cause"] -->|"manual Start DLQ redrive; owner IAM permissions"| dlq
-    dlq -->|"owner-started redrive destination"| source
-    allow["DLQ redrive allow policy"] -.->|"byQueue; only minitickets-dev-jobs source ARN"| dlq
-    classDef focus fill:#fff0b3,stroke:#8a5700,stroke-width:3px
-    class dlq focus
+    source["minitickets-dev-jobs"] -->|"failed receives exhaust retry budget"| dlq["minitickets-dev-jobs-dlq"]
+    dlq -->|"visible message triggers alarm"| owner["Owner investigates"]
+    owner -->|"fix cause, then approve replay"| dlq
+    dlq -->|"owner starts replay"| source
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=dead-letter-queue#chapter=24&piece=email-dlq).
+1. The worker reports failure and leaves the message undeleted.
+2. SQS moves repeatedly received failures into the DLQ.
+3. The owner traces logs, repairs the cause and explicitly replays the work.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant Q as minitickets-dev-jobs
-    participant W as minitickets-dev-worker
-    participant D as minitickets-dev-jobs-dlq
-    participant O as Owner
-    loop Three receives without deletion
-        Q->>W: SQS mapping invokes worker
-        W-->>Q: batchItemFailures, delay 10 / 40 / 120 s
-    end
-    Q->>D: SQS redrive policy moves failed message
-    O->>W: Inspect logs, repair underlying cause
-    O->>D: Manually start redrive after repair
-    D->>Q: Try the work again
-```
+Email and tickets each have a separate DLQ. The current not-empty alarm watches the email DLQ. `createJobQueues` defines the retry boundary; the worker does not send messages there. Live alarm delivery and replay checks remain pending.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. SES rejects a booking email, or the handler cannot finish it.
-2. The worker leaves that message undeleted. Three receives exhaust its retry budget.
-3. SQS moves it from `minitickets-dev-jobs` to `minitickets-dev-jobs-dlq`.
-4. The visible-count alarm watches for at least one message.
-5. The owner finds the cause, fixes it, then explicitly sends work back. Nothing automatically repairs or redrives it.
+“A DLQ is MiniTickets' repair queue for work that exhausted its retries. It preserves the failed message for investigation, rather than fixing it automatically. I follow its correlation ID, repair the cause and then have the owner replay it at a controlled rate. Replay can repeat effects, so deduplication still matters.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** SQS HTTPS on 443; no security group on the tray.
+- **Does a DLQ guarantee recovery?** No. Messages expire; someone must notice, diagnose and act in time.
+- **Should we replay immediately?** Repair the cause first, then pace replay to consumer and provider capacity.
+- **Is this Lambda's asynchronous DLQ?** No. This DLQ belongs to the SQS source queue.
+- **Can healthy work land there?** Yes. Short visibility or throttled invocations can consume receives without useful progress.
 
-**Allowed:** its redrive allow policy names only its source queue; manual redrive needs owner IAM rights.
+## 7. Advanced details
 
-**Password:** temporary AWS credentials; workers have no DLQ permission.
+<details>
+<summary>Technical reference</summary>
 
-## 6. In our code
+### Configuration and security
+
+`minitickets-dev-jobs` names `minitickets-dev-jobs-dlq` in its redrive policy with `maxReceiveCount: 3`; movement occurs when receives exceed that budget, not at a guaranteed wall-clock deadline. The worker delays failed email records by 10, 40 and 120 seconds. The DLQ allow policy uses `byQueue` and permits only the matching source ARN. Workers have no DLQ permissions.
+
+`minitickets-dev-jobs-dlq-not-empty` watches `ApproximateNumberOfMessagesVisible` in `AWS/SQS`: Maximum, 60-second period, one evaluation period, greater than zero. Missing data uses `ignore` so silence does not itself clear the last alarm state. Alarm actions use `minitickets-dev-alerts`; its policy allows `cloudwatch.amazonaws.com` only from the configured alarm/account. Notification subscription and delivery still require separate owner acceptance.
+
+Email source visibility is 60 seconds; tickets use 180 seconds. Both mappings enable `ReportBatchItemFailures`, so successful neighboring records are deleted while failures retry. A whole invocation crash/timeout is different: unfinished batch records can reappear. SQS APIs use HTTPS 443; queues have no security group or password, and owner actions use temporary AWS credentials.
+
+### Implementation and operational limits
+
+- Anchor: `infra/src/jobs/queues.ts` — `createJobQueues`; follow the numbered comments at this boundary.
+
+Sources retain messages for four days; DLQs are configured for 14 days. For standard queues, expiry still uses the original enqueue time: this is not fourteen fresh days after arrival. The DLQ's age metric measures time since movement, so do not confuse that metric with total retention. [AWS documents this distinction](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html).
+
+`minitickets-dev-tickets-dlq` is a separate repair tray, restricted to `minitickets-dev-tickets`; tickets do not have the email visible-count alarm. Both DLQs use SQS-managed encryption. A short source visibility timeout can repeat healthy work; mapping/reserved-concurrency mismatch can exhaust receives without useful execution.
+
+Use `pnpm jobs:dlq` locally. [AWS redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html) needs receive/delete/attribute permissions on the DLQ, `sqs:StartMessageMoveTask`, and send permission on the destination; encrypted queues can need extra KMS grants. Redrive should be rate-limited to consumer/provider capacity. Never treat an empty source queue as proof of customer delivery. The [failure scenario](../guides/interview-scenarios.md#dlq-failure) and deploy-day runbook §3.12 cover diagnosis. No live redrive or alarm drill is claimed; prices and deployed account state require separate checks.
+
+### Source references
 
 `infra/src/jobs/queues.ts` → `createJobQueues`.
 
 `infra/src/observability/alarm-specs.ts` → `alarmSpecs`; `apps/worker/src/batch.ts` → `handleBatch`.
 
-
-## 7. In the AWS console
+### Console and troubleshooting
 
 `us-east-1` → **SQS → Queues → minitickets-dev-jobs-dlq → Dead-letter queue redrive**. Inspect move history; **Start DLQ redrive** changes live work and is an owner step. **CloudWatch → Alarms → All alarms → minitickets-dev-jobs-dlq-not-empty** shows the watched count.
 
-## 8. Good / Bad
+- DLQ grows → worker logs by `correlationId` → repair schema, SES identity or permissions before replay.
+- No alert → alarm history and SNS subscription → confirm subscription; prove notification delivery separately.
 
-**Good:** failed work stays findable; one bad message stops consuming normal retries.
-
-**Bad:** messages still expire; replaying before repair repeats the failure.
-
-## 9. Other choices
+### Trade-offs and related concepts
 
 - Pick endless retries when the work must wait indefinitely; MiniTickets' Postgres outbox does this before SNS.
 - Pick a DLQ when a bounded retry budget needs human repair.
-
-## 10. Connected to
 
 | Neighbor | Direction | What allows it | Console check |
 | --- | --- | --- | --- |
@@ -89,39 +89,10 @@ sequenceDiagram
 | [CloudWatch](cloudwatch-logs.md) | out | Visible-count metric + alarm | CloudWatch → Alarms |
 | [Lambda](aws-lambda.md) | cause | Failed records stay undeleted | Lambda → worker → Monitor |
 
-## 11. When it breaks
-
-- DLQ grows → worker logs by `correlationId` → repair schema, SES identity or permissions before replay.
-- No alert → alarm history and SNS subscription → confirm subscription; prove notification delivery separately.
-
-## 12. Say it in 30 seconds
-
-“Our DLQ is a repair tray, not proof that work succeeded. After three unsuccessful receives, SQS moves an email there and an alarm watches it. I trace the booking through logs, repair the cause, then the owner redrives it. Deduplication still matters because replay may repeat work.”
-
-## 13. Likely follow-ups
-
-**Who moves failures?** SQS, using queue policies; the worker does not send them there.
-
-**Is this Lambda's asynchronous DLQ?** No. It belongs to the SQS source queue.
-
-## 14. Remember it
-
-The repair tray buys time to fix work; it never fixes work itself.
-
-## 15. More detail
-
-<details>
-<summary>Retention, diagnosis and replay limits</summary>
-
-- Anchor: `infra/src/jobs/queues.ts` — `createJobQueues`; follow the numbered comments at this boundary.
-
-Sources retain messages for four days; DLQs are configured for 14 days. For standard queues, expiry still uses the original enqueue time: this is not fourteen fresh days after arrival. The DLQ's age metric measures time since movement, so do not confuse that metric with total retention. [AWS documents this distinction](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html).
-
-`minitickets-dev-tickets-dlq` is a separate repair tray, restricted to `minitickets-dev-tickets`. The current visible-count alarm specifically watches the email DLQ; do not assume tickets have the same alarm. Both DLQs use SQS-managed encryption. A short source visibility timeout can repeat healthy work; mapping/reserved-concurrency mismatch can exhaust receives without useful execution. Partial-batch reporting prevents one bad record from retrying good neighbors.
-
-Use `pnpm jobs:dlq` locally. [AWS redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html) needs receive/delete/attribute permissions on the DLQ, `sqs:StartMessageMoveTask`, and send permission on the destination; encrypted queues can need extra KMS grants. Redrive should be rate-limited to consumer/provider capacity. Never treat an empty source queue as proof of customer delivery. The [failure scenario](../guides/interview-scenarios.md#dlq-failure) and deploy-day runbook §3.12 cover diagnosis. No live redrive or alarm drill is claimed; prices and deployed account state require separate checks.
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=dead-letter-queue#chapter=24&piece=email-dlq).
 
 ## Where it appears in the story
 
 - [app-story: 9c. Side path: outbox, fan-out and recoverable work](../app-story.md#9c-side-path-outbox-fan-out-and-recoverable-work)
+
+</details>

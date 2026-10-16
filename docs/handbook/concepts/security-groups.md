@@ -3,116 +3,61 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step docs: [13 security groups](../../13-infra-security-groups.md), [19 CloudFront](../../19-infra-cloudfront.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-When the MiniTickets ALB calls api, its [security group](../glossary.md#security-group) admits `minitickets-dev-alb-sg` on `4000`; other callers need their own listed rule.
+A [security group](../glossary.md#security-group) is a network guest list attached to an AWS resource. It allows connections from specified callers to specified ports.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Having a public address should not let anyone call the MiniTickets API directly. We admit the ALB, then let api reach the data stores it needs.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    visitor["Visitors"] -->|"minitickets-dev-alb-sg TCP 80 / 443 from allowedCidrs; default 0.0.0.0/0"| alb["minitickets-dev ALB"]
-    guards["Five security groups<br/>door guest lists"] -.->|"attached group; allow listed sources and ports"| alb
-    alb -->|"minitickets-dev-web-sg TCP 3000 from minitickets-dev-alb-sg"| web["web"]
-    alb -->|"minitickets-dev-api-sg TCP 4000 from minitickets-dev-alb-sg"| api["api"]
-    web -->|"minitickets-dev-api-sg TCP 14000 from minitickets-dev-web-sg; Service Connect"| api
-    api -->|"minitickets-dev-web-sg TCP 13000 from minitickets-dev-api-sg; Service Connect"| web
-    api -->|"minitickets-dev-db-sg TCP 5432 from minitickets-dev-api-sg"| db["RDS Postgres"]
-    api -->|"minitickets-dev-redis-sg TCP 6379 from minitickets-dev-api-sg"| redis["Valkey"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class guards focus
+    browser["Browser"] -->|"ALB SG: allow visitors"| alb["minitickets-dev ALB"]
+    alb -->|"web SG: 3000 from alb-sg"| web["web"]
+    alb -->|"api SG: 4000 from alb-sg"| api["api"]
+    web -->|"api SG: 14000 from web-sg"| api
+    api -->|"db SG: 5432 from api-sg"| db["RDS"]
+    api -->|"redis SG: 6379 from api-sg"| redis["Valkey"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=security-groups#chapter=24&piece=alb-sg).
+1. A new connection reaches the destination's security group.
+2. Its caller and port must match an allow rule.
+3. Replies pass automatically because the group remembers the connection.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant A as api task wearing minitickets-dev-api-sg
-    participant G as minitickets-dev-db-sg door guard
-    participant D as minitickets-dev-db
-    A->>G: New TCP connection to 5432
-    G->>D: Allow source minitickets-dev-api-sg on 5432
-    D-->>A: Reply allowed by connection state
-    Note over A,D: Database password and TLS checks still follow
-```
+Five groups guard ALB, web, api, RDS and Valkey. Source-group rules follow changing task addresses. Service Connect has separate proxy rules; database passwords remain a separate check.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. Five groups guard ALB, web, api, Postgres and Valkey.
-2. Current ALB-only mode opens `80/443` from `allowedCidrs`, default `0.0.0.0/0`.
-3. ALB reaches web `3000` and api `4000` through source-group rules.
-4. Private Service Connect calls use `14000` toward api and `13000` toward web.
-5. Only api reaches Postgres `5432` and Valkey `6379`. Replies pass automatically: this is “stateful.”
+“MiniTickets uses security groups to allow only expected network connections: visitors to the ALB, ALB to applications, and api to data stores. Rules identify caller groups rather than temporary task addresses. Replies are automatically allowed. This controls network access; it does not grant AWS permissions or authenticate application users.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** routes plus the destination guard's source/port rule.
+- **Can a security group deny one caller?** No. Its rules only allow; explicit denial needs another suitable layer.
+- **Why reference groups instead of IPs?** Replaced tasks get new addresses but retain their assigned groups.
+- **What if connections time out?** Check destination inbound rules, caller outbound rules and routes.
+- **What is the main trade-off here?** Broad outbound access is simple, but gives compromised applications more destinations.
 
-**Allowed:** AWS API calls also need IAM permission; guards do not grant it.
-
-**Password:** not checked by security groups; the database, cache or app checks it.
-
-## 6. In our code
-
-`infra/src/security.ts` → `createSecurityGroups`.
-
-`infra/src/entry/alb-public-ingress.ts` → `createAlbPublicIngress`.
-
-`infra/src/compute/service-connect.ts` → `createServiceConnect`.
-
-## 7. In the AWS console
-
-EC2 → Security Groups → filter `Project=minitickets` → group → Inbound rules / Outbound rules. Match the actual source group ID and port. ECS → task → Networking shows groups on a worker. Resource Groups & Tag Editor → Tag Editor can find tagged resources. Live rules were not checked.
-
-## 8. Good / Bad
-
-**Good:** source groups survive changing task IPs; replies need no extra return rule.
-
-**Bad:** broad outbound rules allow unwanted calls after compromise; one wide inbound rule can expose a public task.
-
-## 9. Other choices
-
-- Pick tighter outbound rules plus endpoints when destinations are controlled.
-- Pick network ACLs, subnet checkpoints, when explicit deny rules are needed.
-- Pick WAF when inspecting HTTP content rather than network connections.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ALB](alb.md) | Visitor → reception | `allowedCidrs`, TCP 80/443 | minitickets-dev-alb-sg → Inbound |
-| [Service Connect](service-connect.md) | web ↔ api | Source groups, 14000/13000 | minitickets-dev-api-sg / minitickets-dev-web-sg → Inbound |
-| [RDS](rds-postgres.md) | api → data | minitickets-dev-db-sg, TCP 5432 from minitickets-dev-api-sg | minitickets-dev-db-sg → Inbound |
-| [Valkey](elasticache-valkey.md) | api → sessions | minitickets-dev-redis-sg, TCP 6379 from minitickets-dev-api-sg | minitickets-dev-redis-sg → Inbound |
-
-## 11. When it breaks
-
-- Connection times out → destination Inbound and caller Outbound → fix port/source.
-- Preview replaces a group → check changed description → avoid an unintended replacement.
-
-## 12. Say it in 30 seconds
-
-“Our door guards list exact callers: ALB to app ports, web and api to proxy ports, api to data ports. They remember allowed connections, so replies pass automatically. That is network access only; IAM permission and passwords remain separate.”
-
-## 13. Likely follow-ups
-
-- **Can a group deny one IP?** No. Rules only allow; use a suitable deny layer.
-- **Why groups instead of task IPs?** Workers change addresses when replaced.
-
-## 14. Remember it
-
-A guard checks the caller and door number, not the application password.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
 
-- Anchor: `infra/src/security.ts` · `createSecurityGroups`: 5 groups, 5 ingress rules, 3 egress rules.
+### Implementation, exact connections and operations
+
+`infra/src/security.ts` → `createSecurityGroups` creates `minitickets-dev-alb-sg`, `minitickets-dev-web-sg`, `minitickets-dev-api-sg`, `minitickets-dev-db-sg` and `minitickets-dev-redis-sg`. Current ALB-only ingress is TCP 80/443 from `allowedCidrs`, default `0.0.0.0/0`, supplied by `infra/src/entry/alb-public-ingress.ts` → `createAlbPublicIngress`.
+
+ALB→web uses 3000 from `alb-sg`; ALB→api uses 4000 from `alb-sg`. `infra/src/compute/service-connect.ts` → `createServiceConnect` adds web→api on 14000 and api→web on 13000, each from the caller's group. API→RDS uses 5432 and API→Valkey uses 6379, both from `api-sg`. Prefixes above abbreviate the real `minitickets-dev-` group names.
+
+EC2 → Security Groups → filter `Project=minitickets` → Inbound / Outbound rules shows source IDs and ports. ECS → task → Networking shows attached groups; Tag Editor can find supported tagged resources. Live rules were not checked. Routes provide reach; IAM governs AWS calls; the database/cache/application separately authenticate credentials. Unexpected replacement in preview can come from a description change.
+
+- Anchor: `infra/src/security.ts` · `createSecurityGroups`: five groups and their ingress/egress rules.
 
 ### Complete current rule picture
 
@@ -126,9 +71,18 @@ Default subnet network ACLs remain allow-all. ACLs are stateless and require ret
 
 Missing ingress or a wrong port commonly gives ALB `Target.Timeout`. Removing `db-in-5432` would make new DB connections time out and `/ready` fail; this is a thought experiment, not a live change to perform. Read-only inspection: `aws ec2 describe-security-group-rules --filters Name=group-id,Values=<actual-group-id>`. Check api ingress includes both ALB 4000 and web proxy 14000 today.
 
-</details>
+### Related reading
+
+- [ALB](alb.md)
+- [Service Connect](service-connect.md)
+- [RDS](rds-postgres.md)
+- [Valkey](elasticache-valkey.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=security-groups#chapter=24&piece=alb-sg).
 
 ## Where it appears in the story
 
 - [Infra story: 11. Security groups](../infra-story.md#11-security-groups)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

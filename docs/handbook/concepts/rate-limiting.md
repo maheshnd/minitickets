@@ -4,177 +4,85 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built in repository; live AWS acceptance is separate
 
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets gives each caller a [token bucket](../glossary.md#token-bucket)—a small allowance that refills—before expensive login or booking work.
+Rate limiting gives a caller a small allowance of requests that refills over time. A token bucket tracks that allowance. This stops repeated requests from consuming unlimited application work.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Someone repeatedly guesses passwords or clicks Book. MiniTickets should reject excess attempts before doing expensive password checks or database transactions.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    login["auth.login / trusted IP"] -->|"enforceRateLimit login policy"| limiter["MiniTickets token bucket"]
-    booking["bookings.create / session user"] -->|"enforceRateLimit booking policy"| limiter
-    limiter -->|"minitickets-dev-redis-sg TCP 6379 from minitickets-dev-api-sg; REDIS_URL TLS"| redis["Valkey TAKE_TOKEN Lua"]
-    redis -->|"allowed token enables service call"| work["Password hash / booking transaction"]
-    guard["trustProxyHops / verified sid"] -.->|"trusted identity selects bucket"| limiter
-    classDef focus fill:#fff1a8,stroke:#8a6100,stroke-width:3px
-    class limiter focus
+    L["MiniTickets login"] -->|"trusted client IP chooses bucket"| A["enforceRateLimit"]
+    B["MiniTickets booking"] -->|"verified user chooses bucket"| A
+    A -->|"atomically refill and spend"| R["Shared Redis token bucket"]
+    R -->|"token available: continue"| W["Password check or booking"]
+    R -->|"empty: 429 and Retry-After"| C["Caller waits"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rate-limiting#chapter=24&piece=api-task).
+1. Choose the caller’s bucket using a trustworthy identity.
+2. Refill its allowance and spend one token as one operation.
+3. Continue only when permitted; otherwise tell the caller when to retry.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant B as Booking browser
-    participant A as enforceRateLimit
-    participant R as Valkey TAKE_TOKEN
-    B->>A: POST booking, verified user identity
-    A->>R: Refill and debit user's shared bucket
-    R-->>A: No token, retry after N seconds
-    A-->>B: 429 with Retry-After: N
-    Note over A: No booking SQL starts
-```
+`enforceRateLimit` chooses separate login and booking policies. One Redis script makes all API tasks share the same allowance. An empty bucket returns **429**. If Redis is unavailable, these operations return **503** rather than starting expensive work.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. Login uses the trusted client IP; booking uses the verified session’s user ID.
-2. `enforceRateLimit` picks login **20 tokens / 1 new token per 3 seconds**, or booking **10 / 1 per second**.
-3. One Redis Lua script reads Redis time, refills and spends a token as one operation. All API tasks share it.
-4. Empty bucket: **429**, with `Retry-After`. Redis unavailable: **503**, so expensive work stays blocked.
+“MiniTickets uses token buckets: callers can make a short burst, then their allowance refills steadily. Login counts a trusted client IP; booking counts an authenticated user. Redis updates each bucket atomically across API instances. Excess requests receive 429 with a retry time. If Redis fails, we block these operations, accepting lower availability to preserve protection.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** API → Valkey :6379; minitickets-dev-redis-sg admits minitickets-dev-api-sg.
+- **Why not use process memory?** Different API tasks would each grant a separate allowance.
+- **Can a caller forge their IP?** Incorrect proxy trust can permit that; only the known boundary should be trusted.
+- **Are shared networks treated fairly?** Login users behind one public IP share an allowance, which is a trade-off.
+- **Is this a durable financial quota?** No. Eviction can reset Redis state; strict accounting needs durable storage.
 
-**Allowed:** verified user or trusted IP chooses the bucket; Redis executes one atomic script.
-
-**Password:** `REDIS_URL` supplies the Valkey token over TLS.
-
-## 6. In our code
-
-`apps/api/src/services/rate-limits.ts` → `RATE_POLICIES`, `enforceRateLimit`
-
-`apps/api/src/queries/rate-limits.ts` → `takeToken`, `TAKE_TOKEN`
-
-`apps/api/src/config/trust-proxy.ts` → `trustProxyHops`
-
-## 7. In the AWS console
-
-ElastiCache → Valkey caches → `minitickets-dev-valkey` → Monitoring: memory/errors. EC2 → Load Balancers → `minitickets-dev` → Resource map: public request path. Bucket contents need an authorized Redis client.
-
-## 8. Good / Bad
-
-**Good:** limits work across tasks; allows a small normal burst.
-
-**Bad:** shared-IP visitors share login allowance; Redis loss blocks these operations.
-
-## 9. Other choices
-
-- Pick fixed windows when simple counters and rough fairness are enough.
-- Pick an edge limiter when attacks should be stopped before reaching the API.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ALB](alb.md) | → client identity | trusted proxy boundary: 1 hop now | EC2 → ALB → Resource map |
-| [Sessions](sessions-vs-jwt.md) | → booking identity | verified `sid` | ElastiCache → cache |
-| [Valkey](elasticache-valkey.md) | → shared debit | minitickets-dev-redis-sg :6379 from minitickets-dev-api-sg | ElastiCache → cache |
-
-## 11. When it breaks
-
-- Everyone shares an IP quota → proxy settings → use 1 trusted hop for current ALB-only mode.
-- Login/booking 503 → Redis connection logs → restore Valkey reach/password.
-- Unexpectedly generous quota → evicted keys → inspect memory policy; this is not durable accounting.
-
-## 12. Say it in 30 seconds
-
-“MiniTickets permits a short burst, then refills an allowance steadily. Login counts a trusted IP; booking counts the logged-in user. Redis runs refill and debit atomically so multiple API tasks share the same limit. We answer 429 with a retry time. If Redis fails, these expensive operations stop with 503.”
-
-## 13. Likely follow-ups
-
-- **Can a caller forge their IP?** Wrong proxy trust can allow that; MiniTickets trusts only its known boundary.
-- **Is this a hard financial quota?** No. Redis eviction can reset a bucket.
-
-## 14. Remember it
-
-The turnstile spends one shared token before the clerk does expensive work.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Source notes, earlier detail and code anchors</summary>
+<summary>Technical reference</summary>
 
+### Policy and atomic update
 
+A [token bucket](../glossary.md#token-bucket) permits bursts while limiting sustained requests. `apps/api/src/services/rate-limits.ts` → `RATE_POLICIES`, `enforceRateLimit` sets:
 
-A token bucket admits a bounded burst and refills over time. Atomic Redis Lua shares policy across API instances; trusted client IP limits login and authenticated user identity limits booking; rejection is 429 with Retry-After.
+- Login: **20 tokens**, refilling **1 per 3 seconds**, keyed by trusted client IP.
+- Booking: **10 tokens**, refilling **1 per second**, keyed by verified session user ID.
 
-### Earlier card: 2. Real-life comparison
+`apps/api/src/queries/rate-limits.ts` → `takeToken`, `TAKE_TOKEN` stores buckets and uses Redis time to refill/debit in one atomic Lua operation. Empty returns 429 with `Retry-After`; Redis failure returns 503 before password-hash or booking SQL work. Unauthenticated failures cannot safely share a supposed authenticated-user key.
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+`apps/api/src/config/trust-proxy.ts` → `trustProxyHops` trusts only configured hops/CIDRs. Current ALB-only mode uses **1 trusted hop**. A forwarded header from an untrusted boundary must not choose another caller’s allowance. [ALB](alb.md) supplies that boundary, [sessions](sessions-vs-jwt.md) supply booking identity and [Valkey](elasticache-valkey.md) shares the debit.
 
-### Earlier card: 3. Picture it
+### Access and operations
 
+API → Valkey uses TCP 6379; `minitickets-dev-redis-sg` admits `minitickets-dev-api-sg`. `REDIS_URL` provides the token over TLS. Verified identity selects a bucket; the Redis script enforces its update.
 
-### Earlier card: 4. Where in our code
+Console: ElastiCache → Valkey caches → `minitickets-dev-valkey` → Monitoring for memory/errors. EC2 → Load Balancers → `minitickets-dev` → Resource map checks request path. Bucket contents require an authorized Redis client. Everyone sharing a quota suggests proxy identity settings; login/booking 503 suggests Redis reach/password failure. Unexpectedly generous quotas suggest evicted keys.
+
+Redis `allkeys-lru` can evict quotas; this is protection rather than durable accounting. Fixed windows are simpler but permit boundary bursts. Sliding windows cost more state. Edge limits stop abusive traffic before the API; strict financial quotas need a durable ledger.
+
+### Evidence and growth
+
+`pnpm demo:sale` exercises shared quotas, spoof resistance and the inventory gate locally. This rewrite claims no fresh execution or live AWS/CI acceptance. At 10x, inspect key cardinality, expiry and fairness; at 100x, consider gateway protection, per-tenant budgets and hot-key partitioning.
+
+Read the [current system](../00-big-picture.md), [rate-limit scenario](../guides/interview-scenarios.md#rate-limits) and [sale-day tour](../guides/infra-explorer.html?tour=sale-day).
+
+### Code anchors
 
 - Anchor: `apps/api/src/queries/rate-limits.ts` — `TAKE_TOKEN`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/services/rate-limits.ts` — `RATE_POLICIES`; follow the numbered comments at this boundary.
 
-`apps/api/src/queries/rate-limits.ts` stores buckets; `services/rate-limits.ts` chooses policy. `config/trust-proxy.ts` only trusts configured hops/CIDRs. `pnpm demo:sale` verifies shared quotas, spoof resistance and the inventory gate. Redis failure is an explicit failure policy, not a durable quota guarantee.
-
-### Earlier card: 5. See it yourself
-
-Run `pnpm demo:sale` and inspect the asserted outcome described above.
-
-Failure thought experiment: Should auth failures all share one user key? No; unauthenticated identity needs a trusted edge/IP policy. Do not change a live stack to demonstrate it.
-
-### Earlier card: 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#rate-limits) and [explorer tour](../guides/infra-explorer.html?tour=sale-day).
-
-### Earlier card: 7. Our settings and WHY
-
-A token bucket admits a bounded burst and refills over time. Atomic Redis Lua shares policy across API instances; trusted client IP limits login and authenticated user identity limits booking; rejection is 429 with Retry-After. One instance’s memory cannot enforce a shared quota.
-
-### Earlier card: 8. Trade-offs
-
-Fixed windows permit boundary bursts; sliding windows cost more state. IP limits affect NAT users. Redis allkeys-lru can evict quotas; strict financial quotas need durable accounting.
-
-### Earlier card: 9. Alternatives and when to choose them
-
-10x: key cardinality/TTL and fairness. 100x: gateway protections, per-tenant budgets and hot-key partitioning.
-
-### Earlier card: 10. What breaks and how we notice
-
-Should auth failures all share one user key? No; unauthenticated identity needs a trusted edge/IP policy.
-
-### Earlier card: 13. Interview answers at 3 levels
-
-- **Simple:** A token bucket admits a bounded burst and refills over time.
-- **Senior:** Token buckets permit a burst then refill at a steady rate. Login limits a trustworthy client IP; booking limits an authenticated user. Redis Lua makes refill and debit atomic across instances. Return 429 and Retry-After. A spoofable forwarded header must not choose someone else’s bucket.
-- **Lead:** 10x: key cardinality/TTL and fairness. 100x: gateway protections, per-tenant budgets and hot-key partitioning.
-
-### Earlier card: 14. Follow-up questions with answers
-
-Should auth failures all share one user key? No; unauthenticated identity needs a trusted edge/IP policy.
-
-What makes a bucket update atomic across API tasks? **Redis Lua operation.**
-
-### Earlier card: 15. Say it in 30 seconds
-
-Token buckets permit a burst then refill at a steady rate. Login limits a trustworthy client IP; booking limits an authenticated user. Redis Lua makes refill and debit atomic across instances. Return 429 and Retry-After. A spoofable forwarded header must not choose someone else’s bucket.
-
-### Earlier card: 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: key cardinality/TTL and fairness. 100x: gateway protections, per-tenant budgets and hot-key partitioning.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rate-limiting#chapter=24&piece=api-task).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

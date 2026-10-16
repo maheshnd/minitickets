@@ -2,136 +2,89 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: Reliability · Status: 🟡 partial
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets overlaps old and new workers during a [rolling deployment](../glossary.md#rolling-update); both versions must understand the same data.
+A rolling deployment replaces old application copies gradually while new ones start. Old and new versions overlap, so both must understand the shared data.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A MiniTickets release should avoid dropping every visitor’s request at once. Starting replacements before retiring old copies reduces that risk, but cannot guarantee uninterrupted service.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    G["Approved CD deploy job"] -->|"new SHA; Phase A keeps app image current"| M["minitickets-dev-migrate task"]
-    M -->|"exitCode=0 permits Phase B"| S["API / web ECS services roll"]
-    S -->|"new task definition; startup checks"| N["new API :4000 / web :3000"]
-    S -->|"deregister; 30-second delay"| O["old tasks drain"]
-    T["API / web target groups"] -.->|"HTTP 200 checks; 60-second ECS grace"| N
-    C["deploymentCircuitBreaker rollback=true"] -.->|"failed deployment restores prior completed revision"| S
-    G -->|"write image-tag + deployed-commit records"| R["SSM /minitickets/dev release records"]
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class S focus
+    C["Approved MiniTickets CD"] -->|"Phase A: run new-image migration"| M["Migration task"]
+    M -->|"success permits Phase B"| S["API and web ECS services"]
+    S -->|"start new copies; check readiness"| N["New tasks"]
+    N -->|"healthy targets permit replacement"| O["Old tasks drain"]
+    N -->|"failed startup triggers circuit breaker"| R["Previous completed revision"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=zero-downtime-deploys#chapter=13&piece=ssm).
+1. Publish images, then run the dedicated migration before changing application versions.
+2. Start new tasks and check them before retiring old ones.
+3. Drain old requests; verify the actual versions and application responses.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant C as Approved CD
-    participant M as Migration task using new SHA
-    participant S as ECS API and web services
-    participant T as ALB target groups
-    C->>M: Phase A, run dedicated migration
-    M-->>C: Exit 0
-    C->>S: Phase B, roll new image recipes
-    S->>T: Register new task IPs
-    T-->>S: Healthy targets
-    S->>T: Deregister old IPs, allow 30-second drain
-    S-->>C: Stable, verify image and HTTP smoke tests
-```
+CD separates migration and rollout into two phases. ECS has startup rollback protection; application rollback selects an existing image while keeping current infrastructure code. Status remains partial: a single interruptible task and incompatible database changes prevent a zero-downtime promise. Live rollout acceptance remains pending.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. Publish saves immutable images first; approved deploy checks that its infrastructure run is current.
-2. Phase A updates the migration recipe to the new SHA while apps retain current images.
-3. A successful migration permits Phase B: update release record and roll API/web/Lambda versions.
-4. New targets must pass checks; old targets drain for 30 seconds before normal retirement.
-5. Startup failure can trigger ECS rollback. An application rollback selects an existing image tag using current infrastructure code.
+“MiniTickets publishes images, runs the new-image migration, then rolls compatible application copies. New targets must become healthy before old ones drain, and an ECS circuit breaker can restore the previous completed revision after failed startup. This reduces release risk, but image rollback cannot undo destructive database changes. Compatibility windows and enough reliable capacity are necessary for stronger availability guarantees.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** unchanged task/load-balancer/store paths must work for both versions.
+- **Why not migrate on every API startup?** Multiple copies could race migrations; one dedicated task orders that work.
+- **What if migration fails?** Application rollout stops, but any partial SQL effects still need investigation.
+- **Does healthy mean correct?** No. CD also checks expected versions and HTTP behavior.
+- **How do schemas stay compatible?** Expand first, migrate data, then remove old fields after old versions retire.
 
-**Allowed:** approved deploy role, constrained PassRole and runtime roles.
-
-**Password:** each new task resolves current secrets; compatibility still matters.
-
-## 6. In our code
-
-`.github/workflows/cd.yml` → deploy Phase A / Phase B.
-
-`infra/src/compute/migration-task.ts` → `createMigrationTask`.
-
-`infra/src/entry/target-groups.ts` → `createTargetGroups`.
-
-
-## 7. In the AWS console
-
-GitHub → Actions → CD → run → deploy. `us-east-1` → ECS → Clusters → `minitickets-dev` → service → Deployments / Events. EC2 → Target groups → target → Targets shows healthy/draining. ALB Resource map pictures routing. Live rollout was not demonstrated.
-
-## 8. Good / Bad
-
-**Good:** New-image migration runs once before rollout. Circuit breaker limits repeated failed starts.
-
-**Bad:** One Spot task cannot promise no outage. Incompatible SQL cannot be undone by an image tag.
-
-## 9. Other choices
-
-- Blue/green: pick it when a fleet switch and fast traffic reversal justify overlap cost.
-- Expand/contract: pick it when schema changes must support old and new workers.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [ECR](ecr.md) | In ← | Existing immutable release tag | ECR → Images |
-| [Service](ecs-service.md) | Out → | New taskDefinition; circuit breaker | ECS → service → Deployments |
-| [RDS](rds-postgres.md) | In/out ↔ | Migration task minitickets-dev-api-sg + DB secret | RDS → Monitoring; CloudWatch → migrate stream |
-
-## 11. When it breaks
-
-Migration fails → migrate log stream → fix schema/code; app rollout stops.
-
-New tasks never healthy → stopped reason/target checks → repair or let circuit breaker restore prior revision.
-
-Rollback breaks SQL → schema compatibility → prefer a forward fix.
-
-## 12. Say it in 30 seconds
-
-“We publish once, migrate from the new image, then roll compatible app tasks. Healthy new targets replace old ones, with 30-second draining and a startup circuit breaker. Manual image rollback keeps current infrastructure code. This reduces release risk, but one Spot copy and destructive schema changes prevent a zero-downtime guarantee.”
-
-## 13. Likely follow-ups
-
-- Why not migrate on API startup? Multiple workers could race migrations.
-- Does stable mean correct? No; CD also checks expected versions and HTTP behavior.
-
-## 14. Remember it
-
-The new shift must read yesterday’s ledger before the old shift leaves.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Scope, deployment controls and health
+
+[Rolling updates](../glossary.md#rolling-update) are built; zero-downtime service-level guarantees and complete expand/contract backfill orchestration are not demonstrated. Status remains **🟡 partial**. Old/new versions need compatible database schemas, queue messages, secrets and cache keys. One Spot task cannot guarantee uninterrupted capacity.
+
+`.github/workflows/cd.yml` publishes immutable images before approved deployment. Its newest-run guard prevents old/superseded infrastructure application. Phase A changes `infra/src/compute/migration-task.ts` → `createMigrationTask` to the new API SHA while application images retain their current tag. The dedicated migration uses regular Fargate, API guard and database secret. Only exit code 0 permits Phase B: update release record and roll API/web/Lambda versions. Runtime routes, security rules and secrets must work for overlapping versions; approved deploy role/PassRole and runtime roles supply permissions.
+
+`infra/src/compute/service.ts` and `web-service.ts` enable `deploymentCircuitBreaker` with rollback. No explicit deployment minimum/maximum percentages are set; ECS defaults apply. `infra/src/entry/target-groups.ts` → `createTargetGroups` uses IP targets:
+
+- API `/health` on 4000; web `/` on 3000.
+- Check interval **15 s**, timeout **5 s**, healthy threshold **2**, unhealthy **3**.
+- ECS health grace **60 s**; deregistration delay **30 s**.
+
+New target registration follows AWS health rules; “two checks” is not a universal initial-registration delay. Draining allows in-flight work to finish; normal retirement and Spot interruption need not have identical signal order.
+
+### State, rollback and verification
+
+Committed `infra/Pulumi.dev.yaml` defines environment shape. SSM `/minitickets/dev/image-tag` records the release; `/minitickets/dev/deployed-commit` guards infrastructure history. Manual `image_tag` chooses already-published bytes while current main infrastructure remains. `allow_older_infra` deliberately permits infrastructure rollback; it is separate from application rollback. The deployed-commit record may be written after a started apply even when later acceptance fails, so it is not proof of passed smoke tests.
+
+CD checks stable services, actual task/image versions, worker/tickets Lambda images and queue mappings, then HTTP behavior. New tasks resolve current secrets. Startup failure can restore the prior completed ECS revision, but image rollback cannot reverse destructive SQL. Prefer a forward fix when schema compatibility is broken.
+
+### Operations and alternatives
+
+GitHub → Actions → CD → run → deploy. `us-east-1` → ECS → Clusters → `minitickets-dev` → service → Deployments / Events. EC2 → Target groups → Targets shows healthy/draining; ALB Resource map shows routing. Migration failures call for the migrate log stream; unhealthy startup calls for stopped reasons/target checks. Live rollout has not been demonstrated here.
+
+Large resumable backfills belong in bounded checkpointed jobs, not API startup. Migration partial effects depend on transaction behavior; `CREATE INDEX CONCURRENTLY` cannot run in a normal transaction block, and long schema locks can stall traffic. Blue/green supports fleet switching/traffic reversal at overlap cost. Stronger practice would rehearse rollback/restore, inspect locks and automate compatibility/backfill checks.
+
+[ECR](ecr.md) supplies immutable tags; [ECS service](ecs-service.md) runs replacements; [RDS](rds-postgres.md) hosts migrations through API guard/secret. Check ECR Images, ECS Deployments, RDS Monitoring and CloudWatch migrate streams respectively.
+
+### Code anchors
 
 - Anchor: `infra/src/compute/service.ts` — `module configuration`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/compute/web-service.ts` — `module configuration`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/entry/target-groups.ts` — `shared`; follow the numbered comments at this boundary.
 
-Status stays 🟡 partial: rolling delivery is built; a zero-downtime service-level guarantee and full expand/contract backfill orchestration are not demonstrated. Old/new workers can overlap, so DB schema, queue messages, secrets and cache keys need compatibility windows.
-
-Both services enable a deployment circuit breaker with rollback. No explicit deployment minimum/maximum percentages are set; ECS rolling defaults apply. ALB target groups use IP targets, API `/health:4000`, web `/:3000`, 15-second intervals, 5-second timeout, healthy threshold 2 and unhealthy threshold 3. Newly registered target behavior follows AWS rules; “two checks” is not a universal initial-registration delay. ECS ignores failed ALB health during the first 60 seconds. A 30-second deregistration delay lets in-flight work drain; normal task retirement and Spot interruption must not be assumed to have identical signal order.
-
-The migration uses its own recipe and new API image, regular Fargate, DB secret and API guard, before API/web switch tags. A failure prevents Phase B; any partial SQL effects still depend on migration transaction behavior. Large resumable backfills belong in bounded, checkpointed jobs, not each API startup. `CREATE INDEX CONCURRENTLY` cannot run inside a normal transaction block; long table/schema locks can stall traffic.
-
-Committed `infra/Pulumi.dev.yaml` defines shape. SSM `/minitickets/dev/image-tag` records release image; `/minitickets/dev/deployed-commit` guards infrastructure history. Manual `image_tag` chooses already-published bytes; current main infrastructure code remains. `allow_older_infra` is a distinct deliberate infrastructure rollback, not a normal app rollback. The deployed-commit record can be written after a started apply even when later acceptance fails: it is a safety boundary, not proof all smoke tests passed.
-
-CD verifies stable services, actual task/image versions, worker/tickets Lambda image and queue mappings, then HTTP checks. Stronger practice would rehearse rollback/restore, inspect locks and automate compatibility/backfill checks. Application rollback never promises destructive migrations are reversible.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=zero-downtime-deploys#chapter=13&piece=ssm).
 
 ## Where it appears in the story
 
 - [app-story: 16b. Publish, approval and stale-run safety](../app-story.md#16b-publish-approval-and-stale-run-safety)
+
+</details>

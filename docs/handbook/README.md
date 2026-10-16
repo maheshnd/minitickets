@@ -45,10 +45,10 @@ flowchart LR
 ## How to use it
 
 1. Start with the [concept learning path](learning-path.md); use the [concept map](concept-map.md) to look up a topic.
-2. Read the Batch 1 card’s two pictures and numbered flow. Folded notes preserve useful detail. Batch 2 cards retain the earlier format.
+2. Read the Batch 1 card’s seven sections: one diagram, a numbered flow, an interview answer and follow-up questions. Open Advanced details for configuration and troubleshooting. Batch 2 cards retain the earlier format.
 3. Open the code at the anchor (search for `@concept: <slug>`). Read the step-wise comments there.
 4. Do "See it yourself": run the command or test, then break it on purpose.
-5. Say the 30-second answer aloud, then try its two follow-up questions.
+5. Say the interview-ready answer aloud, then try its three to five follow-up questions.
 
 ## Reading paths
 
@@ -71,7 +71,7 @@ Files that are not written yet are shown without a link and with their phase.
 1. 10 min: [00-big-picture.md](00-big-picture.md), sections 2 and 3 (one request, one login).
 2. 15 min: [aws-foundations.md](aws-foundations.md), chapter 3 (Reach / Allowed / Password) and
    chapter 8 (the debugging table).
-3. 25 min: "Say it in 30 seconds" of every ✅ card in the areas the role cares about.
+3. 25 min: "Interview-ready answer" in Batch 1 cards ("Say it in 30 seconds" in older cards) in the areas the role cares about.
 4. 10 min: `interview-drills.md` (Phase 5) for that round.
 
 **System design round**
@@ -142,8 +142,22 @@ never change behaviour.
 
 One concept can have anchors in several files.
 
-**Card format.** Every card (`concepts/<slug>.md`) and every story chapter uses these 16 headings,
-in this order. A heading is left out only when it truly does not apply.
+**Batch 1 card format.** The 36 interview cards marked in the learning path use these seven headings:
+
+1. What is it?
+2. Why do we need it?
+3. How does it work? (one simple Mermaid diagram, then numbered steps)
+4. How do we use it in MiniTickets?
+5. Interview-ready answer
+6. Important follow-up questions (three to five, with short answers)
+7. Advanced details (closed `<details>` reference section)
+
+Sections 1–6 have at most 350 words, excluding the diagram. Keep configuration, permissions, Console
+paths, CLI commands, source anchors, related links and story placement in Advanced details. History
+and status remain machine-readable. The checker enforces this format for Batch 1; Batch 2 is next.
+
+**Earlier format.** The 116 Batch 2 cards and earlier story chapters retain these headings,
+omitting a heading only when it truly does not apply:
 
 1. In one line
 2. Real-life comparison
@@ -162,8 +176,8 @@ in this order. A heading is left out only when it truly does not apply.
 15. Say it in 30 seconds
 16. Status (+ "to make it production-grade" if partial)
 
-In a card, heading 4 is written exactly `## 4. Where in our code`, and each anchor is listed on its
-own line in this form, which the check script reads:
+Earlier cards use `## 4. Where in our code`; Batch 1 keeps the anchors in Advanced details.
+Each anchor is listed on its own line in this form, which the check script reads in either format:
 
 ```markdown
 - Anchor: `apps/api/src/server.ts` · `shutdown`: stops accepting requests, then closes the pools.
@@ -188,7 +202,10 @@ with a clear message when:
 8. guides are out of place or out of date: a `*-story.md` other than the two stories sits in the
    handbook root (guides belong in `guides/`), a guide is not linked from this README, a guide has a
    broken relative link, or the [explorer](guides/infra-explorer.html) names a code file or symbol
-   that does not exist, or a chapter title that differs from the build-along guide.
+   that does not exist, or a chapter title that differs from the build-along guide;
+9. a Batch 1 card breaks the seven-section format, exceeds 350 main words, has anything other than
+   one small labeled flowchart, omits numbered flow steps or three to five answered follow-ups,
+   or loses its folded story/explorer links; a card is missing its learning-path answer goal.
 
 ## Guides: `guides/`
 

@@ -2,130 +2,84 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: DevOps & CI/CD · Status: ✅ built in repository; live AWS acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets exchanges a signed GitHub [OIDC](../glossary.md#oidc) identity for a short-lived AWS badge instead of saving AWS access keys.
+OIDC lets GitHub prove which job is running using a signed identity. AWS exchanges an accepted identity for temporary credentials instead of requiring stored access keys.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+MiniTickets must upload release images and deploy them. Long-lived AWS keys in GitHub would create a lasting secret to rotate and protect; temporary job credentials reduce that exposure.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    G["GitHub CD publish / deploy job"] -->|"id-token:write; aud=sts.amazonaws.com"| S["AWS STS identity exchange"]
-    T["Exact repo-ID subject / environment:dev trust"] -.->|"sts:AssumeRoleWithWebIdentity conditions"| S
-    S -->|"main subject accepted"| P["minitickets-dev-gh-publish"]
-    S -->|"environment:dev subject accepted"| D["minitickets-dev-gh-deploy"]
-    P -->|"ECR upload + PutImage on three repos"| E["api / web / worker ECR"]
-    D -->|"scoped infrastructure policies + PassRole"| A["Approved dev deployment"]
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class S focus
+    G["MiniTickets GitHub CD job"] -->|"present signed job identity"| S["AWS STS"]
+    T["Role trust policy"] -->|"allow only exact accepted job identity"| S
+    S -->|"issue temporary publish or deploy role credentials"| R["CD job with AWS role"]
+    R -->|"permission policy allows image upload"| E["MiniTickets ECR"]
+    R -->|"separate deploy permission policy"| D["Approved dev deployment"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cd-oidc#chapter=24&piece=iam).
+1. GitHub issues a signed identity for the job.
+2. AWS checks the role’s trust rules before issuing temporary credentials.
+3. The role’s permissions limit what that job can do.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant G as GitHub CD publish
-    participant S as AWS STS
-    participant R as gh-publish trust policy
-    participant E as ECR
-    G->>S: Signed GitHub token, AssumeRoleWithWebIdentity
-    S->>R: Check issuer, audience and exact immutable main subject
-    R-->>S: Allowed identity
-    S-->>G: Temporary role credentials
-    G->>E: Signed manifest read and image upload
-    E-->>G: Allowed only by publish permission policy
-```
+Publish and deploy have separate roles. Publish trusts this repository’s main identity; deploy trusts its protected `dev` environment identity. `createCicd` defines those boundaries. GitHub’s environment protection supplies approval rules; live protections and AWS acceptance still need checking.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createCicd` registers GitHub’s identity provider for audience `sts.amazonaws.com`.
-2. Publish trust requires `repo:maheshnd@63289193/minitickets@1412723955:ref:refs/heads/main`.
-3. Deploy trust requires the same repository prefix plus `:environment:dev`; GitHub environment protection supplies approval rules.
-4. STS gives temporary credentials. Publish can access three image repositories; deploy has a separate infrastructure policy.
-5. Role trust answers who; permissions answer what. Neither grants a network route.
+“MiniTickets uses GitHub’s signed job identity to obtain temporary AWS credentials. Trust rules decide which repository and job context may obtain a role; permission rules decide what that role can do. We separate publishing from deployment and protect the deployment environment. OIDC removes stored AWS access keys, but strong trust conditions, restricted permissions and approval controls still matter.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** runner HTTPS to GitHub identity, STS and AWS APIs.
+- **Why separate trust and permissions?** Knowing who a job is does not decide which resources it may change.
+- **Why use immutable repository IDs?** A reused or transferred repository name should not silently gain trust.
+- **Does environment trust enforce main?** No. Environment branch/reviewer protection must constrain that separately.
+- **What if role assumption works but an action fails?** Check the permission policy for that action and resource.
 
-**Allowed:** exact trust conditions, then each role’s permission policy.
-
-**Password:** no long-lived AWS keys; temporary credentials still need protection.
-
-## 6. In our code
-
-`infra/src/cicd.ts` → `createCicd`.
-
-`infra/src/publish-policy.ts` → `publishPolicyDocument`.
-
-`.github/workflows/cd.yml` → Configure AWS credentials steps.
-
-
-## 7. In the AWS console
-
-`us-east-1` console session → IAM → Identity providers → `token.actions.githubusercontent.com`; IAM → Roles → `minitickets-dev-gh-publish` or `minitickets-dev-gh-deploy` → Trust relationships / Permissions. GitHub → Settings → Environments → dev holds approval protection. Live protections were not inspected.
-
-## 8. Good / Bad
-
-**Good:** No stored AWS access keys. Separate badges limit publishing versus deploying.
-
-**Bad:** A bad trust condition can admit the wrong job. Broad deployment rights still deserve review.
-
-## 9. Other choices
-
-- Separate AWS accounts: pick them when environments need stronger blast boundaries.
-- Workload federation: pick it for other systems that can present trusted signed identities.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [CI](ci-pipeline.md) | In ← | Successful main-push CI; CD conditions | GitHub → Actions → CI / CD |
-| [ECR](ecr.md) | Out → | Publish role ECR actions | IAM → gh-publish → Permissions |
-| [Rolling deploy](zero-downtime-deploys.md) | Out → | Dev trust + deploy policy + PassRole | IAM → gh-deploy; GitHub → dev environment |
-
-## 11. When it breaks
-
-Cannot assume role → Trust relationships → compare exact token subject and audience.
-
-Assumed role, action denied → Permissions → add only the required action/resource through reviewed code.
-
-## 12. Say it in 30 seconds
-
-“GitHub presents a signed identity to STS. Our trust policies accept only this repository’s immutable identity on main for publish, or its dev environment for deploy. STS returns temporary credentials. A separate permission policy then limits what that badge can do. OIDC solves identity; it does not make every AWS action allowed.”
-
-## 13. Likely follow-ups
-
-- Why two subjects? An environment job’s identity names its environment, not its branch.
-- Does id-token write modify the repo? No; it permits requesting the signed identity token.
-
-## 14. Remember it
-
-Trust checks who wears the badge; permissions check which doors it opens.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Provider and exact trust conditions
+
+[OIDC](../glossary.md#oidc) uses issuer `token.actions.githubusercontent.com`, audience `sts.amazonaws.com` and `sts:AssumeRoleWithWebIdentity`. `.github/workflows/cd.yml` Configure AWS credentials steps request a token with `id-token: write`; this allows identity issuance, not repository writes. Runner HTTPS must reach GitHub identity, STS and AWS APIs; trust grants no network route. Temporary credentials still need protection.
+
+`infra/src/cicd.ts` → `createCicd` uses exact `StringEquals` audience/subject, not wildcard identity:
+
+- Publish: `repo:maheshnd@63289193/minitickets@1412723955:ref:refs/heads/main`.
+- Deploy: the same immutable repository/owner prefix plus `:environment:dev`.
+
+`githubSubjectPrefix` includes immutable IDs to prevent deleted/transferred/reused names becoming the same trusted identity. An environment subject names the environment rather than branch; branch/reviewer protection in GitHub is essential. [GitHub’s AWS OIDC guide](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
+
+### Permissions and attachment
+
+Publish role `minitickets-dev-gh-publish`, inline `push-images`, attaches to the publish job. `infra/src/publish-policy.ts` → `publishPolicyDocument` grants `ecr:GetAuthorizationToken` on `*` because registry login requires it. `BatchCheckLayerAvailability`, `BatchGetImage`, `GetDownloadUrlForLayer`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`, `PutImage` are limited to the three API/web/worker repository ARNs. Manifest reads detect existing images; upload-only access is insufficient.
+
+Deploy role `minitickets-dev-gh-deploy`, inline `deploy`, attaches to the approved deploy job. Infrastructure access is scoped/named in `cicd.ts`. `iam:PassRole` is limited to listed execution/task/function roles with `iam:PassedToService` constrained to ECS tasks or Lambda. It allows attaching those roles, not assuming them as the runner. Some discovery/create actions cannot use existing-resource ARNs; conditions and naming deserve review.
+
+Sessions are `gh-publish-<run id>` / `gh-deploy-<run id>`. Role ARN variables are addresses, not passwords. Pulumi backend credentials are separate. The newest-deploy guard, not OIDC alone, prevents stale infrastructure runs.
+
+### Operations, alternatives and acceptance
+
+Console: IAM → Identity providers → `token.actions.githubusercontent.com`; IAM → Roles → publish/deploy role → Trust relationships / Permissions. GitHub → Settings → Environments → dev checks approval protection. No current protection or successful live assumption is claimed. Failed assumption calls for exact subject/audience comparison; post-assumption denial calls for the action/resource policy, changed only through reviewed source.
+
+At higher scale, consider exact-SHA approvals, approval expiry, separate accounts and automated policy review. Other signed workload identities can use federation too. [CI](ci-pipeline.md) gates automatic publishing, [ECR](ecr.md) stores releases and [rolling deploy](zero-downtime-deploys.md) uses the deployment identity.
+
+### Code anchors
 
 - Anchor: `infra/src/cicd.ts` — `createCicd`; follow the numbered comments at this boundary.
 
-The immutable repository/owner IDs in `githubSubjectPrefix` prevent a repository name being deleted, transferred or reused from silently becoming the same trusted identity. Trust uses exact `StringEquals` on audience and subject rather than a wildcard. The OIDC issuer is `token.actions.githubusercontent.com`; `sts:AssumeRoleWithWebIdentity` exchanges its signed identity for AWS credentials.
-
-Publish role is `minitickets-dev-gh-publish`, inline policy `push-images`. `ecr:GetAuthorizationToken` uses resource `*` because it is a registry login action. `BatchCheckLayerAvailability`, `BatchGetImage`, `GetDownloadUrlForLayer`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`, `PutImage` are restricted to the three repository ARNs. Publish needs manifest reads to detect existing images; upload-only policy is insufficient.
-
-Deploy role is `minitickets-dev-gh-deploy`, inline policy `deploy`. It can manage the infrastructure named/scoped in `cicd.ts`; `iam:PassRole` is restricted to listed execution/task/function roles and `iam:PassedToService` ECS tasks or Lambda. PassRole lets a deployment attach a role; it is not permission for the runner to assume that task role itself. Some AWS discovery/create actions cannot use narrow existing-resource ARNs, so conditions and resource naming need review.
-
-The workflow names sessions `gh-publish-<run id>` / `gh-deploy-<run id>` for audit correlation. Role ARN repository variables are addresses, not passwords. Pulumi backend access is a separate credential concern. GitHub environment branch/reviewer protection is essential because an environment subject alone does not name main. The newest deploy guard prevents old/superseded infrastructure runs; OIDC alone does not.
-
-At higher scale, consider approval expiry, exact-SHA approvals, separate accounts and automated policy review. Nothing here proves current GitHub protections or successful live AWS assumption. [GitHub’s AWS OIDC guide](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws) explains immutable subjects and environment protection.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cd-oidc#chapter=24&piece=iam).
 
 ## Where it appears in the story
 
 - [app-story: 16b. Publish, approval and stale-run safety](../app-story.md#16b-publish-approval-and-stale-run-safety)
+
+</details>

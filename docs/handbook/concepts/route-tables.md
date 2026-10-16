@@ -3,108 +3,56 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Network · Status: ✅ built · Step doc: [12 network](../../12-infra-network.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-A MiniTickets [route table](../glossary.md#route-table) chooses the next road for an address; our public sign points internet traffic to the city gate.
+A [route table](../glossary.md#route-table) tells network traffic where to go next. It chooses a path from the destination address, like road signs at a junction.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+MiniTickets api needs two different journeys: a private database call and an image download from AWS. Routes keep database traffic inside while giving public tasks a way out.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    pub["public-1 / public-2"] -->|"explicit subnet associations"| rt["minitickets-dev-public-rt"]
-    rt -->|"10.0.0.0/16 to local"| local["VPC neighbors"]
-    rt -->|"0.0.0.0/0 to gatewayId"| igw["minitickets-dev-igw"]
-    igw -->|"attached gateway + public IPv4"| net["Internet / AWS public APIs"]
-    priv["private-1 / private-2"] -->|"explicit subnet associations"| prt["minitickets-dev-private-rt"]
-    prt -->|"10.0.0.0/16 to local only"| local
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class rt focus
+    api["api in public-1 / public-2"] -->|"subnet association"| public["minitickets-dev-public-rt"]
+    public -->|"local route: private destination"| db["minitickets-dev-db"]
+    public -->|"default route: other destinations"| gate["minitickets-dev-igw"]
+    gate -->|"public task IP"| ecr["ECR"]
+    private["minitickets-dev-private-rt"] -->|"local route only"| db
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=route-tables#chapter=24&piece=public-rt).
+1. The subnet selects its associated table.
+2. The most specific matching destination wins.
+3. Local traffic stays inside; the public default route uses the gateway.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant A as api task
-    participant R as public-rt
-    participant P as RDS private address
-    participant W as AWS public endpoint
-    A->>R: Destination 10.0.x.x
-    R->>P: More specific /16 local route, minitickets-dev-db-sg TCP 5432 from minitickets-dev-api-sg
-    A->>R: Destination outside 10.0.0.0/16
-    R->>W: /0 through igw, public IP + outbound rule
-```
+Both public subnets share one table. Both private subnets share another, with local access only. Explicit associations make placement predictable. Security groups and credentials are still separate checks.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createNetwork` attaches `minitickets-dev-igw` to our VPC.
-2. `publicRouteTable` adds `0.0.0.0/0 → internetGateway.id`: every other IPv4 address.
-3. AWS supplies `10.0.0.0/16 → local` to both tables.
-4. Four explicit associations give every subnet its intended sign.
-5. The more specific route wins. Database traffic stays inside; image downloads use the gate.
+“MiniTickets has public and private route tables. Both route internal addresses locally, while only the public table has a default internet gateway route. The most specific match wins, so database calls stay private. When traffic times out, I check the path first, then security rules and credentials.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** a matching route provides a path, not a promise that the destination answers.
+- **Does an internet gateway alone give access?** No. The subnet needs a route, and public IPv4 traffic needs public addressing.
+- **What is the main table?** The fallback for subnets without an explicit association; our four subnets use explicit tables.
+- **What if the public default route disappears?** Public requests and new task startup calls can fail.
+- **Would NAT make a subnet public?** No. Its internet route leads through NAT rather than directly through the internet gateway.
 
-**Allowed:** security groups separately admit the connection.
-
-**Password:** not needed by a road sign; stores and AWS APIs still authenticate callers.
-
-## 6. In our code
-
-`infra/src/network.ts` → `createNetwork` (`internetGateway`, `publicRouteTable`, `privateRouteTable`).
-
-## 7. In the AWS console
-
-VPC → Route tables → `minitickets-dev-public-rt` → Routes / Subnet associations. Expect local plus the default gateway route and two associations. The private table has local only. VPC → Your VPCs → our VPC → Resource map draws both signs. [AWS route guide](https://docs.aws.amazon.com/vpc/latest/userguide/WorkWithRouteTables.html). Live tables were not checked.
-
-## 8. Good / Bad
-
-**Good:** two small tables are easy to inspect; explicit associations avoid hidden defaults.
-
-**Bad:** private workers would have no external path; losing the public default route breaks new task startup.
-
-## 9. Other choices
-
-- Pick a NAT gateway per zone when private workers need an internet exit resilient to one zone failing.
-- Pick VPC endpoints when only supported AWS service roads are needed.
-- Pick Transit Gateway when joining many networks through a hub.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Subnets](subnets.md) | Subnet → table | Explicit association | Route table → Subnet associations |
-| [VPC](vpc.md) | Internal destinations | Built-in local route | Route table → Routes |
-| [ALB](alb.md) | Public round trip | Default route to attached IGW | ALB → Network mapping; subnet Routes |
-
-## 11. When it breaks
-
-- Tasks cannot fetch images → public Routes and task IP → restore the missing public path.
-- One subnet differs → Subnet associations → replace unintended use of the main table.
-
-## 12. Say it in 30 seconds
-
-“MiniTickets uses one public and one private road sign. Both know local addresses; only the public table has a default route to the internet gateway. The longest match keeps database calls local. Routes provide reach, while security groups and credentials remain separate checks.”
-
-## 13. Likely follow-ups
-
-- **What is the main table?** AWS creates a fallback for subnets without explicit associations.
-- **IGW versus NAT?** The gate connects public addresses; NAT lets private callers start outbound internet connections.
-
-## 14. Remember it
-
-The most specific sign wins; no sign means no road.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Implementation and operations
+
+`infra/src/network.ts` → `createNetwork` creates the attached `minitickets-dev-igw`, `publicRouteTable` and `privateRouteTable`. Public has `0.0.0.0/0 → internetGateway.id`; both have AWS's `10.0.0.0/16 → local`. Four `RouteTableAssociation` resources attach the tables. The local API→RDS path still requires `minitickets-dev-db-sg` TCP 5432 from `minitickets-dev-api-sg`; external calls need task public IP and allowed outbound traffic.
+
+VPC → Route tables → `minitickets-dev-public-rt` → Routes / Subnet associations should show local plus default and two associations; the private table has local only. The VPC Resource map draws both. Live tables were not checked. A mismatch affecting only one subnet points to its association, including unintended reliance on the main table.
 
 - Anchor: `infra/src/network.ts` · `publicRouteTable`, `privateRouteTable`, `internetGateway`, the 4 `RouteTableAssociation`s.
 
@@ -122,9 +70,18 @@ The old hourly NAT example was $0.045 plus per-GB processing; actual rates depen
 
 Read-only check: `aws ec2 describe-route-tables --filters Name=vpc-id,Values=<actual-vpc-id>`; inspect routes and associations with `AWS_PROFILE=ticketlite`.
 
-</details>
+### Related reading
+
+- [AWS route guide](https://docs.aws.amazon.com/vpc/latest/userguide/WorkWithRouteTables.html)
+- [Subnets](subnets.md)
+- [VPC](vpc.md)
+- [ALB](alb.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=route-tables#chapter=24&piece=public-rt).
 
 ## Where it appears in the story
 
 - [Infra story: 10. The network: VPC, subnets, route tables, internet gateway](../infra-story.md#10-the-network-vpc-subnets-route-tables-internet-gateway)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

@@ -2,9 +2,9 @@
 
 History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 
-Start here for concepts. Follow one request, then its data, guards, background work, delivery and growth. Read each diagram, trace the numbered flow, then say the 30-second answer aloud. Open the linked explorer beside the card.
+Start here for concepts. Follow one request, then its data, guards, background work, delivery and growth. Read each diagram, trace the numbered flow, then say the interview-ready answer aloud. The explorer link is in Advanced details.
 
-**Batch 1** cards have the short interview format. **Batch 2** cards keep their earlier text for now; they are included so every concept has a place. Read Batch 1 first for the interview, then return to Batch 2 in the same order.
+**Batch 1** has 36 cards in the seven-section format: revise sections 1–6 in two to three minutes, then open Advanced details for technical reference. **Batch 2** has 116 cards with their earlier text; they are the next batch, included here so every concept has a place. Read Batch 1 first for the interview, then return to Batch 2 in the same order.
 
 The maps show source-configured connections, not proof of a live deployment. The committed dev setup uses `us-east-1`, HTTPS at the ALB and `cdnEnabled=false`. AWS console labels can change; verify the named resource before drawing conclusions.
 
@@ -23,11 +23,11 @@ flowchart LR
 ```
 
 - [Regions and availability zones](concepts/regions-and-azs.md) — **Batch 2** — after this you can answer: why does the city network have neighborhoods in two districts?
-- [VPC and CIDR blocks](concepts/vpc.md) — **Batch 1** — after this you can answer: what belongs inside the MiniTickets gated city?
-- [Public vs private subnets](concepts/subnets.md) — **Batch 1** — after this you can answer: why do workers use public neighborhoods while data stays private?
-- [Route tables and the internet gateway](concepts/route-tables.md) — **Batch 1** — after this you can answer: which road can each MiniTickets neighborhood use?
+- [VPC and CIDR blocks](concepts/vpc.md) — **Batch 1** — after this you can answer: how does a private network connect MiniTickets services without making its data public?
+- [Public vs private subnets](concepts/subnets.md) — **Batch 1** — after this you can answer: why do MiniTickets tasks use public subnets while databases stay in private subnets?
+- [Route tables and the internet gateway](concepts/route-tables.md) — **Batch 1** — after this you can answer: how does a subnet choose where traffic goes, and why does a route not grant access?
 - [CloudFront](concepts/cloudfront.md) — **Batch 1** — after this you can answer: what would change if MiniTickets enabled the edge cache?
-- [Application Load Balancer, listener, default 403](concepts/alb.md) — **Batch 1** — after this you can answer: how does one HTTPS entrance choose web or API?
+- [Application Load Balancer](concepts/alb.md) — **Batch 1** — after this you can answer: how does one HTTPS entrance choose web or API, and what happens when targets are unhealthy?
 - [Target groups and ALB health checks](concepts/target-groups.md) — **Batch 1** — after this you can answer: how does the ALB find a worker after its address changes?
 - [Health checks](concepts/health-checks.md) — **Batch 1** — after this you can answer: which checks prove a worker can receive traffic?
 - [ECS cluster](concepts/ecs-cluster.md) — **Batch 1** — after this you can answer: what does the MiniTickets cluster group together?
@@ -103,8 +103,8 @@ flowchart LR
     class sg,role,safe focus
 ```
 
-- [Security groups](concepts/security-groups.md) — **Batch 1** — after this you can answer: which guard admits each MiniTickets connection?
-- [Execution role vs task role](concepts/execution-vs-task-role.md) — **Batch 1** — after this you can answer: which badge starts the API and which badge its code wears?
+- [Security groups](concepts/security-groups.md) — **Batch 1** — after this you can answer: which MiniTickets component may connect to which other component, and why is login still separate?
+- [Execution role vs task role](concepts/execution-vs-task-role.md) — **Batch 1** — after this you can answer: how do startup permissions differ from runtime permissions, and who may use each role?
 - [Least privilege](concepts/least-privilege.md) — **Batch 2** — after this you can answer: why does each MiniTickets badge get only named actions?
 - [Secrets Manager](concepts/secrets-manager.md) — **Batch 1** — after this you can answer: how does a password reach a worker without entering the image?
 - [Secrets management](concepts/secrets-management.md) — **Batch 2** — after this you can answer: which values belong in environment settings versus a secret safe?
@@ -117,7 +117,7 @@ flowchart LR
 - [Reverse proxies and `X-Forwarded-For` (`trustProxy`)](concepts/trust-proxy.md) — **Batch 2** — after this you can answer: which forwarded address can MiniTickets trust for rate limits?
 - [Authentication vs authorization](concepts/authn-vs-authz.md) — **Batch 2** — after this you can answer: how does knowing a caller differ from allowing an action?
 - [Password hashing with argon2id](concepts/password-hashing.md) — **Batch 2** — after this you can answer: why is a stolen password hash expensive to guess?
-- [Sessions vs JWT](concepts/sessions-vs-jwt.md) — **Batch 1** — after this you can answer: why does MiniTickets check a central visitor-badge register?
+- [Sessions vs JWT](concepts/sessions-vs-jwt.md) — **Batch 1** — after this you can answer: why does MiniTickets store login sessions centrally, and what does that cost in availability?
 - [Session cookie flags](concepts/session-cookie.md) — **Batch 2** — after this you can answer: which cookie flags protect sid and what do they not prevent?
 - [Session revocation](concepts/session-revocation.md) — **Batch 2** — after this you can answer: how can MiniTickets cancel all of one user's badges?
 - [Rbac](concepts/rbac.md) — **Batch 2** — after this you can answer: where is the current admin role checked?
@@ -152,7 +152,7 @@ flowchart LR
 - [Outbox](concepts/outbox.md) — **Batch 1** — after this you can answer: how does MiniTickets keep a booking from losing its confirmation?
 - [SNS](concepts/sns.md) — **Batch 1** — after this you can answer: how does one booking event reach email and ticket work independently?
 - [SQS](concepts/sqs.md) — **Batch 1** — after this you can answer: what keeps work waiting safely while a worker is busy?
-- [DLQ](concepts/dead-letter-queue.md) — **Batch 1** — after this you can answer: where does repeatedly failing work go before an owner retries it?
+- [DLQ](concepts/dead-letter-queue.md) — **Batch 1** — after this you can answer: how is repeatedly failing work isolated, investigated and safely retried?
 - [Lambda](concepts/aws-lambda.md) — **Batch 1** — after this you can answer: how does a queued message start MiniTickets worker code?
 - [DynamoDB](concepts/dynamodb.md) — **Batch 1** — after this you can answer: how do workers remember finished jobs and recover ticket creation?
 - [S3 + presigned URLs](concepts/presigned-urls.md) — **Batch 1** — after this you can answer: how can an owner fetch a private S3 file without AWS credentials?
@@ -195,12 +195,12 @@ flowchart LR
 - [In-process API tests (no real network)](concepts/in-process-api-tests.md) — **Batch 2** — after this you can answer: how does Fastify injection test HTTP behavior without a port?
 - [End-to-end tests with Playwright (and test data isolation)](concepts/e2e-tests.md) — **Batch 2** — after this you can answer: which behavior needs a real browser and running stack?
 - [CI](concepts/ci-pipeline.md) — **Batch 1** — after this you can answer: which checks must pass before MiniTickets can publish?
-- [OIDC](concepts/cd-oidc.md) — **Batch 1** — after this you can answer: how does GitHub borrow a short-lived AWS staff badge?
+- [OIDC](concepts/cd-oidc.md) — **Batch 1** — after this you can answer: how does GitHub receive temporary AWS permissions without stored access keys?
 - [Release guard](concepts/release-guard.md) — **Batch 2** — after this you can answer: why can an older approved workflow not overwrite a newer release?
 - [Rolling deploy and rollback](concepts/zero-downtime-deploys.md) — **Batch 1** — after this you can answer: how does ECS replace workers and recover a failed rollout?
 - [Circuit breaker](concepts/circuit-breaker.md) — **Batch 2** — after this you can answer: which ECS failure stops a deployment and rolls it back?
 - [ECS Exec](concepts/ecs-exec.md) — **Batch 2** — after this you can answer: how can an owner inspect a running task without opening SSH?
-- [CloudWatch Logs](concepts/cloudwatch-logs.md) — **Batch 1** — after this you can answer: how does one request leave a trace in API and worker diaries?
+- [CloudWatch Logs](concepts/cloudwatch-logs.md) — **Batch 1** — after this you can answer: how can you follow one booking through API and worker logs without claiming distributed tracing?
 - [Structured JSON logs (Fastify's logger, pino)](concepts/structured-logging.md) — **Batch 2** — after this you can answer: why do named log fields beat unstructured text?
 - [Request IDs and correlation IDs](concepts/correlation-ids.md) — **Batch 2** — after this you can answer: how can one booking be followed from HTTP to an email job?
 - [Metrics](concepts/metrics.md) — **Batch 2** — after this you can answer: which measurements show MiniTickets behavior over time?
@@ -225,7 +225,7 @@ flowchart LR
     class redis,limits,cache focus
 ```
 
-- [Cache-aside](concepts/cache-aside.md) — **Batch 1** — after this you can answer: when does MiniTickets use a spare catalogue instead of SQL?
+- [Cache-aside](concepts/cache-aside.md) — **Batch 1** — after this you can answer: when can the legacy event list use a cached copy, and why does current search bypass it?
 - [Cache key versioning](concepts/cache-key-versioning.md) — **Batch 2** — after this you can answer: why does changing the cached shape need a new key version?
 - [Cache filter keys](concepts/cache-filter-keys.md) — **Batch 2** — after this you can answer: why must different event filters get different cache entries?
 - [Cache invalidation](concepts/cache-invalidation.md) — **Batch 2** — after this you can answer: why does a generation bump beat deleting one list key?

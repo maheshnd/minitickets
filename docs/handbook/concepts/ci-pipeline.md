@@ -2,129 +2,77 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: DevOps & CI/CD · Status: ✅ built in repository; live AWS acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Before MiniTickets publishes a release, [CI](../glossary.md#ci), automatic checks on each change, inspects code, browser behavior and image security.
+Continuous integration (CI) automatically checks a proposed code change. MiniTickets uses it to catch mistakes before publishing a release.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A booking fix might pass locally but break login or the release image. Repeatable checks give reviewers evidence beyond “it works on my machine.”
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    G["GitHub push / pull_request"] -->|"ci.yml trigger; contents:read"| Q["CI quality job"]
-    Q -->|"needs:quality; passed types/lint/tests/audit/docs"| E["e2e job + temporary Postgres / Redis"]
-    Q -->|"needs:quality"| D["docker job: api / web / worker build + Trivy"]
-    E -->|"all jobs successful; main push only"| C["CD workflow_run publish"]
-    D -->|"all jobs successful; main push only"| C
-    P["read-only GitHub token"] -.->|"contents:read; no AWS credential step"| Q
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class Q focus
+    G["MiniTickets push or pull request"] -->|"start automatic checks"| Q["CI quality"]
+    Q -->|"quality passes"| E["Browser tests"]
+    Q -->|"quality passes"| D["Image builds and security scans"]
+    E -->|"successful main-push CI permits publishing"| C["Separate CD workflow"]
+    D -->|"successful main-push CI permits publishing"| C
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ci-pipeline#chapter=24&piece=github).
+1. Check types, style, unit tests, dependency security and documentation.
+2. If those pass, run browser tests and image checks in parallel.
+3. Successful CI from a main-branch push can start publishing; deployment has its own approval.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant G as GitHub push
-    participant Q as CI quality
-    participant E as CI e2e
-    participant D as CI docker
-    participant C as CD
-    G->>Q: Install frozen lockfile, run checks
-    Q-->>E: Success permits browser tests
-    Q-->>D: Success permits image build and scan
-    E-->>C: Browser job outcome
-    D-->>C: Image job outcome
-    Note over C: Automatic publish only for successful CI from main push
-```
+`.github/workflows/ci.yml` defines `quality`, `e2e` and `docker`. Browser tests use disposable databases and app servers. Image builds do not publish. A newer branch run cancels its older CI run; pull-request success cannot automatically publish that change.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `CI` runs on every push and pull request. A newer branch run cancels its older CI run.
-2. `quality` runs typecheck, lint, unit tests, critical dependency audit and `docs:check`.
-3. After quality passes, `e2e` runs Chromium against app servers and disposable Postgres/Redis.
-4. In parallel, `docker` builds three images without publishing and scans for fixable CRITICAL findings.
-5. Successful main-push CI triggers CD; pull-request success cannot publish a stranger’s code.
+“MiniTickets runs fast quality checks first, then browser tests and image scans in parallel. That catches different failure types while avoiding expensive work after an early failure. CI does not publish or deploy. Successful main-push CI starts a separate publishing workflow, and deployment needs approval. Green checks provide evidence for tested behavior, not proof that a release is fault-free.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** GitHub runners reach package/image registries; e2e uses its own local services.
+- **Why use a frozen lockfile?** It rejects disagreement between dependency definitions and the committed resolution.
+- **Does a clean scan mean no vulnerabilities?** No. The gate selects specific severity and fixability rules.
+- **Where do browser failures lead?** The uploaded Playwright report shows failed requests, screenshots and steps.
+- **Is the tested image exactly the deployed image?** No. CI and release builds use different architectures and separate builds.
 
-**Allowed:** `contents: read`; CI has no AWS login.
-
-**Password:** no production password; e2e uses throwaway local credentials.
-
-## 6. In our code
-
-`.github/workflows/ci.yml` → jobs `quality`, `e2e`, `docker`.
-
-`.github/workflows/cd.yml` → `workflow_run` trigger and `publish.if`.
-
-
-## 7. In the AWS console
-
-GitHub → `maheshnd/minitickets` → Actions → CI → run → visual job graph → quality / e2e / docker. Open failing steps; e2e publishes a Playwright report artifact. This gate has no AWS console resource. GitHub execution was not checked live.
-
-## 8. Good / Bad
-
-**Good:** Fast checks fail early. Browser and image checks run together after quality.
-
-**Bad:** Green checks cover only tested behavior. CI’s x86 image build is separate from release ARM64 build.
-
-## 9. Other choices
-
-- More integration tests: pick them when store behavior needs narrower failure reports.
-- Required branch checks: pick them when merging must wait for these jobs.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [E2E tests](e2e-tests.md) | Out → | needs:quality + service containers | GitHub → CI run → e2e |
-| [ECR](ecr.md) | Later → | CD publish, not CI push | GitHub → CD run → publish |
-| [OIDC](cd-oidc.md) | Later → | Separate CD AWS identity | IAM → gh-publish; GitHub → CD |
-
-## 11. When it breaks
-
-Quality red → first failed check → fix that cause before rerunning.
-
-Browser red → Playwright report → inspect the failed request/screenshot.
-
-Scan red → Trivy finding → repair the fixable critical issue under the policy.
-
-## 12. Say it in 30 seconds
-
-“CI is our inspection gate. It checks types, lint, unit tests, dependency security and docs first. Then browser tests and image builds/scans run in parallel. It never publishes. Only successful CI from a main push starts automatic CD publish; deploy still has its own approval gate.”
-
-## 13. Likely follow-ups
-
-- Why frozen lockfile? It rejects dependency files that disagree.
-- Does passing CI deploy? No; publish and approved deploy are separate jobs.
-
-## 14. Remember it
-
-The inspector clears a change; the delivery crew ships it later.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Workflow and commands
+
+[CI](../glossary.md#ci) runs on `push` / `pull_request` with `contents: read`, branch-scoped concurrency and `cancel-in-progress: true`. It has no AWS credential step or production password. GitHub runners reach package/image registries; e2e uses throwaway local credentials/services.
+
+`.github/workflows/ci.yml`: `quality` timeout **10 minutes**; `e2e` / `docker` **15 minutes**. Node comes from `.nvmrc`, pnpm from root `packageManager`; install uses `--frozen-lockfile` and a cached pnpm store. Quality runs `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm audit --audit-level=critical`, `pnpm docs:check`. Lower-severity advisories are not ruled out.
+
+`e2e` and `docker` both declare `needs: quality`. Browser service containers use **Postgres 17.6 / Redis 7.4.5**; the disposable DB is migrated/seeded and Chromium installed. A Playwright report uploads even on failure. Runner ports :3000/:4000 are separate from the owner’s laptop servers.
+
+Docker Buildx builds API/web/worker with `push: false`, `load: true` and separate GitHub cache scopes. The web test build gets `NEXT_PUBLIC_API_URL=http://localhost:4100`. CI uses hosted x86; CD releases use native ARM64. Green CI is not a digest assertion about later release bytes. Trivy gates CRITICAL vulnerability findings with exit code 1 and `ignore-unfixed: true`; dated `.trivyignore` exceptions are independent. It omits unfixed findings, rather than proving no vulnerabilities.
+
+### Publishing boundary and operations
+
+`.github/workflows/cd.yml` → `workflow_run`, `publish.if` checks successful CI, main branch and original event `push`, excluding a fork PR whose branch is named main. Manual CD without an image tag bypasses waiting for CI and should deliberately select a checked commit. Deploy retains a separate approval gate.
+
+GitHub → `maheshnd/minitickets` → Actions → CI → run → job graph → quality/e2e/docker. No AWS console resource represents this gate. Fix the first failed quality check; inspect the Playwright report for browser failures; inspect and repair fixable critical findings under scan policy. Live GitHub execution was not checked by this rewrite.
+
+More integration tests can isolate store failures. Required branch checks can make merges wait for these jobs; their existence is not asserted here. [E2E tests](e2e-tests.md) run browser checks, [ECR](ecr.md) receives images later from CD, and [OIDC](cd-oidc.md) provides CD’s separate AWS identity.
+
+### Code anchors
 
 - Anchor: `.github/workflows/ci.yml` — `module configuration`; follow the numbered comments at this boundary.
 
-The workflow uses `contents: read`, branch-scoped concurrency and `cancel-in-progress: true`. `quality` has a 10-minute timeout; `e2e` and `docker` have 15 minutes. Node comes from `.nvmrc`; pnpm from root `packageManager`. Installation uses `--frozen-lockfile`, with a cached pnpm store.
-
-Quality commands are `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm audit --audit-level=critical`, `pnpm docs:check`. This does not claim zero advisories of lower severity. Browser tests use service-container Postgres 17.6 and Redis 7.4.5, migrate/seed their disposable database, install Chromium and upload a report even on failure. Their :3000/:4000 belong to a separate hosted runner, not the owner’s laptop servers.
-
-Docker Buildx builds API/web/worker with `push: false`, `load: true` and separate GitHub cache scopes. The web test build receives `NEXT_PUBLIC_API_URL=http://localhost:4100`. CI’s hosted x86 runner tests that architecture; CD uses native ARM64 for the deployed images. These are separate builds, so a green CI build is not a content digest assertion about the later release build.
-
-Trivy scans vulnerability findings at CRITICAL with exit code 1 and `ignore-unfixed: true`; the dated `.trivyignore` exception is independent. The configured gate omits unfixed findings; it is not “no vulnerabilities”. CD checks CI’s successful conclusion and original event `push`, avoiding a pull request from a fork whose branch happens to be named main. Manual CD without an image tag bypasses waiting for CI and must be used deliberately on a checked commit.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ci-pipeline#chapter=24&piece=github).
 
 ## Where it appears in the story
 
 - [app-story: 16b. Publish, approval and stale-run safety](../app-story.md#16b-publish-approval-and-stale-run-safety)
+
+</details>

@@ -3,116 +3,58 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: ✅ built · Step doc: [05 database](../../05-database.md), [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-MiniTickets [liveness](../glossary.md#health-check) asks “can api answer?” at `/health`; [readiness](../glossary.md#r) asks “can it reach both stores?” at `/ready`.
+A [health check](../glossary.md#health-check) asks whether a component can do a small piece of work. MiniTickets separates “is api answering?” from “[can it reach its stores?](../glossary.md#r)”
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A frozen process needs replacement. A shared database outage needs database recovery; restarting every API task could add disruption without solving the cause.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    alb["ALB api target group"] -->|"minitickets-dev-api-sg TCP 4000 from minitickets-dev-alb-sg; GET /health every 15 s"| api["api /health and /ready"]
-    ecs["ECS container probe"] -->|"localhost:4000/health; Node command every 15 s"| api
-    human["Operator inside api task"] -->|"authorized ECS Exec; localhost:4000/ready"| api
-    api -->|"/ready only; minitickets-dev-db-sg 5432 from minitickets-dev-api-sg; TLS + DB credentials"| db["RDS: select 1"]
-    api -->|"/ready only; minitickets-dev-redis-sg 6379 from minitickets-dev-api-sg; TLS + token"| redis["Valkey: PING"]
-    webtg["ALB web target group"] -->|"minitickets-dev-web-sg TCP 3000 from minitickets-dev-alb-sg; GET / every 15 s"| web["web landing page"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class api focus
+    checks["ECS + ALB"] -->|"GET /health: process responds"| api["api"]
+    operator["Operator inside api task"] -->|"GET /ready: check dependencies"| api
+    api -->|"/ready only: select 1"| db["Postgres"]
+    api -->|"/ready only: PING"| redis["Valkey"]
+    webcheck["ALB web target group"] -->|"GET /"| web["web"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=health-checks#chapter=24&piece=api-task).
+1. `/health` answers without calling the stores.
+2. `/ready` checks Postgres and Redis together.
+3. Either failed store produces an unavailable response and a log identifying the failure.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant O as Operator inside api task
-    participant A as Fastify
-    participant D as Postgres
-    participant R as Valkey
-    O->>A: GET /ready on localhost:4000
-    A->>D: pingDb, select 1 over allowed 5432
-    A->>R: pingRedis, PING over allowed 6379
-    D-->>A: Success
-    R-->>A: Failure
-    A-->>O: 503 status unavailable, log failed store
-    Note over A,R: GET /health still returns 200 while API answers
-```
+ECS and ALB use api liveness, meaning the process answers. Operators can separately inspect readiness. Web's ALB check calls its landing page. No automatic external readiness monitor is configured.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `/health` returns `200 {status: "ok"}` without touching data.
-2. `/ready` runs `pingDb` and `pingRedis` together and waits for both outcomes.
-3. Both pass: `200 {status: "ready"}`. Either fails: `503 {status: "unavailable"}` and errors are logged.
-4. ECS checks `/health` every `15 s`: `5 s` timeout, three retries, `15 s` start period.
-5. ALB uses `/health` for api and `/` for web. The service ignores failed ALB checks for its first `60 s`.
+“MiniTickets keeps restart checks independent of shared dependencies. API liveness proves Fastify answers; readiness checks both Postgres and Redis. That avoids replacing every task during one shared outage. The trade-off is that green liveness does not prove bookings work, so dependency errors and real user failures need separate monitoring.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** container checks use localhost; ALB checks need app-port security-group rules.
+- **Why inspect both store results?** We can log both failures rather than hide the second behind the first.
+- **Local probe passes but ALB fails?** Check the app's listening address and ALB-to-task network access.
+- **Could readiness control routing?** Yes, when failures differ by task and healthy alternatives exist; shared outages can cause removal churn.
+- **Does readiness prove a booking will succeed?** No. It checks basic store access, not a full transaction or email delivery.
 
-**Allowed:** no IAM needed to answer HTTP; ECS Exec access is separately authorized.
-
-**Password:** `/health` needs none; `/ready` exercises configured store credentials.
-
-## 6. In our code
-
-`apps/api/src/app.ts` → `buildApp` (`/health`, `/ready`).
-
-`apps/api/src/queries/health.ts` → `pingDb`, `pingRedis`.
-
-`infra/src/compute/task.ts` → `createApiTask` (`healthCheck`).
-
-## 7. In the AWS console
-
-ECS → Clusters → `minitickets-dev` → Tasks → task → Containers shows container health; Service → Events explains replacement. EC2 → Target Groups → api group → Targets shows ALB health separately. ALB Resource map → Unhealthy Target Map shows affected routes. `/ready` is not an automatic console probe. Live health was not checked.
-
-## 8. Good / Bad
-
-**Good:** shared-store outages do not restart healthy processes; readiness identifies both store failures.
-
-**Bad:** liveness alone can look green while bookings fail; a shallow web check cannot prove every page works.
-
-## 9. Other choices
-
-- Pick readiness-based routing when one task's dependency path can fail independently.
-- Pick a timed threshold when brief failures would otherwise cause constant removal.
-- Pick synthetic checks when testing the whole visitor journey is needed.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Target groups](target-groups.md) | ALB → api/web | HTTP 200; SG 4000/3000 | Target group → Health checks |
-| [ECS service](ecs-service.md) | Failed task → replacement | Container health / service policy | Service → Events |
-| [RDS](rds-postgres.md) | `/ready` → DB | API source, 5432, TLS/password | RDS → Connectivity & security |
-| [Valkey](elasticache-valkey.md) | `/ready` → cache | API source, 6379, TLS/token | ElastiCache → Connectivity |
-
-## 11. When it breaks
-
-- ALB fails but local check passes → task bind address and source rules → listen on all interfaces and restore allowed path.
-- `/ready` is 503 → api logs name failed store → repair that store/path, not every worker.
-
-## 12. Say it in 30 seconds
-
-“Our restart question is deliberately small: can Fastify answer /health? /ready asks both data stores and reports 503 if either fails. ECS and ALB use liveness so a database outage does not trigger a restart storm. We still need user-error monitoring because a live process can fail real work.”
-
-## 13. Likely follow-ups
-
-- **Why `allSettled`?** Both outcomes are inspected and each failure logged.
-- **Does web have an ECS container check?** No; its ALB check calls `/`.
-
-## 14. Remember it
-
-An awake worker and a worker able to finish a booking are different facts.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Source and operational view
+
+`apps/api/src/app.ts` → `buildApp` defines both routes; `apps/api/src/queries/health.ts` → `pingDb`, `pingRedis` accesses the stores. `infra/src/compute/task.ts` → `createApiTask` defines the container probe. `/health` is `200 {"status":"ok"}`. `/ready` returns 200/`ready` only when both pass; otherwise 503/`unavailable`, logging the errors.
+
+ECS → Clusters → `minitickets-dev` → Tasks → Containers shows container health; Service → Events explains replacements. EC2 → Target Groups → api group → Targets shows separate ALB health; ALB Resource map → Unhealthy Target Map helps locate failed paths. `/ready` is not an automatic console probe. Live health was not checked.
+
+ALB probes need `minitickets-dev-api-sg` 4000 or web group 3000 from `minitickets-dev-alb-sg`. Readiness needs RDS 5432 and Valkey 6379 from api's group, TLS and configured password/token. Local probes need no IAM; invoking ECS Exec is separately authorized. If `/ready` returns 503, inspect the named store and its network/credentials rather than restart every task. Web has no ECS container health check.
 
 - Anchor: `apps/api/src/app.ts` · `GET /health` (always 200), `GET /ready` (`Promise.allSettled([pingDb(), pingRedis()])`).
 - Anchor: `apps/api/src/queries/health.ts` · `pingDb` (`select 1`), `pingRedis` (`PING`).
@@ -131,12 +73,21 @@ ALB settings are 15-second interval, 5-second timeout, matcher 200, three failur
 
 Earlier local spare-port experiments recorded `/health` staying 200 when Redis was pointed at an unused port while `/ready` returned 503. They are historical evidence, not tests rerun for this rewrite. `pnpm stack:check` complements API probes: `scripts/stack/data-checks.ts` → `checkPostgres`, `checkRedis` inspect login/migrations/sample data and cache access with concrete fixes.
 
-If ALB checked `/ready`, a shared Redis failure could mark every API target unhealthy and create replacement churn. ALB can fail open to all unhealthy registered targets, so this does not reliably “turn off” all traffic either. Keep independent observability for dependency failures; no automatic external `/ready` monitor is configured. Existing application/ALB symptom alarms do not change that fact.
+If ALB checked `/ready`, a shared Redis failure could mark every API target unhealthy and create replacement churn. [ALB can fail open](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html) to all unhealthy registered targets, so this does not reliably “turn off” all traffic either. Keep independent observability for dependency failures; no automatic external `/ready` monitor is configured. Existing application/ALB symptom alarms do not change that fact.
 
 Slow startup beyond grace can cause repeated replacement. Per-task connection failures can justify readiness-based routing when enough other tasks remain healthy. Thresholds reduce flapping. A CloudWatch Synthetics journey could test from outside the current ALB path (or optional CDN); it is not built. Probes themselves add a small amount of normal compute/request work.
 
-</details>
+### Related reading
+
+- [Target groups](target-groups.md)
+- [ECS service](ecs-service.md)
+- [RDS](rds-postgres.md)
+- [Valkey](elasticache-valkey.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=health-checks#chapter=24&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)
+
+</details>

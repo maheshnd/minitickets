@@ -3,112 +3,56 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Data · Status: ✅ built in repository; live acceptance is separate
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Before MiniTickets api starts, ECS reads allowed values from [Secrets Manager](../glossary.md#secrets-manager), our key safe, and puts them into the worker process.
+[Secrets Manager](../glossary.md#secrets-manager) is an AWS service that stores sensitive values and controls who can read them. MiniTickets uses it for database credentials and shared keys.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+The API needs a database password, but putting it in source code or a container recipe would spread copies. A central safe lets authorized readers fetch it when needed.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    db["RDS managed password"] -->|"manageMasterUserPassword creates managed secret"| safe["Secrets Manager<br/>DB / redis-url / revalidate-secret / ticket-signing"]
-    cache["Valkey token + endpoint"] -->|"createSecrets writes rediss URL"| safe
-    role["API / web execution roles"] -.->|"GetSecretValue on their listed secret ARNs"| safe
-    safe -->|"ECS startup injection; API execution role"| api["api: DB_USER / DB_PASSWORD / REDIS_URL / REVALIDATE_SECRET"]
-    safe -->|"ECS startup injection; web execution role"| web["web: REVALIDATE_SECRET"]
-    ticketrole["minitickets-dev-tickets-role"] -.->|"GetSecretValue on ticket-signing only"| safe
-    safe -->|"runtime HTTPS fetch; ticket role"| worker["minitickets-dev-tickets Lambda"]
-    classDef focus fill:#fff1a8,stroke:#8a6d00,stroke-width:3px,color:#111
-    class safe focus
+    safe["Secrets Manager"] -->|"execution role: read allowed startup secrets"| ecs["ECS agent"]
+    ecs -->|"inject values before starting"| apps["api / web"]
+    safe -->|"ticket role: read signing key at runtime"| worker["minitickets-dev-tickets Lambda"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=secrets-manager#chapter=24&piece=secrets).
+1. Store the value and grant access to its intended reader.
+2. ECS reads application secrets when starting tasks.
+3. Running tasks keep that snapshot; ticket Lambda separately reads and caches its signing key.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant E as ECS / Fargate agent
-    participant S as Secrets Manager
-    participant A as api task
-    E->>S: GetSecretValue with API execution role
-    S-->>E: Current permitted values
-    E->>A: Inject process environment and start
-    Note over S,A: Later secret changes do not refresh this running process
-```
+API receives database credentials, the Redis URL and a revalidation key. Web receives only that shared revalidation key. Ticket Lambda has separate access to the ticket-signing key; API cannot read it.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. RDS owns its managed username/password secret.
-2. `minitickets/dev/redis-url` holds the full encrypted-connection URL.
-3. `minitickets/dev/revalidate-secret` supplies the same value to api and web.
-4. ECS reads those at task start. A rollout is needed to load changed values.
-5. Only the ticket Lambda fetches `minitickets/dev/ticket-signing`; it caches a successful read in memory.
+“MiniTickets stores sensitive values centrally and gives each reader access only to what it needs. ECS injects startup snapshots into API and web. Changing a stored secret does not refresh running tasks, so rotation needs coordinated deployment. Ticket signing has a separate runtime reader and needs to preserve old tickets during rotation.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** ECS tasks use their public outbound path to AWS HTTPS endpoints. Ticket Lambda is outside the VPC.
+- **Does rotation update a running task?** No. New tasks must load the changed value.
+- **Can application code still leak a secret?** Yes, if it receives that value. Avoid logging it and limit access.
+- **What if startup access is denied?** Check the execution role and exact secret reference.
+- **Can we instantly replace the signing key?** Existing tickets would fail verification; a staged key transition is needed and is not built.
 
-**Allowed:** the reading role needs `secretsmanager:GetSecretValue` for that ARN.
-
-**Password:** AWS uses temporary role credentials to unlock the safe; the returned value authenticates the later app operation.
-
-## 6. In our code
-
-`infra/src/data/secrets.ts` → `createSecrets`.
-
-`infra/src/compute/revalidate-secret.ts` → `createRevalidateSecret`.
-
-`apps/worker/src/tickets/assets.ts` → `signingSecret`.
-
-## 7. In the AWS console
-
-Secrets Manager → Secrets → named secret → Overview / Rotation. Inspect metadata, not “Retrieve secret value.” IAM → Roles → reading role → Permissions shows its grant. [AWS access guide](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_overview.html). RDS → Databases → `minitickets-dev-db` → Configuration links its managed secret. Live secrets were not read.
-
-## 8. Good / Bad
-
-**Good:** task definitions hold references; each reader gets only needed secrets.
-
-**Bad:** injected values become stale; application code can still leak values it receives.
-
-## 9. Other choices
-
-- Pick runtime reads with bounded caching when updates must load without a task rollout.
-- Pick a staged key ring when rotating signing keys must preserve existing tickets; it is not built here.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [IAM badges](execution-vs-task-role.md) | Role → safe | Scoped `GetSecretValue` | Role → Permissions |
-| [RDS](rds-postgres.md) | Managed credential → safe | RDS-managed password | RDS → Configuration |
-| [Valkey](elasticache-valkey.md) | URL → api | Execution role + startup reference | Task definition → api → Secrets |
-| [Lambda](aws-lambda.md) | Ticket worker → key | Ticket role + secret ARN | Lambda → Configuration → Permissions |
-
-## 11. When it breaks
-
-- Startup says access denied → attached execution policy and secret ARN → fix scoped grant.
-- New connections reject password after rotation → compare process lifetime → roll out readers with fresh values.
-
-## 12. Say it in 30 seconds
-
-“We keep passwords in a key safe. ECS reads only the secrets its execution role allows, then injects a startup snapshot. The running task does not refresh automatically. Ticket signing has a separate runtime reader and key; rotation must preserve valid tickets.”
-
-## 13. Likely follow-ups
-
-- **Is a secret ARN secret?** No. It identifies the safe; permission unlocks it.
-- **Does signing hide QR claims?** No. It proves authenticity; readable claims still need authorization.
-
-## 14. Remember it
-
-Changing the safe does not change keys already in a worker’s pocket.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Reference notes, source anchors and earlier useful detail</summary>
+<summary>Technical reference</summary>
+
+### Secret names, readers and operations
+
+RDS owns its managed username/password secret. `infra/src/data/secrets.ts` → `createSecrets` stores `minitickets/dev/redis-url`. `infra/src/compute/revalidate-secret.ts` → `createRevalidateSecret` stores `minitickets/dev/revalidate-secret`. Only ticket Lambda reads `minitickets/dev/ticket-signing`; `apps/worker/src/tickets/assets.ts` → `signingSecret` caches a successful runtime read in memory.
+
+API startup fields are `DB_USER`, `DB_PASSWORD`, `REDIS_URL` and `REVALIDATE_SECRET`; web receives `REVALIDATE_SECRET`. API/web execution roles need scoped `secretsmanager:GetSecretValue`; `minitickets-dev-tickets-role` has the signing-key grant. Tasks use the public outbound HTTPS path; ticket Lambda is outside the VPC. An ARN identifies a secret but is not its value. Permission is still required to read it.
+
+Secrets Manager → Secrets → named secret → Overview / Rotation shows metadata; do not use “Retrieve secret value” for a documentation check. IAM → Roles → reading role → Permissions shows access. RDS → Databases → `minitickets-dev-db` → Configuration links its managed secret. Live secrets were not read. After rotation, failed new database connections can mean stale process credentials: coordinate a reader rollout. Runtime reads with bounded caching are an alternative when refresh without rollout is required.
 
 - Anchor: `infra/src/data/secrets.ts` · `createSecrets`: the redis-url secret and its value.
 
@@ -128,9 +72,19 @@ Secrets Manager encrypts stored values and checks IAM. Default AWS-managed encry
 
 The prior card's useful local checks remain `pnpm demo:tickets` and `pnpm demo:p4-assets`, run separately. They are demonstrations with local infrastructure, not evidence of live AWS authorization or delivery. Secrets Manager has storage/read charges; consult current pricing rather than an old estimate.
 
-</details>
+### Related reading
+
+- [AWS access guide](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_overview.html)
+- [IAM badges](execution-vs-task-role.md)
+- [RDS](rds-postgres.md)
+- [Valkey](elasticache-valkey.md)
+- [Lambda](aws-lambda.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=secrets-manager#chapter=24&piece=secrets).
 
 ## Where it appears in the story
 
 - [Infra story: 6. Secrets Manager](../infra-story.md#6-secrets-manager)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

@@ -2,119 +2,56 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md) (sections 3.7, 3.8)
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-When a visitor returns, MiniTickets checks their [session](../glossary.md#valkey), its saved login record, in private [Valkey](../glossary.md#v), our Redis-compatible memory store.
+[Valkey](../glossary.md#v) is a fast shared memory store that understands Redis commands. MiniTickets keeps [session](../glossary.md#valkey) records there to remember logged-in users.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+A visitor can reach different API copies on successive requests. Shared session storage lets each copy recognize the same login instead of remembering it only inside one process.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    A["minitickets-dev-api"] -->|"VPC local route; rediss TLS 6379 + auth token"| V["minitickets-dev-valkey"]
-    SG["minitickets-dev-redis-sg"] -.->|"6379 from minitickets-dev-api-sg only"| V
-    S["minitickets/dev/redis-url secret"] -.->|"execution role GetSecretValue; REDIS_URL at startup"| A
-    V -->|"Redis keys + expiry; Lua atomic commands"| K["sessions / list cache / rate buckets / seat hints"]
-    D["Postgres booking vault"] -->|"reconciliation reads confirmed seatsLeft"| A
-    classDef focus fill:#ffe08a,stroke:#8a5700,stroke-width:3px
-    class V focus
+    browser["Browser"] -->|"send session cookie"| api["MiniTickets API"]
+    api -->|"SG: 6379 from api; TLS and secret token"| cache["minitickets-dev-valkey"]
+    cache -->|"session plus user-index membership"| decision["Continue as user or require login"]
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=elasticache-valkey#chapter=5&piece=valkey).
+1. The API hashes the cookie token and looks up its session.
+2. It checks that the token still belongs to the user's session index.
+3. Missing either record means the login is not accepted.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant A as API session query
-    participant V as minitickets-dev-valkey
-    B->>A: Request with opaque session cookie
-    A->>V: GET session:hash of token
-    V-->>A: Saved user id or missing
-    A->>V: ZSCORE user session index for token hash
-    V-->>A: Membership or missing
-    alt Both record and membership exist
-        A-->>B: Continue as saved user
-    else Missing or invalid
-        A-->>B: Treat visitor as logged out
-    end
-```
+Valkey also holds legacy event-list caches, shared rate limits and advisory seat availability. Current `events.search` bypasses that list cache. Atomic Lua scripts coordinate related updates; Postgres still decides seat ownership.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `createCache` creates one Valkey 8.2 node, `cache.t4g.micro`, private on :6379.
-2. ECS injects `REDIS_URL`, containing the TLS address and a 32-character token.
-3. Sessions last seven days; a per-user index supports rotation, device limits and revocation.
-4. Legacy event lists, shared rate buckets and advisory inventory also use Redis commands.
-5. Postgres still decides seat ownership. Current `events.search` bypasses the legacy list cache.
+“Valkey gives MiniTickets fast shared state across API copies. We use it for sessions, legacy list caches and admission hints. Session reads require both a record and index membership, so missing state fails closed. Redis can reduce database work, but our Postgres transaction remains the final authority for selling seats.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** private route; redis guard allows 6379 from minitickets-dev-api-sg only.
+- **What if sessions disappear?** Users need to log in again; missing login state cannot be trusted.
+- **Is all Redis state disposable?** Public caches rebuild, but losing sessions affects users and needs an explicit availability policy.
+- **Can stale seat hints oversell?** They cannot override the database's locked seat check.
+- **Why not keep state in each API?** Separate processes would disagree; shared commands coordinate them.
 
-**Allowed:** no IAM check on Redis commands; execution role reads the URL secret first.
-
-**Password:** auth token inside `rediss://`, with TLS.
-
-## 6. In our code
-
-`infra/src/data/cache.ts` → `createCache`.
-
-`apps/api/src/queries/sessions.ts` → `create`, `get`, `revokeAll`.
-
-`apps/api/src/queries/inventory.ts` → `reserve`, `reconcile`.
-
-
-## 7. In the AWS console
-
-`us-east-1` → ElastiCache → Valkey caches → `minitickets-dev-valkey` → Configuration / Connectivity and security. Check one primary, TLS, authentication and subnet group. Console labels can vary with cache view; live state was not checked.
-
-## 8. Good / Bad
-
-**Good:** Fast shared login checks. Atomic scripts coordinate work across API copies.
-
-**Bad:** One node has no failover. Losing session records forces fresh login.
-
-## 9. Other choices
-
-- Replica plus failover: pick it when one node failure must not stop login.
-- DynamoDB sessions: pick them when per-request storage fits better than a running node.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Sessions](sessions-vs-jwt.md) | In/out ↔ | TLS + auth token | ElastiCache → cache → Configuration |
-| [Cache-aside](cache-aside.md) | In/out ↔ | API Redis client and bounded keys | ElastiCache → Monitoring |
-| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | Secrets Manager → redis-url → Permissions |
-
-## 11. When it breaks
-
-Timeout → guard/routes/TLS URL → restore private 6379 path.
-
-`WRONGPASS` → injected secret age → correct credentials and replace affected task.
-
-Login disappears → eviction/restart/index expiry → inspect memory and session logs.
-
-## 12. Say it in 30 seconds
-
-“Valkey is our fast shared coat check. It holds login records, legacy list caches and advisory admission state. The API reaches one private TLS-only node with a secret token. Lua makes related changes atomic. It is disposable support state: Postgres remains seat truth, and missing session membership fails closed.”
-
-## 13. Likely follow-ups
-
-- Why Valkey? It speaks the Redis protocol our client uses.
-- Does losing a cache risk overselling? No; the locked Postgres transaction decides.
-
-## 14. Remember it
-
-The coat-check ticket proves a login; it never owns a theatre seat.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Settings, limits and deeper interview notes</summary>
+<summary>Technical reference</summary>
+
+### Configuration and security
+
+The cache guard is `minitickets-dev-redis-sg`; only `minitickets-dev-api-sg` reaches TCP 6379. Its URL secret is `minitickets/dev/redis-url`. Reconciliation reads confirmed `seatsLeft` from Postgres; Redis never becomes the booking authority.
+
+ECS injects `REDIS_URL` at startup using execution-role `GetSecretValue`. Redis commands themselves use the auth token, not an IAM permission check. Sessions last seven days. One node has no automatic failover; login storage availability needs deliberate treatment even though public cache values can rebuild.
+
+### Implementation and operational limits
 
 - Anchor: `infra/src/data/cache.ts` · `createCache`: auth token, subnet group and the replication group.
 
@@ -128,9 +65,40 @@ The app now uses sorted sets, hashes, Lua scripts and scans as well as GET/SET/D
 
 Legacy list soft freshness is 30–33 s and hard expiry 300 s. Cache failures have bounded behavior; authorization and seat truth must not rely on stale public lists. ElastiCache Serverless and JWTs are other designs, with different cost and revocation choices. Historical $9.30/month and percentage savings were estimates, not checked prices.
 
-</details>
+### Source references
+
+`infra/src/data/cache.ts` → `createCache`.
+
+`apps/api/src/queries/sessions.ts` → `create`, `get`, `revokeAll`.
+
+`apps/api/src/queries/inventory.ts` → `reserve`, `reconcile`.
+
+### Console and troubleshooting
+
+`us-east-1` → ElastiCache → Valkey caches → `minitickets-dev-valkey` → Configuration / Connectivity and security. Check one primary, TLS, authentication and subnet group. Console labels can vary with cache view; live state was not checked.
+
+Timeout → guard/routes/TLS URL → restore private 6379 path.
+
+`WRONGPASS` → injected secret age → correct credentials and replace affected task.
+
+Login disappears → eviction/restart/index expiry → inspect memory and session logs.
+
+### Trade-offs and related concepts
+
+- Replica plus failover: pick it when one node failure must not stop login.
+- DynamoDB sessions: pick them when per-request storage fits better than a running node.
+
+| Neighbor | Direction | What allows it | Console check |
+| --- | --- | --- | --- |
+| [Sessions](sessions-vs-jwt.md) | In/out ↔ | TLS + auth token | ElastiCache → cache → Configuration |
+| [Cache-aside](cache-aside.md) | In/out ↔ | API Redis client and bounded keys | ElastiCache → Monitoring |
+| [Secrets](secrets-manager.md) | In ← | Execution-role GetSecretValue | Secrets Manager → redis-url → Permissions |
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=elasticache-valkey#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [Infra story: 8. ElastiCache Valkey](../infra-story.md#8-elasticache-valkey)
 - [Big picture: 4. Components](../00-big-picture.md#4-components)
+
+</details>

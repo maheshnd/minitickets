@@ -25,9 +25,59 @@ flowchart LR
 
 ---
 
-## 2026-10-16 · docs(handbook): simplify interview concept cards and add a learning path
+## 2026-10-16 · docs(handbook): shorten concept cards for interview revision
 
 Commit: filled in by the next handbook commit
+
+Why: make the recorded 36-card interview batch understandable in one read and quick to revise, while preserving technical reference facts and machine-readable links. The other 116 cards remain the next batch.
+
+- `concepts/alb.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/alerting.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/aws-lambda.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/cache-aside.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/cd-oidc.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/ci-pipeline.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/cloudfront.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/cloudwatch-logs.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/csr-vs-ssr.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/dead-letter-queue.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/dynamodb.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/ecr.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/ecs-cluster.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/ecs-service.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/elasticache-valkey.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/execution-vs-task-role.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/fargate.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/health-checks.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/idempotency.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/outbox.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/presigned-urls.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/rate-limiting.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/rds-postgres.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/route-tables.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/row-locks.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/secrets-manager.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/security-groups.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/ses-email.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/sessions-vs-jwt.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/sns.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/sqs.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/subnets.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/target-groups.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/task-definition.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/vpc.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `concepts/zero-downtime-deploys.md`: replace 15 sections with seven, one simple flowchart and short learning/interview text; fold configuration, operations, source anchors and story/explorer links into Advanced details.
+- `learning-path.md`: retain all 152 entries in the same order, identify the 36/116 split and clarify answer goals.
+- `README.md`: explain the seven-section format, revision flow and new checker rules alongside the earlier Batch 2 format.
+- `CHANGELOG.md`: record this batch and fill the previous entry’s hash.
+
+Documentation tooling: `scripts/check-concepts.ts` requires the seven ordered sections, one labeled 2–8-node diagram, numbered steps, three to five answered follow-ups, a 350-word main budget and closed technical references. History, status, anchors, story/explorer links, glossary/source references and learning-path coverage remain checked; folded reference facts have no word cap. Correct stale ECR repository and security-group Anchor descriptions without changing anchor paths.
+
+Validation: `pnpm docs:check` passes (152 cards / 141 anchor slugs / 331 anchor places); main sections contain 213–256 words; all 42 Mermaid diagrams render (36 cards + six learning-path maps); 22 isolated checker probes pass, including valid and deliberately malformed cards. Full typecheck, lint and `git diff --check` pass. All original link targets and source-anchor paths remain; only the selected 36 cards changed. No app, infra or test files changed; application tests and live AWS acceptance were not rerun.
+
+## 2026-10-16 · docs(handbook): simplify interview concept cards and add a learning path
+
+Commit: c6aff34
 
 Why: make the most interview-relevant concepts understandable in one short read, while keeping useful source detail folded and preserving the handbook checks.
 

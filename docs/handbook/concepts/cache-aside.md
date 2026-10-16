@@ -4,179 +4,78 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-<!-- interview-card: v1 -->
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-For `events.list`, MiniTickets checks a [cache](../glossary.md#cache-aside)—a spare copy of public data—before opening the Postgres ledger.
+Cache-aside keeps a reusable copy of data near the application. The application checks that copy first and reads the database when it needs a replacement.
 
-## 2. Where it sits
+## 2. Why do we need it?
+
+Hundreds of visitors may request the same event catalogue. Sharing one recent copy avoids repeating the same database query for everyone.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    list["events.list"] -->|"validated public filters"| service["listUpcomingEvents"]
-    service -->|"minitickets-dev-redis-sg TCP 6379 from minitickets-dev-api-sg; REDIS_URL TLS"| cache["Valkey list copy"]
-    service -->|"miss: minitickets-dev-db-sg TCP 5432 from minitickets-dev-api-sg; DB login"| pg["Postgres events"]
-    writes["Committed booking / event"] -->|"INCR events:upcoming:gen after commit"| cache
-    lock["Redis NX PX rebuild lock"] -.->|"5 s lease permits one rebuild holder"| service
-    classDef focus fill:#fff1a8,stroke:#8a6100,stroke-width:3px
-    class service focus
+    A["listUpcomingEvents"] -->|"check matching public-list copy"| R["Redis / Valkey"]
+    A -->|"missing copy: read events"| P["Postgres"]
+    P -->|"return rows to save and serve"| A
+    A -->|"save refreshed copy"| R
+    W["Committed booking or event write"] -->|"retire old cache keys"| R
 ```
 
-[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cache-aside#chapter=24&piece=valkey).
+1. Look up a copy matching the filters and current catalogue version.
+2. Return a fresh copy, or rebuild a missing one from Postgres.
+3. Briefly reuse an older copy while refreshing; stop at its hard age limit.
 
-## 3. How it works
+## 4. How do we use it in MiniTickets?
 
-```mermaid
-sequenceDiagram
-    participant A as listUpcomingEvents
-    participant R as Valkey
-    participant P as Postgres
-    A->>R: Read generation and filtered key
-    R-->>A: No copy
-    A->>R: SET rebuild lock NX PX 5000
-    R-->>A: Lock acquired
-    A->>P: Read upcoming events
-    P-->>A: Public rows
-    A->>R: Save copy PX 300000, release owned lock
-    Note over A: Return rows, future reads use copy
-```
+`listUpcomingEvents` caches legacy `events.list` results. Rebuild coordination avoids many callers repeating the same work. Booking and event writes invalidate after committing. Today’s `events.search` bypasses this list cache, and buying seats always checks Postgres.
 
-## 4. What happens in MiniTickets
+## 5. Interview-ready answer
 
-1. `listUpcomingEvents` normalizes filters and reads `events:upcoming:gen`.
-2. It checks `events:upcoming:v3:g<gen>:<hash>` in Redis. A fresh copy returns immediately.
-3. A missing copy is rebuilt from Postgres and saved. One process shares work; a Redis lock shares it across tasks.
-4. After 30–33 seconds, serve the old copy while refreshing. Never serve it beyond 300 seconds.
-5. Booking/event writes bump the generation after commit. Current `events.search` bypasses this list cache.
+“MiniTickets uses cache-aside for its legacy public list: read Redis first, then fill missing data from Postgres. It can serve bounded stale data while one refresh runs, or during a short database failure. Writes retire the old cache keys. This improves browsing speed and availability, but displayed seats may be old, so purchases always use the database.”
 
-## 5. Reach / Allowed / Password
+## 6. Important follow-up questions
 
-**Reach:** API → Valkey :6379 and RDS :5432; both guards admit minitickets-dev-api-sg.
+- **What if Redis fails?** Log the problem and fall back to SQL.
+- **Can stale seats authorize a purchase?** No. Only the database transaction decides availability.
+- **What stops a cache stampede?** Shared in-process work plus a temporary Redis rebuild lock.
+- **Does invalidation refresh every tab?** No. Browser queries and server data caches have separate refresh rules.
 
-**Allowed:** application queries use data-store credentials, without per-command IAM.
-
-**Password:** encrypted `REDIS_URL` and RDS login; both use TLS on AWS.
-
-## 6. In our code
-
-`apps/api/src/services/events.ts` → `listUpcomingEvents`
-
-`apps/api/src/queries/events-cache.ts` → `upcomingKey`, `tryLockUpcomingRebuild`
-
-## 7. In the AWS console
-
-ElastiCache → Valkey caches → `minitickets-dev-valkey` → Configuration / Monitoring: endpoint and memory. CloudWatch → Logs → `/minitickets/dev/api`: cache warnings. The console does not show individual cache keys.
-
-## 8. Good / Bad
-
-**Good:** repeat reads avoid SQL; an old public copy can cover a short database failure.
-
-**Bad:** displayed seats can be old; extra cache layers have separate clocks.
-
-## 9. Other choices
-
-- Pick direct SQL when results must be current or queries rarely repeat.
-- Pick a managed HTTP cache when whole public responses can safely be shared.
-
-## 10. Connected to
-
-| Neighbor | Direction | What allows it | Console check |
-| --- | --- | --- | --- |
-| [Valkey](elasticache-valkey.md) | → copy | minitickets-dev-redis-sg :6379 from minitickets-dev-api-sg | ElastiCache → cache |
-| [RDS](rds-postgres.md) | → miss rebuild | minitickets-dev-db-sg :5432 from minitickets-dev-api-sg | RDS → database |
-| [Row locks](row-locks.md) | → real purchase | SQL transaction, never cached seats | RDS → database |
-
-## 11. When it breaks
-
-- Slow first read → API cache status → check Redis and SQL.
-- Redis unavailable → warning then SQL fallback → restore Redis.
-- Old list after write → generation/invalidation logs → repair failed invalidation; expiry still bounds age.
-
-## 12. Say it in 30 seconds
-
-“MiniTickets reads Redis first for its legacy public list. A miss reads Postgres and fills the cache. Old data can be served briefly while one refresh runs, with a five-minute hard age cap. Writes change the generation so older keys stop being read. Buying seats always checks Postgres, and today’s search route bypasses this cache.”
-
-## 13. Likely follow-ups
-
-- **Why not lock seats in Redis?** Its rebuild lock may expire; an extra rebuild is harmless, an extra sale is not.
-- **Does an admin write refresh every open tab?** No. Browser queries have their own refresh rules.
-
-## 14. Remember it
-
-A spare catalogue speeds browsing; the ledger decides the sale.
-
-## 15. More detail
+## 7. Advanced details
 
 <details>
-<summary>Source notes, earlier detail and code anchors</summary>
+<summary>Technical reference</summary>
 
+### Keys, freshness and coordination
 
+[Cache-aside](../glossary.md#cache-aside) applies to legacy `events.list`, not current `events.search`. `apps/api/src/services/events.ts` → `listUpcomingEvents` normalizes filters and reads `events:upcoming:gen`. `apps/api/src/queries/events-cache.ts` → `upcomingKey` builds `events:upcoming:v3:g<gen>:<hash>`.
 
-Cache-aside checks Redis before Postgres for legacy events.list. It now has generation/filter keys, SWR, bounded stale-if-error and stampede protection. Current events.search intentionally bypasses it.
+Freshness is 30–33 seconds (soft TTL/jitter); the hard age limit is **300 seconds**, with Redis `PX 300000`. Stale-while-revalidate returns an older value while background refresh runs; bounded stale-if-error reuses a previous good value during an outage. A failed refresh must not reset old data to fresh. Never use stale data for authorization or seat purchase.
 
-### Earlier card: 2. Real-life comparison
+One in-process refresh is shared. `tryLockUpcomingRebuild` uses Redis `SET ... NX PX 5000` for a **5-second** cross-task lease; release checks ownership. Lease expiry may permit an extra rebuild, which is tolerable here but unsuitable for seat ownership. Booking/event writes `INCR events:upcoming:gen` after commit; failed invalidation logs a warning, while expiry still bounds cached age.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+`apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches with independent clocks. Freshness in one layer does not force another to refetch; overlapping TTLs can compound age. P10 disables shared HTML caching while retaining explicit public-data caching.
 
-### Earlier card: 3. Picture it
+### Network, operations and evidence
 
+API → Valkey TCP 6379 is admitted by `minitickets-dev-redis-sg` from `minitickets-dev-api-sg`; `REDIS_URL` uses TLS. API → Postgres TCP 5432 is admitted by `minitickets-dev-db-sg` from the same API group; RDS login also uses TLS. Application data commands use credentials, not per-command IAM.
 
-### Earlier card: 4. Where in our code
+Console: ElastiCache → Valkey caches → `minitickets-dev-valkey` → Configuration / Monitoring for endpoint/memory; CloudWatch → Logs → `/minitickets/dev/api` for warnings. Individual keys require a Redis client. Slow first reads call for cache-status/SQL checks. Redis failure falls back to SQL; old lists after writes call for generation/invalidation checks. [Valkey](elasticache-valkey.md), [RDS](rds-postgres.md) and [row locks](row-locks.md) distinguish cache, source and actual purchase.
+
+`pnpm test` includes fake-clock stale/error cases; no run or live AWS/CI acceptance is claimed by this rewrite. Higher traffic calls for age/hit telemetry and an end-to-end freshness budget. Direct SQL suits current or rarely repeated queries; managed HTTP caching suits safely shareable whole public responses. Read the [current system](../00-big-picture.md), [cache scenario](../guides/interview-scenarios.md#swr-caches) and [search tour](../guides/infra-explorer.html?tour=search).
+
+### Code anchors
 
 - Anchor: `apps/api/src/queries/events-cache.ts` — `upcomingKey`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/services/events.ts` — `SOFT_TTL_MS`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.
-
-### Earlier card: 5. See it yourself
-
-Run `pnpm test` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does a successful admin write refresh all open tabs? No; they refetch on their own query policy. Do not change a live stack to demonstrate it.
-
-### Earlier card: 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#swr-caches) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-### Earlier card: 7. Our settings and WHY
-
-Cache-aside checks Redis before Postgres for legacy events.list. It now has generation/filter keys, SWR, bounded stale-if-error and stampede protection. Current events.search intentionally bypasses it. Bounded stale public listings trade freshness for latency/availability.
-
-### Earlier card: 8. Trade-offs
-
-Never use stale data for authorization or seats. Long independent TTLs can compound staleness. A failing refresh must not reset old data to fresh.
-
-### Earlier card: 9. Alternatives and when to choose them
-
-10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-### Earlier card: 10. What breaks and how we notice
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-### Earlier card: 13. Interview answers at 3 levels
-
-- **Simple:** Cache-aside checks Redis before Postgres for legacy events.list.
-- **Senior:** SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-- **Lead:** 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-### Earlier card: 14. Follow-up questions with answers
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-Can stale listings authorize booking? **No.**
-
-### Earlier card: 15. Say it in 30 seconds
-
-SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-
-### Earlier card: 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-</details>
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=cache-aside#chapter=24&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>
