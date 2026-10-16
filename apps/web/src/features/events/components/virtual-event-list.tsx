@@ -8,6 +8,7 @@ const ROW_HEIGHT = 208;
 const VIEWPORT = 624;
 const OVERSCAN = 3;
 
+// @concept: virtualization
 export function VirtualEventList({ items, onEnd }: { items: Event[]; onEnd: () => void }) {
   const [top, setTop] = useState(0);
   // 1. Small lists keep their natural height. Large lists mount only visible rows + overscan.

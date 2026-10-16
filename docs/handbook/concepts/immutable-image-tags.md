@@ -2,26 +2,24 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: DevOps & CI/CD · Status: ✅ built · Step doc: [16 ECR](../../16-infra-ecr.md) (section 3b)
+Area: DevOps & CI/CD · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-Every image is tagged with the **git commit SHA** it was built from, and ECR refuses to move a tag, so
-a tag always names exactly one build of exactly one commit.
+One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release.
 
 ## 2. Real-life comparison
 
-A batch number printed on medicine. "Latest batch" is useless in a recall; "batch 9fa3c21" tells you
-exactly which factory run it came from.
+A sealed package is built once, then checked at a gate before the manager installs that exact version.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    commit["commit 9fa3c21<br/>(clean tree)"] -->|"pnpm images:push"| ecr["ECR api:9fa3c21<br/>IMMUTABLE"]
-    commit -->|"pulumi config set apiImageTag"| cfg["Pulumi.dev.yaml"]
-    cfg --> td["task definition<br/>image …:9fa3c21"]
-    ecr --> td
+    n0["CI tests"] --> n1
+    n1["Publish SHA once"] --> n2
+    n2["Approved CD plus migration"] --> n3
+    n3["Roll and smoke test"]
 ```
 
 ## 4. Where in our code
@@ -30,83 +28,51 @@ flowchart LR
 - Anchor: `infra/src/registry.ts` · `imageTagMutability: "IMMUTABLE"`: ECR refuses to overwrite a tag.
 - Anchor: `infra/index.ts` · `apiImageTag` / `webImageTag`: required, no `latest` default.
 
-Step by step:
-
-1. The script stops if `git status --porcelain` shows changes: the image must match the commit.
-2. `TAG=$(git rev-parse --short HEAD)`.
-3. Pushing an existing tag fails (`tag … already exists`), so a tag can never point at other code.
-4. `config.require("apiImageTag")` stops `pulumi up` with a clear error if no tag is set; there is no
-   default that could hide which code runs.
-5. The deploy commit only changes `Pulumi.dev.yaml`, so the repo always records what runs on AWS.
-6. The script prints each image's digest (sha256 of the content) for exact pinning later.
+The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
 
 ## 5. See it yourself
 
-```bash
-cd infra && pulumi config get apiImageTag
-git show --stat $(pulumi config get apiImageTag) | head -5      # the code that runs
-aws ecs describe-task-definition --profile ticketlite --task-definition minitickets-dev-api \
-  --query "taskDefinition.containerDefinitions[0].image"
-```
+The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
 
-**Break it on purpose:** run `pnpm images:push` twice for the same commit: the second push fails with
-`tag … already exists`.
+Failure thought experiment: Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
 
 ## 6. How it connects
 
-- **Uses ←** git, [ECR](ecr.md).
-- **Gives →** traceable [task definitions](task-definition.md); rollback to a known image.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#delivery-rollback) and [explorer tour](../guides/infra-explorer.html?tour=deploy).
 
 ## 7. Our settings and WHY
 
-Short SHA as the only tag; immutable repos; no default tag in Pulumi.
+One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release. Rebuilding on deploy can ship bytes that were never reviewed or tested.
 
 ## 8. Trade-offs
 
-- **Pros:** any running container maps to a commit; no accidental overwrite.
-- **Cons:** a rebuild of the same commit (for a new base image patch) needs a new commit or a
-  different tag scheme.
+Rolling deployment overlaps versions. Blue/green gives a switchable target but costs overlap and still needs compatible migrations. Secrets/config are part of release compatibility.
 
 ## 9. Alternatives and when to choose them
 
-- **Pin by digest** (`image@sha256:…`): strongest guarantee; less readable.
-- **Semantic version tags** plus SHA: released software with versions.
+10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Tag set but not pushed: `CannotPullContainerError`.
-- Pushing from a dirty tree: refused by the script.
-
-## 11. Reach / Allowed / Password
-
-Not a connection.
-
-## 12. Cost
-
-Free; the lifecycle policy keeps 10 tagged images per repo.
+Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** Each image is named after the git commit it came from, and names can't be reused.
-- **Senior:** The push script refuses a dirty tree and tags with the short SHA; ECR repos are
-  `IMMUTABLE`; Pulumi requires the tag with no default. So the task definition's image names one commit.
-- **Lead:** Traceability is what makes incident response and rollback fast. In CI I'd tag with the full
-  SHA, record the digest, and promote the same image through environments instead of rebuilding.
+- **Simple:** One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release.
+- **Senior:** Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
+- **Lead:** 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not `latest`?* It moves; you can't tell what runs or roll back reliably.
-- *Tag vs digest?* A tag is a name; a digest is the content hash.
+Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
 
 ## 15. Say it in 30 seconds
 
-"Images are tagged with the git SHA from a clean tree, ECR refuses to overwrite tags, and Pulumi
-requires an explicit tag. So every running task points at exactly one commit, and the deploy commit
-records which."
+Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
 
 ## Where it appears in the story
 

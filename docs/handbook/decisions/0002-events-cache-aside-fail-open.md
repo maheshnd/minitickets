@@ -4,6 +4,8 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Status: accepted (Feature 1, step 4).
 
+**Evolution:** the fail-open public-cache decision remains. Details below record the original step-24 implementation; current v3 generation/filter keys, SWR/hard age and stampede coordination are in [ADR 0004](0004-generation-swr-keys.md). Current events.search bypasses list caches and P10 HTML is no-store.
+
 ## Context
 
 Every `/events` visit ran the same Postgres query for the same answer. We want to read Postgres less,

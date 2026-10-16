@@ -23,7 +23,7 @@ flowchart LR
   Consistent (rules hold), Isolated (transactions don't see each other's half-done work), Durable
   (saved data survives a crash).
 - **ACM (AWS Certificate Manager)** – the AWS service that issues and renews TLS certificates for
-  domains you own. Not used by us yet.
+  domains you own. Ours validates minitickets.theversehub.in for the ALB; retain the DNS validation CNAME.
 - **ADR (Architecture Decision Record)** – a short document that records one design decision:
   context, options, decision, consequences.
 - **ALB (Application Load Balancer)** – an AWS load balancer that understands HTTP and can route by
@@ -36,7 +36,7 @@ flowchart LR
 - **Anchor (code anchor)** – a comment `@concept: <slug>` at the exact place a concept lives in the
   code. Checked by `pnpm docs:check`.
 - **API gateway** – a front door service that routes, authenticates and rate-limits API calls for many backends. Not used by us.
-- **API_INTERNAL_URL** – the address the web *server* uses to call the api (server to server). The browser never uses it. Ours: `apps/web/src/lib/server-env.ts`; `http://localhost:4000` locally, `http://api:4000` in docker compose, not set on AWS yet.
+- **API_INTERNAL_URL** – the address the web *server* uses to call the api (server to server). The browser never uses it. Ours: `apps/web/src/lib/server-env.ts`; `http://localhost:4000` locally, `http://api:4000` in docker compose, `http://api:4000` through ECS Service Connect on AWS (runtime server-only).
 - **App Router** – Next.js's routing system: the folders under `apps/web/src/app/` become URLs.
 - **App Runner** – AWS's simplest managed service for container web apps. Not used by us.
 - **argon2id** – a password-hashing algorithm that is slow and memory-hungry on purpose, so
@@ -126,9 +126,9 @@ flowchart LR
   pnpm's download store.
 - **Cache policy (CloudFront)** – how long to keep a copy and what makes two requests "the same".
   We use AWS's `Managed-CachingOptimized` and `Managed-CachingDisabled`.
-- **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together. 📋 Not handled yet; planned after invalidation.
+- **Cache stampede (thundering herd)** – many requests miss the cache at the same moment and all hit the database together. Handled for legacy public list rebuilds with per-process single-flight plus an owner-token Redis lease and double-check.
 - **cache() (React)** – a React function that remembers a result for the length of one server request. Ours: `getQueryClient` gives each request its own `QueryClient`.
-- **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache (with a TTL). Ours: `events.list` and Redis key `events:upcoming:v1` ([cache-aside](concepts/cache-aside.md)).
+- **Cache-aside** – the app checks the cache first, and on a miss reads the database and fills the cache (with a TTL). Ours: `events.list` and generation/filter Redis keys `events:upcoming:v3:g<gen>:<hash>` ([cache-aside](concepts/cache-aside.md)).
 - **Cache invalidation (server)** – deleting or updating a cached value when the data behind it changes, so it is fresh sooner than its TTL. 📋 Planned: the step after cache-aside.
 - **Cache key version** – a number in the key name (`…:v1`). Change it when the cached data's shape changes, so new code never reads old-shaped data ([cache-key-versioning](concepts/cache-key-versioning.md)).
 - **Canary deploy** – send a small share of traffic to the new version first, then more if it is healthy.
@@ -740,7 +740,7 @@ flowchart LR
 - **trustProxy** – the Fastify setting that reads the real visitor IP from `X-Forwarded-For`.
   Ours trusts 2 hops on AWS.
 - **TTFB (time to first byte)** – the time from sending a request until the first byte of the answer arrives.
-- **TTL (time to live)** – how long a stored value lives before it is deleted automatically. Ours: 7 days for sessions, 30-33 s for the cached events list.
+- **TTL (time to live)** – how long a stored value lives before it is deleted automatically. Ours: 7 days for sessions, 30–33 s soft freshness and 300 s hard expiry for the legacy cached events list.
 - **Twelve-factor config** – keep configuration in environment variables, not in the code or the image.
 - **Type narrowing** – TypeScript learning a more exact type after a check. `isAuthed` narrows
   `ctx.session` from `{…} | null` to `{…}`.
@@ -788,3 +788,38 @@ flowchart LR
 - **Zod** – the library that describes and checks the shape of data (inputs, env vars). Shared
   schemas live in `packages/shared`.
 - **Zonal resource** – lives in one AZ (a subnet, an RDS instance, a running task).
+
+## Series 2 vocabulary
+
+- **Single-flight** — concurrent callers in one process share one rebuild promise.
+- **Cache stampede** — many misses cause many equivalent backend reads; our rebuild lock double-checks after acquisition.
+- **Generation key** — a counter makes old cache keys unreachable after a committed write; slow refills stay in the old generation.
+- **SWR / stale-if-error** — serve bounded old public data while refreshing, or during refresh failure; never for seat authorization.
+- **Canonical input** — one normalized representation of equivalent filters, shared by SQL/cache/query identity.
+- **Keyset cursor** — the last ordered timestamp/id pair plus a stable cutoff, not an OFFSET or database snapshot.
+- **pg_trgm / GIN** — Postgres trigram search extension and an inverted index for substring candidates; indexes cost writes/storage.
+- **Virtualization / overscan** — mount only the visible list window plus a few nearby rows.
+- **MVCC** — Postgres row versions let ordinary reads see committed snapshots while row writers serialize; schema locks can still block.
+- **FOR UPDATE / hot row** — lock one row to commit/rollback; many buyers for one event queue on it.
+- **Idempotency key** — one stable user intent UUID; duplicates replay a successful booking instead of buying twice.
+- **Transactional outbox / SKIP LOCKED** — save an event with the business transaction; competing relays skip rows another relay holds.
+- **Fan-out / SNS** — copy one event into independent consumer queues.
+- **Visibility timeout / DLQ / redrive** — temporarily hide in-flight work; retain repeatedly failed work; explicitly retry it after a fix.
+- **Partial batch failure** — tell Lambda which records failed so successful records are not needlessly retried.
+- **Conditional write** — change a record only if an expected state still holds; used for canonical ticket reservation.
+- **Eventual consistency / GSI** — an index/read may lag a committed write; a DynamoDB global secondary index serves another access pattern.
+- **Bearer capability / presigned URL** — possession authorizes the signed operation until expiry; CORS is not authorization.
+- **ETag / IfMatch** — pin an object read/copy to the version inspected, avoiding a check/use race during poster publication.
+- **HMAC / key ring** — shared-secret message authentication; multiple key versions permit staged rotation (key ring is explain-only here).
+- **Token bucket / Retry-After** — admit a bounded burst with refill; tell a rejected caller when to retry.
+- **Advisory inventory / reconciliation** — Redis load hint repaired against database truth; never a confirmed timed customer hold.
+- **CSP nonce / Fetch Metadata** — per-response script authorization token; browser request-site metadata supplements exact Origin checks.
+- **Session rotation / revocation** — replace an old login token; remove its server-side authority, including all indexed devices.
+- **Pool acquisition / statement timeout** — separate budgets for getting a DB connection and executing SQL/lock waits.
+- **OIDC / STS** — exchange a narrowly trusted GitHub identity for short-lived AWS role credentials.
+- **Expand/contract** — add compatible schema first, migrate consumers/data, remove old schema later.
+- **LCP / INP / CLS** — main content timing, interaction delay and layout instability; field distributions differ from lab scores.
+- **axe / Lighthouse CI** — automated accessibility checks (built) and proposed production lab budgets (explain-only).
+- **SLI / SLO / error budget** — a measured outcome, its target/window, and permitted failure fraction; resources are explain-only.
+- **SSE / WebSocket** — one-way HTTP event stream versus bidirectional connection; live-seat feature remains explain-only.
+- **RPO / RTO** — acceptable recovery data loss and recovery time; require restore/failover drills, not just a backup setting.

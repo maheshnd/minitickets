@@ -3,6 +3,7 @@ import { z } from "zod";
 import { redis } from "../redis/client";
 
 // @concept: ttl
+// @concept: session-revocation
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 // @concept: sessions-vs-jwt
 // @concept: sql-vs-nosql

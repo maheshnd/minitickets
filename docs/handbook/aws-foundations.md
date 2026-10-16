@@ -56,8 +56,7 @@ and **zonal** ones (a subnet, an RDS instance, a running task) live in one AZ.
 
 ### 4. Where in our code
 
-- `infra/Pulumi.dev.yaml` → `aws:region: us-east-1` and `aws:profile: ticketlite`. Every Pulumi
-  resource goes to this region, created with this CLI profile's account.
+- `infra/Pulumi.dev.yaml` → `aws:region: us-east-1`. Local credentials come from `export AWS_PROFILE=ticketlite`; GitHub uses OIDC. No laptop profile is committed.
 - `infra/src/network.ts` → `azs` and `azNames`:
   1. `aws.getAvailabilityZonesOutput({ state: "available" })` asks AWS which AZs this region has.
   2. `names.slice(0, 2)` keeps the first two.
@@ -115,14 +114,14 @@ flowchart LR
 | **Latency** (the time a request takes to travel) | Every request that is not a cache hit crosses the distance to the region and back. | CloudFront caches only `/_next/static/*` (`infra/src/entry/cdn.ts`). Every page and every `/trpc/*` call still goes to Virginia. Users near the US east coast get fast answers; users far away wait longer on every click. |
 | **Cost** | The same service has a slightly different price in each region. | `us-east-1` is usually among the cheapest regions. Our cost numbers in the step docs are `us-east-1` prices. For another region, check the AWS pricing pages: I have not compared them. |
 | **Service availability** | Not every service, feature or machine type exists in every region. New ones often launch in `us-east-1` first. | Everything we use exists there. Some things are tied to `us-east-1` whatever region we pick: a CloudFront certificate for a custom domain must be created in `us-east-1` (comment at `viewerCertificate` in `infra/src/entry/cdn.ts`). |
-| **Data residency** (where data is stored, by law) | Laws or contracts can require that some data stays inside one country. | We have no data residency requirement today. If we ever stored payment data for Indian users, the Reserve Bank of India requires payment data to be stored in India, which rules out `us-east-1` for that data. |
+| **Data residency** (where data is stored, by law) | Laws or contracts can require that some data stays inside one country. | We have no data residency requirement today. Any regulated data needs a specific regional/compliance review before deployment. |
 | **Outage history** | Big regions have big, well-reported outages. | `us-east-1` is AWS's oldest and largest region and has had widely reported outages (for example December 2021 and October 2025). Some global control planes (for example IAM's) run there too, so a `us-east-1` problem can block changes to global services even for apps in other regions. |
 
 **For users in India, `ap-south-1` (Mumbai) would suit better:** pages and api calls would travel a
 much shorter distance, and data would stay in India if a law asked for it. Moving would be mostly
 config in our code: `aws:region` in `Pulumi.dev.yaml` (or a new stack), because `createNetwork`
 asks AWS for the AZ names, the task definitions read the region with `aws.getRegionOutput()`, and
-both scripts read it from Pulumi config. The real work is everything outside the code: a new stack
+scripts read the region from Pulumi config while credentials come from the environment. The real work is everything outside the code: a new stack
 means new resources, so images must be pushed again and data copied over. Before moving, check that
 every service and feature we use (Fargate Spot on ARM64, Valkey 8.2, Postgres 17) exists there; I
 have not checked.
@@ -850,7 +849,7 @@ also with the execution role.
 - `infra/src/compute/iam.ts` → `executionSecrets` (the IAM check in the diagram) and
   `executionManaged` (ECR pull, CloudWatch Logs).
 - `scripts/run-migrations.sh`: the one-off migration task goes through the same flow, because it
-  uses the same task definition.
+  uses its dedicated migration definition with the same API image/database settings.
 
 ### 5. See it yourself
 

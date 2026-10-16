@@ -2,123 +2,75 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: AWS Data · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md) (section 3.7)
+Area: AWS Data · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-**Secrets Manager** is AWS's locked safe for passwords and tokens: each read is checked by IAM and
-logged, and only the secret's ARN travels through our code.
+Secrets Manager supplies RDS-managed DB credentials, cache URL, shared revalidation and ticket signing material to specifically allowed roles. Task-injected values are snapshots until rollout; signer rotation needs a planned key-ring transition, not an unexplained instant replacement.
 
 ## 2. Real-life comparison
 
-A bank safe-deposit box. Your paperwork mentions only the box number (the ARN). To open it, the bank
-checks your ID against its list (IAM) and writes the visit in its logbook (CloudTrail).
+A durable work tray keeps the task after the customer leaves; a completed stamp identifies a repeat.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    rds["RDS"] -->|"creates"| s1["RDS master secret<br/>{username, password}"]
-    pul["Pulumi (secrets.ts)"] -->|"creates"| s2["minitickets/dev/redis-url<br/>rediss://:token@host:6379"]
-    s1 --> ecs["ECS at task start<br/>(execution role)"]
-    s2 --> ecs
-    ecs --> api["api env vars"]
+    n0["Secrets Manager"] --> n1
+    n1["Scoped worker role"] --> n2
+    n2["Signed ticket bytes"] --> n3
+    n3["Verify before use"]
 ```
 
 ## 4. Where in our code
 
 - Anchor: `infra/src/data/secrets.ts` · `createSecrets`: the redis-url secret and its value.
 
-Step by step:
-
-1. `aws.secretsmanager.Secret` named `minitickets/dev/redis-url`, with `recoveryWindowInDays: 0`.
-   By default a deleted secret is kept 7-30 days and its **name** is blocked; switching the data
-   layer back on would then fail. Production keeps the default window.
-2. `aws.secretsmanager.SecretVersion` with ``secretString: pulumi.secret(pulumi.interpolate`rediss://:${authToken}@${redisEndpoint}:6379`)``.
-   `pulumi.secret` keeps it encrypted in Pulumi state and hidden in previews.
-3. Only `secret.arn` leaves the file (`redisUrlSecretArn`).
-4. No secret for Postgres here: RDS made its own ([rds-managed-password](rds-managed-password.md)).
-5. Both are read by ECS with the [execution role](execution-vs-task-role.md) (`read-secrets` policy)
-   and injected via `task.ts` → `secrets`.
+`apps/worker/src/tickets/token.ts` signs/verifies bounded strict claims; `infra/src/tickets/iam.ts` grants only ticket worker secret access; `services/tickets.ts` owner-scopes reads. Run `pnpm demo:tickets` and `pnpm demo:p4-assets` separately. Proposed rotation adds key id plus verification key ring, staged rollout and old-key retirement; this key-ring is not built.
 
 ## 5. See it yourself
 
-```bash
-aws secretsmanager list-secrets --profile ticketlite --query "SecretList[].[Name,LastAccessedDate]" --output table
-aws secretsmanager describe-secret --profile ticketlite --secret-id minitickets/dev/redis-url --query "[Name,KmsKeyId]"
-```
+`apps/worker/src/tickets/token.ts` signs/verifies bounded strict claims; `infra/src/tickets/iam.ts` grants only ticket worker secret access; `services/tickets.ts` owner-scopes reads. Run `pnpm demo:tickets` and `pnpm demo:p4-assets` separately. Proposed rotation adds key id plus verification key ring, staged rollout and old-key retirement; this key-ring is not built.
 
-`KmsKeyId` empty means the default `aws/secretsmanager` key ([kms](kms.md)). Never print values on a
-shared screen.
-
-**Break it on purpose:** see [aws-foundations, chapter 5](../aws-foundations.md#5-roles-sts-and-the-confused-deputy):
-remove one ARN from `read-secrets` and the task cannot start.
+Failure thought experiment: Are signed QR claims private? No; base64url is readable.
 
 ## 6. How it connects
 
-- **Uses ←** [Valkey](elasticache-valkey.md) endpoint and token; [KMS](kms.md) for encryption.
-- **Gives →** `REDIS_URL`, `DB_USER`, `DB_PASSWORD` for the [task definition](task-definition.md);
-  the backbone of [secrets management](secrets-management.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#secrets-forgery) and [explorer tour](../guides/infra-explorer.html?tour=check-in).
 
 ## 7. Our settings and WHY
 
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Whole URL as one secret | `rediss://…` | The api needs one value, exactly like `apps/api/.env`. |
-| `recoveryWindowInDays` | 0 | Lets the data switch turn off and on again with the same name. |
-| Default KMS key | `aws/secretsmanager` | No extra key, no `kms:Decrypt` permission needed. |
+Secrets Manager supplies RDS-managed DB credentials, cache URL, shared revalidation and ticket signing material to specifically allowed roles. Task-injected values are snapshots until rollout; signer rotation needs a planned key-ring transition, not an unexplained instant replacement. A client must never receive the signing secret or invent a valid ticket.
 
 ## 8. Trade-offs
 
-- **Pros:** IAM-checked, logged, rotation support, values never in code or images.
-- **Cons:** per-secret monthly price; a recovery window of 0 means no undo on delete.
+Rotating a single key immediately invalidates old QR tokens unless a key ring is supported. OWASP review also needs abuse, dependency, authorization, logging and incident practices beyond code checks.
 
 ## 9. Alternatives and when to choose them
 
-- **SSM Parameter Store (SecureString):** many simple values, lower cost, no built-in rotation.
-- **A customer-managed KMS key:** cross-account access or key policies for audits.
-- **HashiCorp Vault:** multi-cloud or dynamic database credentials.
+10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- "secret is scheduled for deletion" when recreating a name (if the window were not 0).
-- Execution role lacks the ARN: `ResourceInitializationError: unable to pull secrets`.
-
-## 11. Reach / Allowed / Password
-
-**Reach:** a regional public endpoint, reached by tasks through the internet gateway. **Allowed:** IAM
-(`secretsmanager:GetSecretValue` on exact ARNs). **Password:** none of its own; calls are signed with
-STS credentials.
-
-## 12. Cost
-
-About $0.40 per secret per month plus $0.05 per 10,000 API calls: two secrets ≈ $0.80 a month while
-the data layer is on.
+Are signed QR claims private? No; base64url is readable.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** A safe for passwords that only allowed roles can open.
-- **Senior:** Two secrets: the RDS-managed master secret and our `minitickets/dev/redis-url`, written
-  by Pulumi as a Pulumi secret. The execution role may read only those two ARNs, and ECS injects them
-  as env vars at start.
-- **Lead:** Secrets Manager centralises access and audit. I'd add rotation for the cache token,
-  runtime reads for rotation safety, and alerts on unexpected `GetSecretValue` callers in CloudTrail.
+- **Simple:** Secrets Manager supplies RDS-managed DB credentials, cache URL, shared revalidation and ticket signing material to specifically allowed roles. Task-injected values are snapshots until rollout; signer rotation needs a planned key-ring transition, not an unexplained instant replacement.
+- **Senior:** Store signing/database credentials in Secrets Manager, expose them only to the runtime that needs them and never log them. HMAC authenticates the original ticket bytes and constant-time comparison rejects tampering; it does not encrypt the payload or prevent reuse. Authorization still checks owner/role and uploads remain untrusted.
+- **Lead:** 10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Is the secret in Pulumi state?* The redis URL is, encrypted (`pulumi.secret`); the RDS password is
-  not, because RDS generated it.
-- *Who can read it?* Only principals with `GetSecretValue` on that ARN.
+Are signed QR claims private? No; base64url is readable.
 
 ## 15. Say it in 30 seconds
 
-"Two secrets in Secrets Manager: the RDS-managed password and the full `rediss://` URL with the cache
-token. Code and outputs only carry ARNs, the execution role may read exactly those two, and ECS
-injects them as env vars when a task starts."
+Store signing/database credentials in Secrets Manager, expose them only to the runtime that needs them and never log them. HMAC authenticates the original ticket bytes and constant-time comparison rejects tampering; it does not encrypt the payload or prevent reuse. Authorization still checks owner/role and uploads remain untrusted.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
 ## Where it appears in the story
 

@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const check = process.argv.includes("--check");
 // 1. Only repo source/config files are inputs. Generated docs never feed back into their generator.
 const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
-  .split("\n").filter(file => /\.(tsx?|[cm]?js|ya?ml|sh)$|(^|\/)Dockerfile[^/]*$/.test(file) && !file.startsWith("docs/")).sort();
+  .split("\n").filter(file => /\.(tsx?|[cm]ts|[cm]?js|ya?ml|sh)$|(^|\/)Dockerfile[^/]*$/.test(file) && !file.startsWith("docs/")).sort();
 const snippets: { id: string; concept: string; file: string; line: number; endLine: number; symbol: string; code: string }[] = [];
 const hash = createHash("sha256");
 for (const file of files) {

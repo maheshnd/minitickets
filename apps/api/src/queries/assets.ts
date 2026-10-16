@@ -4,6 +4,7 @@ import { env } from "../config/env";
 
 // 1. AWS uses task credentials; Moto uses the same SDK via a loopback endpoint.
 //    No SDK may silently call AWS locally when the feature is unconfigured.
+// @concept: presigned-urls
 export const assetsEnabled = env.TICKETS_BUCKET !== undefined;
 export const s3 = new S3Client({ region: env.AWS_REGION, endpoint: env.S3_ENDPOINT,
   forcePathStyle: !!env.S3_ENDPOINT, maxAttempts: 1, requestChecksumCalculation: "WHEN_REQUIRED",

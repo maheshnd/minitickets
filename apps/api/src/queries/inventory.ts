@@ -5,6 +5,7 @@ import { redis } from "../redis/client";
 import { redisOperation } from "./redis-operation";
 import { INITIALIZE, RECONCILE, RESERVE, SETTLE, SNAPSHOT } from "./inventory-scripts";
 
+// @concept: inventory-gate
 export function inventoryKeys(eventId: string) {
   return [`${env.SALE_REDIS_NAMESPACE}:inventory:v1:{${eventId}}:state`, `${env.SALE_REDIS_NAMESPACE}:inventory:v1:{${eventId}}:leases`] as const;
 }

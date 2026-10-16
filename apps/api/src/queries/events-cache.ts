@@ -26,6 +26,8 @@ import { redis } from "../redis/client";
 //      next to the key (debug level), and that log line is how you find out which key is which.
 //      16 hex characters = 64 bits of SHA-256. Two different filters sharing a hash (a "collision")
 //      would serve one the other's list; with even a million live keys the chance is about 1 in 37 million.
+// @concept: cache-stampede
+// @concept: cache-invalidation
 export function upcomingKey(gen: number, canonicalFilters: string): string {
   return `events:upcoming:v3:g${gen}:${shortHash(canonicalFilters)}`;
 }

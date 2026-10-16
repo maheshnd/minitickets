@@ -13,6 +13,7 @@
 // 1. Work that is running right now, by key. Each value is the promise every caller waits on.
 const inFlight = new Map<string, Promise<unknown>>();
 
+// @concept: cache-stampede
 export function singleFlight<T>(key: string, work: () => Promise<T>): Promise<T> {
   // 2. Already running for this key? Then just wait for the SAME promise: no new work.
   const running = inFlight.get(key);

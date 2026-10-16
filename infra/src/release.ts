@@ -32,6 +32,7 @@ const prefix = "minitickets-dev";
 
 // 1. The parameter's name. A path: "/minitickets/dev/" groups everything of this environment, so
 //    readDeployedImageTag (3) can list the path and IAM can name exactly this one (cicd.ts).
+// @concept: release-guard
 export const imageTagParameterName = "/minitickets/dev/image-tag";
 const parameterPath = "/minitickets/dev";
 

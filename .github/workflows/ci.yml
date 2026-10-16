@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 # @concept: ci-pipeline
+# @concept: image-scanning
 jobs:
   # Fast checks that need no database: types, lint rules and unit tests.
   quality:

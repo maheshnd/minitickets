@@ -2,27 +2,24 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Testing · Status: ✅ built · Step doc: [04 signup form](../../04-signup-form.md), [10 CI](../../10-ci.md)
+Area: Testing · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-**End-to-end (e2e) tests** drive a real browser through the real app (web, api, Postgres, Redis)
-like a user; each run creates its own fresh accounts so tests never depend on old data.
+Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM.
 
 ## 2. Real-life comparison
 
-A mystery shopper who walks in, buys something and asks for a refund, checking the whole shop works,
-not just the till.
+A stopwatch on a real visitor’s journey answers different questions from a rehearsed practice lap.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    pw["Playwright (Chromium)"] --> web["web :3000"]
-    web --> api["api :4000"]
-    api --> pg[("Postgres")]
-    api --> r[("Redis")]
-    pw -.->|"new email per run:<br/>login-runId@example.com"| web
+    n0["Semantic UI"] --> n1
+    n1["Automated axe scan"] --> n2
+    n2["Keyboard task"] --> n3
+    n3["Human review"]
 ```
 
 ## 4. Where in our code
@@ -30,87 +27,51 @@ flowchart LR
 - Anchor: `apps/web/playwright.config.ts` · `baseURL` (`E2E_BASE_URL` or localhost:3000), `webServer` (CI only).
 - Anchor: `apps/web/e2e/login.spec.ts` · `runId`, `beforeAll`: fresh account through the signup page.
 
-Step by step:
-
-1. Four spec files: `signup`, `login`, `logout`, `dashboard` (`apps/web/e2e/*.spec.ts`).
-2. Each file makes `runId = Date.now()-random` and an email like `login-<runId>@example.com`, and
-   signs up through the UI in `beforeAll`: no database access, no shared fixtures.
-3. Tests use accessible locators (`getByLabel`, `getByRole`), which also checks labels exist.
-4. Locally, Playwright uses the servers you already run (`pnpm dev`) and never starts its own. In CI
-   (`CI=true`), `webServer` starts the api (`/health`) and a **production** build of the web.
-5. `E2E_BASE_URL` points the same tests at another copy, e.g. the CloudFront URL after a deploy.
-6. They check behaviour that units can't: HttpOnly cookie (`document.cookie`), redirects, 409 under
-   the field, disabled button while pending (`page.route` delays requests), fake-cookie 401.
+Vitest currently has 404 tests. `pnpm demo:security` passed 24 production e2e; `demo:search`, `demo:sale`, `demo:outbox` isolate scale/failure. Security used one isolated inverted-origin mutation to prove important tests fail. D1 tested 144 offline tour navigations without screenshots. No full-suite or AWS deployment claim is implied.
 
 ## 5. See it yourself
 
-```bash
-pnpm dev                      # in one terminal
-pnpm test:e2e                 # in another
-E2E_BASE_URL=https://<id>.cloudfront.net pnpm test:e2e   # against AWS
-```
+Vitest currently has 404 tests. `pnpm demo:security` passed 24 production e2e; `demo:search`, `demo:sale`, `demo:outbox` isolate scale/failure. Security used one isolated inverted-origin mutation to prove important tests fail. D1 tested 144 offline tour navigations without screenshots. No full-suite or AWS deployment claim is implied.
 
-**Break it on purpose:** use a fixed email `test@example.com` in `login.spec.ts`: the first run
-passes, the second fails at signup with "Email already registered".
+Failure thought experiment: Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
 
 ## 6. How it connects
 
-- **Uses ←** the whole app; [ci-pipeline](ci-pipeline.md) service containers and migrations.
-- **Gives →** the top of the [testing-pyramid](testing-pyramid.md); proof for
-  [session-cookie](session-cookie.md), [route-guard-proxy](route-guard-proxy.md),
-  [open-redirect](open-redirect.md), [ui-error-handling](ui-error-handling.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#accessibility) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-| Setting | Why |
-| ------- | --- |
-| Unique data per run | Repeatable without resetting the database. |
-| Signup through the UI | No test-only backdoors into the database. |
-| Chromium only | Fast CI; cross-browser not needed yet. |
-| Production web build in CI | Test what users get, not the dev server. |
+Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM. Different failure modes need different evidence; test count alone is not confidence.
 
 ## 8. Trade-offs
 
-- **Pros:** highest confidence; catches integration bugs across all layers.
-- **Cons:** slower (minutes in CI with builds); test users pile up in the database; can be flaky
-  with timing.
+Overmocked SQL cannot prove row locks; broad slow suites can hide targeted failures. Avoid repeating every test after comment-only docs edits unless source behavior changes.
 
 ## 9. Alternatives and when to choose them
 
-- **Cypress:** similar, different runner model.
-- **API-level setup** (create users with a direct API call): faster `beforeAll`.
-- **Database reset per run:** clean data, needs DB access from tests.
+10x: stable fixtures and flake ownership. 100x: contract tests, production canaries and measured risk-based gates.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-Flakiness from timing; the CI uploads the HTML report on failure. Locally, tests fail if `pnpm dev`
-isn't running (by design).
+Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** A robot uses the real app in a real browser and checks it works.
-- **Senior:** Playwright specs for signup, login, logout and dashboard, each creating a unique
-  account through the UI in `beforeAll`. Locally they hit the running dev servers; in CI Playwright
-  starts the api and a production web build against service-container Postgres and Redis. The same
-  tests run against the CloudFront URL with `E2E_BASE_URL`.
-- **Lead:** Keep e2e tests few and journey-focused, isolated by data, and runnable against any
-  environment, so they double as post-deploy smoke tests.
+- **Simple:** Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM.
+- **Senior:** Unit-test pure policy and failure decisions, integration-test real transaction/concurrency invariants and browser-test user-visible flows. A demo should print measurable counts rather than only success text. Emulators exercise SDK contracts but cannot prove IAM, ALB proxy behavior, SES delivery or CloudFront policy. Keep those as explicit live acceptance.
+- **Lead:** 10x: stable fixtures and flake ownership. 100x: contract tests, production canaries and measured risk-based gates.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *How do you keep e2e tests independent?* Unique data per run; no order dependence.
-- *Why accessible locators?* Stable, user-facing, and they fail if labels disappear.
+Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
 
 ## 15. Say it in 30 seconds
 
-"Playwright e2e tests for signup, login, logout and the dashboard. Every run creates fresh accounts
-through the UI, so there's no shared test data. Locally they use the running dev servers; in CI
-Playwright starts the api and a production web build with real Postgres and Redis, and the same tests
-can run against the deployed CloudFront URL."
+Unit-test pure policy and failure decisions, integration-test real transaction/concurrency invariants and browser-test user-visible flows. A demo should print measurable counts rather than only success text. Emulators exercise SDK contracts but cannot prove IAM, ALB proxy behavior, SES delivery or CloudFront policy. Keep those as explicit live acceptance.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: component-level semantic conventions. 100x: representative assistive-technology testing across critical journeys.
 
 ## Where it appears in the story
 

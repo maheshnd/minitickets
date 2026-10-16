@@ -8,6 +8,7 @@ import { isPosterImage } from "./poster-image";
 
 // 1. All object paths come from server UUIDs and the authenticated admin, never a filename,
 //    URL or arbitrary key from the browser. Each event gets an independent upload capability.
+// @concept: presigned-urls
 function uploadKey(userId: string, eventId: string, uploadId: string) {
   return `poster-uploads/${eventId}/${userId}/${uploadId}`;
 }

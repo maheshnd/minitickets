@@ -2,6 +2,7 @@ import { RateLimitedError, UnavailableError } from "../errors";
 import { takeToken } from "../queries/rate-limits";
 
 // 1. A modest burst supports normal use; sustained traffic gets one fresh token per interval.
+// @concept: rate-limiting
 export const RATE_POLICIES = {
   login: { capacity: 20, refillMs: 3000 },
   booking: { capacity: 10, refillMs: 1000 },

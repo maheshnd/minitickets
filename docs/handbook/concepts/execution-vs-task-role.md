@@ -2,56 +2,24 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: AWS Compute · Status: ✅ built · Deep dive: [aws-foundations, chapter 5](../aws-foundations.md#5-roles-sts-and-the-confused-deputy) · Step docs: [17](../../17-infra-ecs-api.md) (section 3.4), [18](../../18-infra-alb-web.md) (section 3.9)
+Area: AWS Compute · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-The **execution role** is worn by ECS to **start** a task (pull the image, read secrets, write
-logs); the **task role** is worn by **our running code**.
+ECS execution role starts tasks: image pull, startup secrets and log configuration. The application task role authorizes runtime SNS/Dynamo/S3 calls and ECS Exec. Web execution now reads the one revalidation secret; it still has no application task role. Lambda uses one execution/runtime role.
 
 ## 2. Real-life comparison
 
-The removal company and the tenant. The removal company (ECS) has a key to the storage unit to bring
-in your furniture (secrets, image) on moving day. You, the tenant, get a different key that opens
-only your own flat. You never hold the storage unit key.
+A sealed package is built once, then checked at a gate before the manager installs that exact version.
 
 ## 3. Picture it
 
-Each role in three parts: who may wear it (trust), what it may do (permissions), where it is
-attached.
-
 ```mermaid
 flowchart LR
-    t1["TRUST: ecs-tasks.amazonaws.com<br/>aws:SourceAccount = ours"] --> r1["api execution role"]
-    r1 --> p1["PERMISSIONS: ECR pull, logs write,<br/>GetSecretValue on 2 ARNs"]
-    r1 --> a1["ATTACHED: api task definition<br/>executionRoleArn"]
-```
-
-```mermaid
-flowchart LR
-    t2["TRUST: ecs-tasks.amazonaws.com<br/>aws:SourceAccount = ours"] --> r2["api task role"]
-    r2 --> p2["PERMISSIONS: 4 ssmmessages<br/>actions (ECS Exec)"]
-    r2 --> a2["ATTACHED: api task definition<br/>taskRoleArn"]
-```
-
-```mermaid
-flowchart LR
-    t3["TRUST: ecs-tasks.amazonaws.com<br/>aws:SourceAccount = ours"] --> r3["web execution role"]
-    r3 --> p3["PERMISSIONS: ECR pull,<br/>logs write. No secrets."]
-    r3 --> a3["ATTACHED: web task definition<br/>executionRoleArn"]
-```
-
-When each is worn:
-
-```mermaid
-sequenceDiagram
-    participant ECS as ECS agent
-    participant X as execution role
-    participant C as api container
-    participant T as task role
-    ECS->>X: assume: pull image, read 2 secrets
-    ECS->>C: start with DB_USER, DB_PASSWORD, REDIS_URL
-    C->>T: only if it calls AWS (ECS Exec agent does)
+    n0["Repository OIDC subject"] --> n1
+    n1["Trust policy"] --> n2
+    n2["Scoped role permissions"] --> n3
+    n3["Attached job or task"]
 ```
 
 ## 4. Where in our code
@@ -60,100 +28,51 @@ sequenceDiagram
 - Anchor: `infra/src/compute/web-iam.ts` · `createWebIamRole`: the web execution role (no task role).
 - Anchor: `infra/src/compute/task.ts` · `executionRoleArn`, `taskRoleArn`: where the api roles are attached.
 
-Step by step (`iam.ts`):
-
-1. `ecsTasksTrustPolicy`: principal `ecs-tasks.amazonaws.com`, `sts:AssumeRole`, condition
-   `aws:SourceAccount` = our account (stops the confused deputy).
-2. `executionRole` + `executionManaged` (`AmazonECSTaskExecutionRolePolicy`) + `executionSecrets`
-   (`read-secrets`: `GetSecretValue` on exactly two ARNs).
-3. `taskRole` + `taskExec` (`ecs-exec`: four `ssmmessages` actions, `Resource: "*"`).
-4. Returns each ARN only after its policies exist (`pulumi.all`), so the first task never starts
-   with a role that cannot yet read secrets.
-
-`web-iam.ts`: one execution role with only the managed policy. `web-task.ts` sets no `taskRoleArn`.
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
 
 ## 5. See it yourself
 
-```bash
-for R in minitickets-dev-api-execution-role minitickets-dev-api-task-role minitickets-dev-web-execution-role; do
-  echo "== $R"
-  aws iam list-attached-role-policies --profile ticketlite --role-name $R --query "AttachedPolicies[].PolicyName"
-  aws iam list-role-policies --profile ticketlite --role-name $R --query PolicyNames
-done
-```
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
 
-**Break it on purpose (scratch branch, undo after):** move `executionSecrets` onto the task role.
-The task cannot start (`ResourceInitializationError: unable to pull secrets`), which proves that
-ECS, not our code, reads the secrets.
+Failure thought experiment: Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 6. How it connects
 
-- **Uses ←** IAM policies and STS ([aws-foundations](../aws-foundations.md)); secret ARNs from
-  [secrets-manager](secrets-manager.md) and [rds-managed-password](rds-managed-password.md).
-- **Gives →** the permissions behind [ECR](ecr.md) pulls, [CloudWatch Logs](cloudwatch-logs.md),
-  secret injection, and [ECS Exec](ecs-exec.md); the main example of [least privilege](least-privilege.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#iam-oidc) and [explorer tour](../guides/infra-explorer.html?tour=iam-badges).
 
 ## 7. Our settings and WHY
 
-| Choice | Why |
-| ------ | --- |
-| Split execution and task roles | The code that runs all day has no IAM permission to read secrets. |
-| Web has its own execution role | Web needs no secrets, so its role cannot read any. |
-| No web task role | Web code calls no AWS API and has no ECS Exec. |
-| `aws:SourceAccount` | Confused deputy protection. |
+ECS execution role starts tasks: image pull, startup secrets and log configuration. The application task role authorizes runtime SNS/Dynamo/S3 calls and ECS Exec. Web execution now reads the one revalidation secret; it still has no application task role. Lambda uses one execution/runtime role. A reachable AWS endpoint is not permission to invoke it.
 
 ## 8. Trade-offs
 
-- **Pros:** small blast radius; a compromised app process holds no secret-reading power.
-- **Cons:** the injected values still sit in the container's environment; three roles to review.
+Resource wildcards needed for APIs without resource scoping require conditions where supported. Broad deploy capability is dangerous; do not let old infrastructure runs apply.
 
 ## 9. Alternatives and when to choose them
 
-- **One role for both:** only for throwaway demos.
-- **Task role reads secrets at runtime** (SDK + cache): survives password rotation; the task role
-  then needs `GetSecretValue` on that one secret.
+10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Execution role lacks a secret → `ResourceInitializationError: unable to pull secrets`.
-- Execution role lacks ECR or logs → `CannotPullContainerError` or no logs.
-- Task role lacks `ssmmessages` → `execute-command` fails; the ECS Exec agent is not running.
-
-## 11. Reach / Allowed / Password
-
-These roles are **Allowed**. Their STS credentials sign the calls to ECR, Secrets Manager, Logs and
-SSM; **Reach** to those endpoints is the task's public IP.
-
-## 12. Cost
-
-Free.
+Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** One role lets ECS start the container; the other is what the running code may do.
-- **Senior:** Our api execution role has the managed execution policy plus `GetSecretValue` on
-  exactly the RDS master secret and the redis-url secret; ECS injects them as env vars at start. The
-  task role only has the ECS Exec `ssmmessages` actions. Web has an execution role without secrets
-  and no task role. All trust policies require `aws:SourceAccount`.
-- **Lead:** The split means an RCE in the app cannot call Secrets Manager. I'd standardise per-service
-  roles, review trust and permission policies in code review, and move to runtime secret reads where
-  rotation matters.
+- **Simple:** ECS execution role starts tasks: image pull, startup secrets and log configuration. The application task role authorizes runtime SNS/Dynamo/S3 calls and ECS Exec. Web execution now reads the one revalidation secret; it still has no application task role. Lambda uses one execution/runtime role.
+- **Senior:** A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.
+- **Lead:** 10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Which role pulls the image?* The execution role.
-- *Which role would an AWS SDK call from our code use?* The task role.
-- *Why does the ECS Exec permission sit on the task role?* The agent runs inside our task.
+Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 15. Say it in 30 seconds
 
-"The execution role is ECS's: pull the image, read exactly two secrets, write logs, before our code
-starts. The task role is our code's: only ECS Exec. Web gets an execution role without secrets and no
-task role. All of them can only be assumed by ECS for our account."
+A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
 ## Where it appears in the story
 

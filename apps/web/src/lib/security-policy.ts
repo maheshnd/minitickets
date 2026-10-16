@@ -1,5 +1,6 @@
 // 1. Script nonces are per response. Inline style attributes remain allowed for React layouts;
 //    style elements require a nonce in production. Dev additionally needs eval/HMR connections.
+// @concept: csp
 export function securityPolicy(nonce: string, dev: boolean, apiOrigin = "") {
   const api = apiOrigin ? new URL(apiOrigin).origin : "";
   const s3 = "https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com";

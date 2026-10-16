@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { ListEventsInput } from "@minitickets/shared";
 import { useTRPC } from "@/lib/trpc/client";
 
+// @concept: search-races
 export function useEventSearch(filters: ListEventsInput, text: string) {
   const trpc = useTRPC();
   const [q, setQ] = useState("");

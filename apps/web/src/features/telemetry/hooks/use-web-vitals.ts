@@ -1,6 +1,7 @@
 import { useReportWebVitals } from "next/web-vitals";
 import { WebVitalInput } from "@minitickets/shared";
 
+// @concept: web-vitals
 function report(metric: { name: string; value: number; id: string; rating: string }) {
   // 1. Strip ids/query strings before sending, so private URLs never enter telemetry logs.
   const path = window.location.pathname;

@@ -2,112 +2,75 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: API · Status: ✅ built · Step doc: [07 login](../../07-login-session.md)
+Area: API · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-`createContext` runs once for every tRPC request and builds `ctx`: the raw request and reply, the
-session id from the cookie, and the **session** looked up in Redis (or `null`).
+Context verifies the opaque Redis session and exposes userId. It does not fetch every user role. Admin middleware alone reads current Postgres role; owner checks use authenticated identity. Deleted-user/profile and auth-store errors remain explicit outcomes.
 
 ## 2. Real-life comparison
 
-The check-in desk at a hotel: before you reach any service, they look at your key card once and
-write "Room 204, guest Ana" on your wristband. Every service after that reads the wristband instead
-of checking again.
+A visitor badge can be cancelled in the central register, even if someone still holds the paper copy.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    req["request<br/>Cookie: sid=..."] --> ctx["createContext"]
-    ctx -->|"sessions.get(sid)"| redis[("Redis<br/>session:sha256")]
-    ctx --> out["ctx = { req, res,<br/>sessionId, session }"]
-    out --> mw["middleware → procedure"]
+    n0["Random cookie"] --> n1
+    n1["Hashed session and user index"] --> n2
+    n2["Authoritative role check"] --> n3
+    n3["Allowed procedure"]
 ```
 
 ## 4. Where in our code
 
 - Anchor: `apps/api/src/trpc/context.ts` · `createContext`, `Context`: the per-request object and its type.
 
-Step by step:
-
-1. Read `req.cookies["sid"]` (`SESSION_COOKIE`). It may be missing.
-2. If there is one, `sessions.get(sessionId)` hashes it and asks Redis
-   ([sessions-vs-jwt](sessions-vs-jwt.md)). Missing, fake and expired ids all give `null`.
-3. Keep only `{ userId }` as `session`: the one thing procedures need.
-4. Return `{ req, res, sessionId, session }`. `req`/`res` let procedures set cookies;
-   `sessionId` is kept for logout.
-5. `type Context = Awaited<ReturnType<typeof createContext>>` gives tRPC the type;
-   `initTRPC.context<Context>()` in `init.ts` uses it.
+`apps/api/src/queries/sessions.ts` implements indexed creation/read/revokeAll; `services/users.ts` revokes around makeAdmin. `pnpm demo:security` checks old-cookie, all-device and role revocation. Cookies are HttpOnly/SameSite with Secure in production. An in-flight authorized request cannot be recalled; two-store role/revocation is not a global transaction.
 
 ## 5. See it yourself
 
-```bash
-curl -s localhost:4000/trpc/auth.me                       # {"result":{"data":null}}
-curl -s -b 'sid=not-real' localhost:4000/trpc/auth.me     # null too: Redis has no such key
-```
+`apps/api/src/queries/sessions.ts` implements indexed creation/read/revokeAll; `services/users.ts` revokes around makeAdmin. `pnpm demo:security` checks old-cookie, all-device and role revocation. Cookies are HttpOnly/SameSite with Secure in production. An in-flight authorized request cannot be recalled; two-store role/revocation is not a global transaction.
 
-With a real `sid` from your browser (DevTools → Application → Cookies → `localhost`), the same
-call returns your `{ id, email }`.
-
-**Break it on purpose:** return `session: { userId: "x" }` always. Every caller now passes
-`protectedProcedure`, and `account.profile` throws "User not found" (404). This is why the session
-lookup must be on the server.
+Failure thought experiment: Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.
 
 ## 6. How it connects
 
-- **Uses ←** [fastify-app](fastify-app.md) (cookie plugin), [sessions-vs-jwt](sessions-vs-jwt.md)
-  (`queries/sessions.ts`).
-- **Gives →** `ctx.session` for [protected-procedure](protected-procedure.md) and
-  [trpc-middleware](trpc-middleware.md); `ctx.res` for [session-cookie](session-cookie.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#sessions-roles) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-Look the session up **once per request, in the context**. WHY: no procedure can forget it, and a
-batched request does it once for all its calls.
+Context verifies the opaque Redis session and exposes userId. It does not fetch every user role. Admin middleware alone reads current Postgres role; owner checks use authenticated identity. Deleted-user/profile and auth-store errors remain explicit outcomes. A role embedded forever in a session becomes stale after a privilege change.
 
 ## 8. Trade-offs
 
-- **Pros:** one place for "who is calling"; procedures stay simple.
-- **Cons:** every tRPC request with a cookie costs one Redis round-trip, even for procedures that
-  don't need the user. A Redis outage therefore fails those requests too.
+Redis/index eviction fails closed and forces login. The 20-device bound makes revoke work bounded. Session-versioning/transactional role changes are proposed improvements for larger deployments.
 
 ## 9. Alternatives and when to choose them
 
-- **Lazy lookup** (resolve the session only when a procedure asks): saves Redis calls on public
-  procedures.
-- **Stateless tokens (JWT) verified in the context:** no network call, but harder revocation.
+10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Redis down: `sessions.get` throws, the request fails fast with a generic 500
-  ([fail-fast](fail-fast.md)); `/ready` turns 503.
-- Context throws on a malformed cookie: not today; a missing or odd cookie just becomes `null`.
+Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** For each request, the server works out who you are once, then every function uses that.
-- **Senior:** `createContext` reads the `sid` cookie, looks up `session:<sha256>` in Redis, and puts
-  `{ userId }` or `null` on `ctx` with `req`/`res`. Middleware and procedures read `ctx.session`;
-  procedures use `ctx.res` to set cookies.
-- **Lead:** The context is the request's identity boundary. I'd keep it small and cheap, make
-  lookups lazy if we add many public procedures, and add per-request things like a correlation id
-  here.
+- **Simple:** Context verifies the opaque Redis session and exposes userId. It does not fetch every user role. Admin middleware alone reads current Postgres role; owner checks use authenticated identity. Deleted-user/profile and auth-store errors remain explicit outcomes.
+- **Senior:** Opaque session cookies keep revocation server-side; JWTs reduce lookup dependence but revocation/role changes need expiry or another authoritative version. MiniTickets hashes random tokens in Redis, rotates login sessions, indexes at most 20 devices and checks membership on every read. Admin authorization reads Postgres; role changes revoke sessions before and after the update.
+- **Lead:** 10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not look up the session in each procedure?* Duplication and the risk of forgetting it.
-- *Is context created per batch or per call?* Once per HTTP request, so once per batch.
+Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.
 
 ## 15. Say it in 30 seconds
 
-"createContext runs once per tRPC request: it reads the sid cookie, looks up the hashed session in
-Redis, and puts userId or null on ctx, plus the request and reply for cookies. Every middleware and
-procedure reads ctx.session, so nobody can forget the lookup."
+Opaque session cookies keep revocation server-side; JWTs reduce lookup dependence but revocation/role changes need expiry or another authoritative version. MiniTickets hashes random tokens in Redis, rotates login sessions, indexes at most 20 devices and checks membership on every read. Admin authorization reads Postgres; role changes revoke sessions before and after the update.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
 ## Where it appears in the story
 

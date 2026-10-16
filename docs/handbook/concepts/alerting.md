@@ -2,104 +2,80 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: 🟡 partial (P2 added health alarms by email; the text below predates P2, see PENDING.md) · Step doc: [13 security groups + budget](../../13-infra-security-groups.md)
+Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**Alerting** sends a person a message when a measurement crosses a limit; our only alert today is the
-monthly budget email, so nobody is told when the app is down.
+API errors, worker failures, old queue work and DLQ messages drive four CloudWatch alarms with SNS email. Confirm the subscription and inspect missing-data behavior live; deployment code alone does not prove notifications work.
 
 ## 2. Real-life comparison
 
-A house with a smoke alarm in the kitchen (the bill) but no burglar alarm (the app being down).
+A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    budget["AWS Budget<br/>cost"] -->|"email"| me["owner"]
-    alarms["CloudWatch alarms<br/>5xx, unhealthy hosts"] -.->|"planned / not built"| sns["SNS topic"]
-    sns -.-> me
+    n0["Booking correlation id"] --> n1
+    n1["API and worker JSON"] --> n2
+    n2["Logs Insights"] --> n3
+    n3["Queue/DLQ alarm"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/budget.ts` · `createBudget`: the cost alert: email at 25/50/100% actual and 100% forecast of $20.
-- Anchor: `infra/src/observability/alarm-specs.ts` · `alarmSpecs`: the health alarms (P2): DLQ not empty, oldest message age >= 5 min, worker Lambda errors, ALB 5xx >= 5 in 5 min.
-- Anchor: `infra/src/observability/alert-topic.ts` · `createAlertTopic`: SNS topic `minitickets-dev-alerts` (only our CloudWatch alarms may publish) + an email subscription you confirm by hand (P2).
+- Anchor: `infra/src/budget.ts` — `createBudget`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/observability/alarm-specs.ts` — `ALARM_PREFIX`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/observability/alert-topic.ts` — `prefix`; follow the numbered comments at this boundary.
 
-There are no CloudWatch alarms, SNS topics or on-call integrations in our code.
+`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
 
 ## 5. See it yourself
 
-```bash
-aws cloudwatch describe-alarms --profile ticketlite --query "MetricAlarms[].AlarmName"   # []
-```
+Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+
+Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [budget-alerts](budget-alerts.md); would use [metrics](metrics.md) and
-  [CloudWatch Logs](cloudwatch-logs.md).
-- **Gives →** cost safety only.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
 
 ## 7. Our settings and WHY
 
-Dev has no users to protect; a cost alert protects the owner's wallet, which is the real risk.
+API errors, worker failures, old queue work and DLQ messages drive four CloudWatch alarms with SNS email. Confirm the subscription and inspect missing-data behavior live; deployment code alone does not prove notifications work. A user symptom spans asynchronous boundaries, not one process log.
 
 ## 8. Trade-offs
 
-- **Pros:** no alert noise, nothing to maintain.
-- **Cons:** outages are invisible until someone looks.
+Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
 
 ## 9. Alternatives and when to choose them
 
-What I'd add first in production, all CloudWatch alarms to an SNS topic:
+10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-1. ALB `HTTPCode_Target_5XX_Count` / 5xx rate above a threshold.
-2. ALB `UnHealthyHostCount` > 0 or `HealthyHostCount` < 1.
-3. ECS running task count below desired.
-4. RDS CPU, free storage and connection count.
-5. A synthetic check (CloudWatch Synthetics) on `appUrl` and a login.
+## 10. What breaks and how we notice
 
-Later: SLO-based burn-rate alerts instead of raw thresholds.
-
-## 10. What breaks, and how we'd notice
-
-Today we notice an outage only by using the app or reading logs.
-
-## 11. Reach / Allowed / Password
-
-Not a connection.
-
-## 12. Cost
-
-The budget: see [budget-alerts](budget-alerts.md). CloudWatch alarms are billed per alarm per month
-(small; not measured).
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We only get an email about cost; there are no uptime alerts yet.
-- **Senior:** The budget is our only alert. For production I'd alarm on ALB 5xx and unhealthy hosts,
-  ECS running count and RDS saturation, sending to SNS.
-- **Lead:** Alerts should be on symptoms users feel (errors, latency) and tied to SLOs, routed to an
-  on-call rotation, with runbooks linked in each alert, and reviewed so noisy ones get fixed or removed.
+- **Simple:** API errors, worker failures, old queue work and DLQ messages drive four CloudWatch alarms with SNS email.
+- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
+- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Symptom vs cause alerts?* Alert on what users feel; use cause metrics for diagnosis.
-- *How do you avoid alert fatigue?* Few, actionable alerts with clear owners and runbooks.
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
+
+Which signal explains a specific failed booking? **Correlated structured logs.**
 
 ## 15. Say it in 30 seconds
 
-"Today the only alert is the cost budget email. For production I'd add CloudWatch alarms on ALB 5xx
-and unhealthy hosts, running task count and RDS saturation, plus a synthetic login check, all to an
-on-call channel."
+Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
 
-## 16. Status
+## 16. Status and production work
 
-🟡 partial. **To make it production-grade:** the alarm list in section 9.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
 ## Where it appears in the story
 
-- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)
-- [Infra story: 13. The budget](../infra-story.md#13-the-budget)
+- [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)

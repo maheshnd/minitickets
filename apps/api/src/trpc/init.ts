@@ -127,6 +127,7 @@ const isAdmin = t.middleware(async ({ ctx, next }) => {
 // 6. Export only the building blocks the rest of the API needs.
 //    router: groups procedures together.
 //    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.
+// @concept: rbac
 export const router = t.router;
 //    createCallerFactory: lets tests call a router directly as a function, with no HTTP server.
 export const createCallerFactory = t.createCallerFactory;

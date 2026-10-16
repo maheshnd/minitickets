@@ -50,6 +50,7 @@ const EVENTS_TAG = "events";
 //      web server has its own, and the revalidate hook reaches only the one it was sent to.
 //    - The log line runs only when the function runs, i.e. on a MISS (or a refresh): that is
 //      how the web server's log tells a hit (no line, and no request in the API log) from a miss.
+// @concept: next-data-cache
 export const getCachedEvents = unstable_cache(
   async (canonicalInput: ListEventsInput) => {
     serverLog("info", "next data cache miss: events.list", { input: canonicalInput });

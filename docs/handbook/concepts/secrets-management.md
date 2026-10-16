@@ -2,26 +2,24 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Auth & Security · Status: ✅ built · Step docs: [11 Docker](../../11-docker.md), [14 data](../../14-infra-data.md), [17 ECS api](../../17-infra-ecs-api.md)
+Area: Auth & Security · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-**Secrets management** is the practice of keeping passwords, tokens and keys out of code, images,
-logs and plain config, and delivering them to the running app only when and where it needs them.
+Secrets stay out of source, logs and public browser config. Env examples hold placeholders; AWS uses scoped Secrets Manager injection. CI credentials are short-lived OIDC and Pulumi tokens remain environment secrets. Do not equate a secret ARN with the secret value.
 
 ## 2. Real-life comparison
 
-A hotel never prints the safe code on the room key card. The code is set at check-in, given only to
-the guest, and changed for the next guest.
+A durable work tray keeps the task after the customer leaves; a completed stamp identifies a repeat.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    gen["Generated:<br/>RDS password, Valkey token,<br/>origin secret"] --> store["Stored encrypted:<br/>Secrets Manager,<br/>Pulumi state (secret)"]
-    store -->|"ARN only"| code["Code, outputs, task definition"]
-    store -->|"value, at task start"| env["api container env"]
-    code -.->|"never the value"| x["git, images, logs"]
+    n0["Secrets Manager"] --> n1
+    n1["Scoped worker role"] --> n2
+    n2["Signed ticket bytes"] --> n3
+    n3["Verify before use"]
 ```
 
 ## 4. Where in our code
@@ -30,96 +28,51 @@ flowchart LR
 - Anchor: `infra/src/compute/task.ts` · `secrets`: values injected by ECS; the task definition holds only ARNs.
 - Anchor: `infra/index.ts` · step 26 outputs: addresses and secret ARNs only, never passwords or tokens.
 
-Every place a secret could leak, and what we do:
-
-| Place | What we do | Where |
-| ----- | ---------- | ----- |
-| Source code / git | No secret values; `Pulumi.dev.yaml` holds only non-secret config (the alert email is `secure:` encrypted) | `infra/Pulumi.dev.yaml` |
-| Pulumi state | Generated values are Pulumi secrets (encrypted, shown as `[secret]`) | `cache.ts` → `authToken`, `secrets.ts` → `pulumi.secret(...)`, `origin-secret.ts` |
-| RDS password | Never in our hands at all: RDS creates and stores it | `postgres.ts` → `manageMasterUserPassword` |
-| Docker images | `.env` files excluded from the build context | `.dockerignore` |
-| Task definition | ARNs in `secrets`, values injected at start | `task.ts` → `secrets` |
-| Stack outputs | ARNs and addresses only | `index.ts` step 26 |
-| Logs | Passwords redacted (Phase 3 card `log-redaction`) | `apps/api/src/app.ts` → `logger.redact` |
+`apps/worker/src/tickets/token.ts` signs/verifies bounded strict claims; `infra/src/tickets/iam.ts` grants only ticket worker secret access; `services/tickets.ts` owner-scopes reads. Run `pnpm demo:tickets` and `pnpm demo:p4-assets` separately. Proposed rotation adds key id plus verification key ring, staged rollout and old-key retirement; this key-ring is not built.
 
 ## 5. See it yourself
 
-```bash
-cd infra
-pulumi stack output                     # no passwords, only ARNs and addresses
-pulumi preview --diff | grep -i secret  # values show as [secret]
-git grep -nE 'password[[:space:]]*[:=][[:space:]]*"[^"]+"' -- infra apps ':!*.test.ts'   # expect nothing real
-```
+`apps/worker/src/tickets/token.ts` signs/verifies bounded strict claims; `infra/src/tickets/iam.ts` grants only ticket worker secret access; `services/tickets.ts` owner-scopes reads. Run `pnpm demo:tickets` and `pnpm demo:p4-assets` separately. Proposed rotation adds key id plus verification key ring, staged rollout and old-key retirement; this key-ring is not built.
 
-**Break it on purpose (thought experiment):** export `authToken` as a stack output. Pulumi still masks
-it (it is a secret Output) but anyone with `pulumi stack output --show-secrets` gets it, and the
-"outputs never hold secrets" rule is broken.
+Failure thought experiment: Are signed QR claims private? No; base64url is readable.
 
 ## 6. How it connects
 
-- **Uses ←** [Secrets Manager](secrets-manager.md), [RDS-managed password](rds-managed-password.md),
-  [execution role](execution-vs-task-role.md), [KMS](kms.md).
-- **Gives →** the **Password** answers for Postgres and Valkey; safe repos and images.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#secrets-forgery) and [explorer tour](../guides/infra-explorer.html?tour=check-in).
 
 ## 7. Our settings and WHY
 
-- Generate secrets by machine (RDS, `RandomPassword`); no human ever types one.
-- Pass ARNs, not values, between layers.
-- Inject at start so the app has no AWS SDK and no permission to fetch secrets itself.
+Secrets stay out of source, logs and public browser config. Env examples hold placeholders; AWS uses scoped Secrets Manager injection. CI credentials are short-lived OIDC and Pulumi tokens remain environment secrets. Do not equate a secret ARN with the secret value. A client must never receive the signing secret or invent a valid ticket.
 
 ## 8. Trade-offs
 
-- **Pros:** values never in git, images, outputs or task definitions; every read is logged.
-- **Cons:** values sit in the container's environment (visible to anything inside it and to ECS Exec
-  users); read once at start, so rotation needs a restart; the origin secret is visible in the
-  CloudFront and listener config.
+Rotating a single key immediately invalidates old QR tokens unless a key ring is supported. OWASP review also needs abuse, dependency, authorization, logging and incident practices beyond code checks.
 
 ## 9. Alternatives and when to choose them
 
-- **Runtime fetch with caching:** rotation without restarts.
-- **IAM auth / short-lived credentials:** remove the secret altogether.
-- **Secret scanning in CI** (gitleaks, GitHub secret scanning): catch mistakes before merge.
+10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- A secret committed to git: only a scanner or a reviewer notices; it must be rotated, not just
-  deleted.
-- A missing injected secret: the api exits at start with `Invalid environment variables`.
-
-## 11. Reach / Allowed / Password
-
-This card is about the **Password** column and how the passwords get there safely.
-
-## 12. Cost
-
-Secrets Manager ≈ $0.80 a month for our two secrets; the rest is free.
+Are signed QR claims private? No; base64url is readable.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** No passwords in code or images; AWS stores them and gives them to the app at start.
-- **Senior:** RDS generates its own password in Secrets Manager; Pulumi generates the Valkey token and
-  origin secret as Pulumi secrets; the redis URL goes into Secrets Manager. Code and outputs carry only
-  ARNs, `.dockerignore` keeps `.env` out of images, and ECS injects three values at start using the
-  execution role.
-- **Lead:** Next steps would be secret scanning in CI, rotation for every secret with runtime reads,
-  and moving to identity-based access (IAM auth, OIDC for CI) so fewer long-lived secrets exist at all.
+- **Simple:** Secrets stay out of source, logs and public browser config. Env examples hold placeholders; AWS uses scoped Secrets Manager injection. CI credentials are short-lived OIDC and Pulumi tokens remain environment secrets. Do not equate a secret ARN with the secret value.
+- **Senior:** Store signing/database credentials in Secrets Manager, expose them only to the runtime that needs them and never log them. HMAC authenticates the original ticket bytes and constant-time comparison rejects tampering; it does not encrypt the payload or prevent reuse. Authorization still checks owner/role and uploads remain untrusted.
+- **Lead:** 10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Are env vars safe for secrets?* Safer than code or images, but readable by anything in the container;
-  runtime fetch is stronger.
-- *What do you do when a secret leaks?* Rotate it first, then remove it from history, then find out
-  how it leaked.
+Are signed QR claims private? No; base64url is readable.
 
 ## 15. Say it in 30 seconds
 
-"No secret is typed by a human or stored in git, images or outputs. RDS generates its password, Pulumi
-generates the cache token and origin secret as encrypted Pulumi secrets, and ECS injects three values
-from Secrets Manager at task start. Everything else passes only ARNs."
+Store signing/database credentials in Secrets Manager, expose them only to the runtime that needs them and never log them. HMAC authenticates the original ticket bytes and constant-time comparison rejects tampering; it does not encrypt the payload or prevent reuse. Authorization still checks owner/role and uploads remain untrusted.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built. **To make it production-grade:** rotation everywhere, runtime reads, secret scanning in CI.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expiry/rotation drills and audit access. 100x: per-environment/key versioning, compromise playbooks and threat modeling.
 
 ## Where it appears in the story
 

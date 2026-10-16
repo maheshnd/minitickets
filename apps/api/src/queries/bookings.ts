@@ -44,6 +44,7 @@ const IDEMPOTENCY_KEY_UNIQUE = "bookings_user_id_idempotency_key_unique";
 
 // Drizzle wraps driver errors and keeps the original in `.cause` (same as in ./users.ts), so the
 // Postgres code and constraint name may be on the error or on its cause.
+// @concept: idempotency
 function isPgConstraintError(err: unknown, code: string, constraint: string): boolean {
   const pgError = (e: unknown) =>
     typeof e === "object" && e !== null && "code" in e ? (e as { code: unknown; constraint?: unknown }) : undefined;

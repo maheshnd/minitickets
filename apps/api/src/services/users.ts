@@ -7,6 +7,8 @@ import * as users from "../queries/users";
 // Make an existing user an admin. Used by the make-admin script (there is no UI for roles).
 // The change counts from that user's very next ADMIN request: the API reads the role from
 // Postgres on every admin request (getRole, used by trpc/init.ts), it keeps no copy in the session.
+// @concept: rbac
+// @concept: session-revocation
 export async function makeAdmin(email: string) {
   // 1. One UPDATE. If no user has this email, nothing changed: say so clearly.
   const existing = await users.findByEmail(email);

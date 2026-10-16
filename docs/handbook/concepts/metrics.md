@@ -2,110 +2,79 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: 🟡 partial (AWS basic metrics only) · Step doc: [17 ECS api](../../17-infra-ecs-api.md)
+Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**Metrics** are numbers measured over time (CPU, requests, errors, latency); we only have the free
-metrics AWS publishes for ECS, the ALB, RDS, ElastiCache and CloudFront, and our app publishes none.
+Metrics aggregate symptoms over time; structured logs explain events. Current alarms/dashboard use managed metrics, and browser vitals are JSON logs. Dedicated field-percentile analytics, tracing and SLOs are explain-only.
 
 ## 2. Real-life comparison
 
-A car dashboard. We have the speedometer and fuel gauge that came with the car, but no extra gauges
-of our own and no warning lights wired up.
+A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    ecs["ECS service<br/>CPU, memory"] --> cw["CloudWatch metrics"]
-    alb["ALB<br/>requests, 5xx, latency"] --> cw
-    rds["RDS<br/>CPU, connections"] --> cw
-    app["api: custom metrics"] -.->|"not built"| cw
+    n0["Booking correlation id"] --> n1
+    n1["API and worker JSON"] --> n2
+    n2["Logs Insights"] --> n3
+    n3["Queue/DLQ alarm"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/compute/cluster.ts` · `containerInsights: "disabled"`: no per-task metrics.
-- Anchor: `infra/src/observability/dashboard-body.ts` · `dashboardBody`: the CloudWatch dashboard `minitickets-dev` (alarms, ALB, api CPU/memory, jobs queue + DLQ, worker Lambda, newest errors) (P2).
+- Anchor: `infra/src/compute/cluster.ts` — `cluster`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/observability/dashboard-body.ts` — `graph`; follow the numbered comments at this boundary.
 
-What we have:
-
-1. ECS publishes service-level CPU and memory utilisation for free.
-2. The ALB, RDS, ElastiCache and CloudFront publish their standard metrics automatically (we configure
-   nothing for them).
-3. Container Insights (per-task CPU, memory, network) is **off**: billed as custom metrics, a few
-   dollars a month even for one task.
-4. The api publishes no metrics of its own (no Prometheus endpoint, no CloudWatch SDK calls).
+`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
 
 ## 5. See it yourself
 
-```bash
-aws cloudwatch get-metric-statistics --profile ticketlite --namespace AWS/ECS --metric-name CPUUtilization \
-  --dimensions Name=ClusterName,Value=minitickets-dev Name=ServiceName,Value=minitickets-dev-api \
-  --start-time $(date -u -v-1H +%FT%TZ) --end-time $(date -u +%FT%TZ) --period 300 --statistics Average
-```
+Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
 
-(`date -v` is the macOS form.) Or open the ECS service's **Metrics** tab in the console.
+Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** the [cluster](ecs-cluster.md), [ALB](alb.md), [RDS](rds-postgres.md).
-- **Gives →** the raw material for [alerting](alerting.md), [scaling](scaling.md) and SLOs (explain-only).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
 
 ## 7. Our settings and WHY
 
-Container Insights off and no custom metrics: dev has no traffic worth measuring and every custom
-metric costs money.
+Metrics aggregate symptoms over time; structured logs explain events. Current alarms/dashboard use managed metrics, and browser vitals are JSON logs. Dedicated field-percentile analytics, tracing and SLOs are explain-only. A user symptom spans asynchronous boundaries, not one process log.
 
 ## 8. Trade-offs
 
-- **Pros:** free, nothing to run.
-- **Cons:** no per-task view, no business metrics (signups per minute), no app latency percentiles
-  except what the ALB measures.
+Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
 
 ## 9. Alternatives and when to choose them
 
-- **Container Insights:** per-task resource usage.
-- **Embedded Metric Format** in our JSON logs: custom metrics with no extra agent.
-- **OpenTelemetry + Prometheus/Grafana:** vendor-neutral metrics and traces.
+10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-Without alarms, nothing notifies us; we see problems only when we look or users complain.
-
-## 11. Reach / Allowed / Password
-
-Not a connection. Custom metrics would need `cloudwatch:PutMetricData` on the task role.
-
-## 12. Cost
-
-Basic metrics: free. Container Insights: a few dollars a month per the cluster comment (not measured).
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We have AWS's built-in graphs, nothing custom.
-- **Senior:** ECS service CPU/memory, ALB request counts, 5xx and target response time, and RDS and
-  ElastiCache metrics come for free. Container Insights is off to save cost and the api emits no
-  custom metrics.
-- **Lead:** I'd start with the four golden signals (latency, traffic, errors, saturation) from the ALB
-  and RDS, add a few business metrics via EMF, and tie them to SLOs before buying more tooling.
+- **Simple:** Metrics aggregate symptoms over time; structured logs explain events.
+- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
+- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Which metric would you alarm on first?* ALB 5xx rate and target response time.
-- *Logs vs metrics?* Metrics are cheap aggregates for alerting; logs are detailed events for debugging.
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
+
+Which signal explains a specific failed booking? **Correlated structured logs.**
 
 ## 15. Say it in 30 seconds
 
-"We rely on AWS's free metrics: ECS service CPU and memory, ALB requests and errors, RDS and cache
-metrics. Container Insights is off for cost and the api emits no custom metrics, so the next step would
-be golden-signal alarms from the ALB."
+Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
 
-## 16. Status
+## 16. Status and production work
 
-🟡 partial. **To make it production-grade:** golden-signal dashboards, custom metrics, SLOs.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
 ## Where it appears in the story
 
-- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)
+- [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)

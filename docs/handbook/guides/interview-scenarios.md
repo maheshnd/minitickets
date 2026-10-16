@@ -1542,7 +1542,7 @@ Area: Async · Status: built · Tour: booking
 
 ### 30-second answer
 
-It can skip known completed message ids, but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.
+It can skip known completed business keys (booking.confirmed:<bookingId>), but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.
 
 ### How MiniTickets does it / where it would go
 
@@ -2853,4 +2853,3 @@ Correct: An owner and removal plan
 Alternatives: An undocumented permanent branch / A secret in client code
 
 [Explorer tour](infra-explorer.html?tour=deploy) · [Code search](code-tours.html?q=infra%2FPulumi.dev.yaml)
-

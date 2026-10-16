@@ -361,6 +361,29 @@ function checkGuides() {
   }
 }
 
+// 9. The completed catch-up must remain navigable, including offline HTML and archived step docs.
+function checkLearningCoverage() {
+  const files = listRepoFiles().filter(file => file.startsWith("docs/") && /\.(md|html)$/.test(file));
+  for (const file of files) {
+    const text = readFileSync(path.join(ROOT, file), "utf8");
+    const links = file.endsWith(".html") ? [...text.matchAll(/href="([^"#]+)"/g)] : [...text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)];
+    for (const link of links) {
+      const target = link[1].split("?")[0].split("#")[0];
+      if (/^[a-z]+:/i.test(target) || target.includes("<") || target.includes("$") || target === "…") continue;
+      if (!existsSync(path.resolve(ROOT, path.dirname(file), decodeURIComponent(target)))) problems.push(`${file}: broken learning link ${target}`);
+    }
+  }
+  const coverage = JSON.parse(readFileSync(path.join(HANDBOOK, "generated/catchup-coverage.json"), "utf8")) as { entries: { entry: string; stepDoc: string; decisions: string[]; conceptCards: string[]; scenarios: string[] }[] };
+  for (const entry of coverage.entries) {
+    if (!entry.decisions.length || !entry.conceptCards.length || !entry.scenarios.length) problems.push(`Incomplete catch-up coverage: ${entry.entry}`);
+    for (const file of [entry.stepDoc, ...entry.decisions, ...entry.conceptCards]) if (!existsSync(path.join(ROOT, file))) problems.push(`Missing catch-up destination: ${file}`);
+  }
+  const start = readFileSync(path.join(GUIDES, "index.html"), "utf8");
+  for (const file of readdirSync(GUIDES).filter(file => /\.(md|html)$/.test(file))) {
+    if (!start.includes(`href="${file}"`)) problems.push(`Start here omits guide ${file}`);
+  }
+}
+
 function main() {
   const anchors = findAnchors();
 
@@ -443,6 +466,7 @@ function main() {
 
   // Check 7: story placement.
   checkStoryPlacement(cardSlugs);
+  checkLearningCoverage();
 
   // Check 8: guides.
   checkGuides();

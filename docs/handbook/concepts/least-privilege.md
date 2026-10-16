@@ -2,26 +2,24 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Auth & Security · Status: ✅ built · Step docs: [10 CI](../../10-ci.md), [13 security groups](../../13-infra-security-groups.md), [17 ECS api](../../17-infra-ecs-api.md), [18 ALB + web](../../18-infra-alb-web.md)
+Area: Auth & Security · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-**Least privilege** means every role, rule and token gets only the permissions it needs, so a
-mistake or a stolen credential can do as little damage as possible.
+Least privilege gives each runtime only its required actions/resources. API execution reads DB/cache/revalidation secrets; API application handles ECS Exec, booking SNS and scoped ticket/poster data; web execution reads only revalidation. Email and ticket roles have separate queue/table/object/secret scopes.
 
 ## 2. Real-life comparison
 
-A hotel cleaner's key card opens only the rooms on their floor, only during their shift. Losing it
-is annoying, not a disaster.
+A sealed package is built once, then checked at a gate before the manager installs that exact version.
 
 ## 3. Picture it
 
 ```mermaid
-flowchart TB
-    lp["Least privilege"] --> iam["IAM: execution role reads<br/>exactly 2 secret ARNs"]
-    lp --> net["Network: each security group<br/>admits exactly one caller"]
-    lp --> web["Web: own role, no secrets,<br/>no task role"]
-    lp --> ci["CI: token can only read the repo"]
+flowchart LR
+    n0["Repository OIDC subject"] --> n1
+    n1["Trust policy"] --> n2
+    n2["Scoped role permissions"] --> n3
+    n3["Attached job or task"]
 ```
 
 ## 4. Where in our code
@@ -32,89 +30,51 @@ flowchart TB
 - Anchor: `.github/workflows/ci.yml` · `permissions: contents: read`: the CI token can only read.
 - Anchor: `infra/src/jobs/worker-iam.ts` · `createWorkerRole`: the worker Lambda may read ONE queue, GetItem/PutItem on ONE table, send email only from `no-reply@` with our identities, write ONE log group (S1c).
 
-Step by step:
-
-1. **IAM, api:** the execution role reads two secrets; the task role only has ECS Exec.
-2. **IAM, web:** its own execution role with only the managed policy.
-3. **Trust:** every role can be assumed only by `ecs-tasks.amazonaws.com` for our account.
-4. **Network:** five groups, each door names one caller; db and redis groups have no egress.
-5. **CI:** `permissions: contents: read` at the top of the workflow.
-6. **Containers:** the api image runs as user `node`, not root (Phase 3 `container-hardening` card).
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
 
 ## 5. See it yourself
 
-```bash
-aws iam get-role-policy --profile ticketlite --role-name minitickets-dev-api-execution-role --policy-name read-secrets
-aws iam list-role-policies --profile ticketlite --role-name minitickets-dev-web-execution-role   # []
-```
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
 
-**Break it on purpose (read-only):** use the IAM policy simulator from
-[aws-foundations, chapter 3](../aws-foundations.md#3-the-three-questions-reach-allowed-password) with
-any other secret ARN: `implicitDeny`.
+Failure thought experiment: Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 6. How it connects
 
-- **Uses ←** [execution-vs-task-role](execution-vs-task-role.md), [security-groups](security-groups.md).
-- **Gives →** small blast radius everywhere; the theme of the security story in the
-  [infra story](../infra-story.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#iam-oidc) and [explorer tour](../guides/infra-explorer.html?tour=iam-badges).
 
 ## 7. Our settings and WHY
 
-| Exception | Why |
-| --------- | --- |
-| `Resource: "*"` for `ssmmessages` | Those actions do not support resource-level permissions. |
-| Open egress on alb, web, api | They call several destinations; listing all would be brittle in dev. |
-| AWS-managed execution policy | Standard and small; maintained by AWS. |
+Least privilege gives each runtime only its required actions/resources. API execution reads DB/cache/revalidation secrets; API application handles ECS Exec, booking SNS and scoped ticket/poster data; web execution reads only revalidation. Email and ticket roles have separate queue/table/object/secret scopes. A reachable AWS endpoint is not permission to invoke it.
 
 ## 8. Trade-offs
 
-- **Pros:** limits damage from bugs and leaks; makes reviews concrete.
-- **Cons:** more roles and rules to maintain; missing permissions appear at runtime as AccessDenied.
+Resource wildcards needed for APIs without resource scoping require conditions where supported. Broad deploy capability is dangerous; do not let old infrastructure runs apply.
 
 ## 9. Alternatives and when to choose them
 
-- **IAM Access Analyzer** to generate policies from real usage and flag unused permissions.
-- **Permission boundaries / SCPs:** guardrails for many teams.
-- **Tight egress** with VPC endpoints: production.
+10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Too tight: `AccessDenied` or tasks that cannot start.
-- Too loose: nothing visible until a breach; only reviews or analyzers catch it.
-
-## 11. Reach / Allowed / Password
-
-Applies to **Reach** (security groups) and **Allowed** (IAM).
-
-## 12. Cost
-
-Free.
+Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** Give everything only the access it needs.
-- **Senior:** The api execution role can read exactly two secret ARNs, the task role only ECS Exec,
-  the web role nothing beyond pulling its image and writing logs. Security groups reference caller
-  groups, the data stores have no egress, and the CI token is read-only.
-- **Lead:** I treat least privilege as a review habit: policies generated from infrastructure outputs,
-  wildcards justified in comments, Access Analyzer findings in the backlog, and OIDC instead of
-  long-lived keys for CI.
+- **Simple:** Least privilege gives each runtime only its required actions/resources. API execution reads DB/cache/revalidation secrets; API application handles ECS Exec, booking SNS and scoped ticket/poster data; web execution reads only revalidation. Email and ticket roles have separate queue/table/object/secret scopes.
+- **Senior:** A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.
+- **Lead:** 10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Where did you have to use a wildcard?* `ssmmessages` for ECS Exec, because those actions have no
-  resource ARNs.
-- *How do you find unused permissions?* IAM Access Analyzer and last-accessed data.
+Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
 
 ## 15. Say it in 30 seconds
 
-"Every identity gets exactly what it needs: the api's execution role reads two specific secrets, its
-task role only allows ECS Exec, web has no secret access and no task role, security groups name one
-caller per port, and CI's token is read-only."
+A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
 
 ## Where it appears in the story
 

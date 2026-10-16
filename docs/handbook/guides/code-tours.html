@@ -4,7 +4,7 @@
 :root{color-scheme:light dark;--bg:#f5f3ec;--ink:#182c33;--paper:#fffef9;--line:#b5bcb3;--accent:#096c70}body[data-theme=dark]{--bg:#17272e;--ink:#e1e8e2;--paper:#20343c;--line:#72848a;--accent:#78d4c0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 system-ui}header{padding:24px 4vw;border-bottom:2px solid var(--line)}h1{font:600 2rem Georgia;margin:0}a{color:var(--accent)}button,input,select{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:8px}button{cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid var(--accent)}main{display:grid;grid-template-columns:minmax(240px,29%) 1fr;gap:24px;padding:24px 4vw}nav{max-height:75vh;overflow:auto}nav button{display:block;width:100%;text-align:left;margin:4px 0;font-size:.88rem}article{min-width:0}pre{padding:20px;background:var(--paper);border-left:5px solid var(--accent);overflow:auto;font:14px/1.7 ui-monospace,monospace}small{display:block}.controls{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}#status{font-size:.9rem}button[aria-current=true]{border:2px solid var(--accent)}@media(max-width:800px){main{display:block}nav{max-height:220px;margin-bottom:24px}}
 </style></head><body>
 <header><h1>Read the code, follow the request</h1><p>A field notebook generated from real <code>@concept</code> anchors. Line numbers and snippets are rebuilt with the source.</p>
-<a href="../README.md">Start here</a> · <a href="infra-explorer.html">City / code map</a> · <a href="scenarios.html">Interview scenarios</a>
+<a href="index.html">Start here</a> · <a href="infra-explorer.html">City / code map</a> · <a href="scenarios.html">Interview scenarios</a>
 <div class="controls"><label>Find a concept or file <input id="query" type="search"></label><button id="theme">Light / dark</button><span id="status" role="status"></span></div></header>
 <main><nav id="entries" aria-label="Code bookmarks"></nav><article><h2 id="title">Code bookmark</h2><p id="location"></p><p id="links"></p><pre><code id="source"></code></pre>
 <div class="controls"><button id="previous">Previous bookmark</button><button id="next">Next bookmark</button><label><input id="checked" type="checkbox"> I can explain this code</label></div></article></main>
@@ -13,16 +13,16 @@ addEventListener('DOMContentLoaded',()=>{
 const data=JSON.parse(document.getElementById('generated-code').textContent).snippets;let current=0, filtered=data;
 let progress={};try{progress=JSON.parse(localStorage.getItem('minitickets-code-progress')||'{}')}catch{}
 const el=id=>document.getElementById(id);const link=(name,url)=>{const a=document.createElement('a');a.textContent=name;a.href=url;return a};
-function select(item){current=data.indexOf(item);el('title').textContent=item.concept;el('location').textContent=`${item.file} · ${item.symbol} · lines ${item.line}–${item.endLine}`;el('source').textContent=item.code;el('links').replaceChildren(link('Source file','../../../'+item.file),document.createTextNode(' · '),link('Concept card','../concepts/'+item.concept+'.md'));el('checked').checked=!!progress[item.id];history.replaceState(null,'','#'+encodeURIComponent(item.id));for(const b of el('entries').children)b.setAttribute('aria-current',String(b.dataset.id===item.id));}
+function select(item){current=data.indexOf(item);el('title').textContent=item.concept;el('location').textContent=`${item.file} · ${item.symbol} · lines ${item.line}–${item.endLine}`;el('source').textContent=item.code;el('links').replaceChildren(link('Source file','../../../'+item.file),document.createTextNode(' · '),link('Concept card','../concepts/'+item.concept+'.md'),document.createTextNode(' · '),link('Map / tour','infra-explorer.html?file='+encodeURIComponent(item.file)),document.createTextNode(' · '),link('Practice scenario','scenarios.html?q='+encodeURIComponent(item.concept)));el('checked').checked=!!progress[item.id];history.replaceState(null,'','#'+encodeURIComponent(item.id));for(const b of el('entries').children)b.setAttribute('aria-current',String(b.dataset.id===item.id));}
 function render(){const q=el('query').value.toLowerCase();filtered=data.filter(x=>(x.concept+' '+x.file+' '+x.symbol).toLowerCase().includes(q));el('entries').replaceChildren();for(const item of filtered){const b=document.createElement('button');b.textContent=item.concept+' · '+item.file.split('/').slice(-2).join('/');b.dataset.id=item.id;b.onclick=()=>select(item);el('entries').append(b)}el('status').textContent=`${filtered.length} bookmarks · ${Object.values(progress).filter(Boolean).length} checked`;}
-el('query').value=new URLSearchParams(location.search).get('q')||'';el('query').oninput=render;el('theme').onclick=()=>{document.body.dataset.theme=document.body.dataset.theme==='dark'?'light':'dark'};
-el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el('next').onclick=()=>select(data[(current+1)%data.length]);el('checked').onchange=()=>{progress[data[current].id]=el('checked').checked;try{localStorage.setItem('minitickets-code-progress',JSON.stringify(progress))}catch{}render();select(data[current])};render();select(data.find(x=>x.id===decodeURIComponent(location.hash.slice(1)))||filtered[0]||data[0]);
+el('query').value=new URLSearchParams(location.search).get('q')||'';el('query').oninput=()=>{render();if(filtered.length)select(filtered[0]);else{el('title').textContent='No matching bookmarks';el('source').textContent='';el('location').textContent='';el('links').replaceChildren()}};try{document.body.dataset.theme=localStorage.getItem('minitickets-code-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}catch{}el('theme').onclick=()=>{document.body.dataset.theme=document.body.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem('minitickets-code-theme',document.body.dataset.theme)}catch{}};
+el('previous').onclick=()=>filtered.length&&select(filtered[(Math.max(0,filtered.indexOf(data[current]))+filtered.length-1)%filtered.length]);el('next').onclick=()=>filtered.length&&select(filtered[(Math.max(0,filtered.indexOf(data[current]))+1)%filtered.length]);el('checked').onchange=()=>{progress[data[current].id]=el('checked').checked;try{localStorage.setItem('minitickets-code-progress',JSON.stringify(progress))}catch{}render();select(data[current])};render();select(data.find(x=>x.id===decodeURIComponent(location.hash.slice(1)))||filtered[0]||data[0]);
 });
 </script>
 <script type="application/json" id="generated-code">
 {
   "version": 1,
-  "sourceHash": "c5f5f892f2514b8127a920c1b4d513c90d0a5661b10ca0441f6833cfd26c78d2",
+  "sourceHash": "a27acc43af9cdf5583de34c18ad045c49d5c4822019e07ff3753ba97dd77fad2",
   "snippets": [
     {
       "id": "least-privilege:.github/workflows/ci.yml:8",
@@ -31,7 +31,7 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "line": 7,
       "endLine": 23,
       "symbol": "module",
-      "code": "\n# @concept: least-privilege\n# 1. Least privilege: the token these jobs get can only READ the repo. No job here needs more.\npermissions:\n  contents: read\n\n# 2. One run per branch at a time: a new push cancels the older, now useless, run.\nconcurrency:\n  group: ci-${{ github.ref }}\n  cancel-in-progress: true\n\n# @concept: ci-pipeline\njobs:\n  # Fast checks that need no database: types, lint rules and unit tests.\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10"
+      "code": "\n# @concept: least-privilege\n# 1. Least privilege: the token these jobs get can only READ the repo. No job here needs more.\npermissions:\n  contents: read\n\n# 2. One run per branch at a time: a new push cancels the older, now useless, run.\nconcurrency:\n  group: ci-${{ github.ref }}\n  cancel-in-progress: true\n\n# @concept: ci-pipeline\n# @concept: image-scanning\njobs:\n  # Fast checks that need no database: types, lint rules and unit tests.\n  quality:\n    runs-on: ubuntu-latest"
     },
     {
       "id": "ci-pipeline:.github/workflows/ci.yml:18",
@@ -40,32 +40,41 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "line": 17,
       "endLine": 33,
       "symbol": "module",
-      "code": "\n# @concept: ci-pipeline\njobs:\n  # Fast checks that need no database: types, lint rules and unit tests.\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n      # pnpm's version comes from \"packageManager\" in the root package.json.\n      - uses: pnpm/action-setup@v4\n      # Node's version comes from .nvmrc; `cache: pnpm` keeps pnpm's download store between runs.\n      - uses: actions/setup-node@v4\n        with:\n          node-version-file: .nvmrc\n          cache: pnpm\n      # --frozen-lockfile: fail if pnpm-lock.yaml does not match the package.json files."
+      "code": "\n# @concept: ci-pipeline\n# @concept: image-scanning\njobs:\n  # Fast checks that need no database: types, lint rules and unit tests.\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n      # pnpm's version comes from \"packageManager\" in the root package.json.\n      - uses: pnpm/action-setup@v4\n      # Node's version comes from .nvmrc; `cache: pnpm` keeps pnpm's download store between runs.\n      - uses: actions/setup-node@v4\n        with:\n          node-version-file: .nvmrc\n          cache: pnpm"
     },
     {
-      "id": "static-checks:.github/workflows/ci.yml:35",
+      "id": "image-scanning:.github/workflows/ci.yml:19",
+      "concept": "image-scanning",
+      "file": ".github/workflows/ci.yml",
+      "line": 18,
+      "endLine": 34,
+      "symbol": "module",
+      "code": "# @concept: ci-pipeline\n# @concept: image-scanning\njobs:\n  # Fast checks that need no database: types, lint rules and unit tests.\n  quality:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n      # pnpm's version comes from \"packageManager\" in the root package.json.\n      - uses: pnpm/action-setup@v4\n      # Node's version comes from .nvmrc; `cache: pnpm` keeps pnpm's download store between runs.\n      - uses: actions/setup-node@v4\n        with:\n          node-version-file: .nvmrc\n          cache: pnpm\n      # --frozen-lockfile: fail if pnpm-lock.yaml does not match the package.json files."
+    },
+    {
+      "id": "static-checks:.github/workflows/ci.yml:36",
       "concept": "static-checks",
       "file": ".github/workflows/ci.yml",
-      "line": 34,
-      "endLine": 50,
+      "line": 35,
+      "endLine": 51,
       "symbol": "module",
       "code": "      - run: pnpm install --frozen-lockfile\n      # @concept: static-checks\n      - run: pnpm typecheck\n      - run: pnpm lint\n      - run: pnpm test\n      # P10: fail closed for critical dependency advisories; other severities remain visible.\n      - run: pnpm audit --audit-level=critical\n      # The handbook and the code must agree: every @concept anchor has a card and vice versa.\n      - run: pnpm docs:check\n\n  # Real browser tests against the real app, Postgres and Redis.\n  e2e:\n    needs: quality\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n\n    # These values are for a throwaway database inside this job. They are not real secrets."
     },
     {
-      "id": "server-to-server-calls:.github/workflows/ci.yml:58",
+      "id": "server-to-server-calls:.github/workflows/ci.yml:59",
       "concept": "server-to-server-calls",
       "file": ".github/workflows/ci.yml",
-      "line": 57,
-      "endLine": 73,
+      "line": 58,
+      "endLine": 74,
       "symbol": "module",
       "code": "      NEXT_PUBLIC_API_URL: http://localhost:4000\n      # @concept: server-to-server-calls\n      # Read by the web SERVER at request time (not baked in): where it calls the API to render /events.\n      API_INTERNAL_URL: http://localhost:4000\n      # The revalidate hook (Step 9a): the API calls the web server after an event is created, with\n      # a secret both read from here. A throwaway value for this job, like the database password above.\n      WEB_INTERNAL_URL: http://localhost:3000\n      REVALIDATE_SECRET: ci-only-revalidate-secret-0123456789abcdef0123456789\n\n    # Service containers: GitHub starts them before the steps and waits for the healthchecks.\n    # Same pinned versions and healthchecks as docker-compose.yml.\n    services:\n      postgres:\n        image: postgres:17.6\n        env:\n          POSTGRES_USER: minitickets\n          POSTGRES_PASSWORD: minitickets"
     },
     {
-      "id": "docker-layer-caching:.github/workflows/ci.yml:150",
+      "id": "docker-layer-caching:.github/workflows/ci.yml:151",
       "concept": "docker-layer-caching",
       "file": ".github/workflows/ci.yml",
-      "line": 149,
-      "endLine": 165,
+      "line": 150,
+      "endLine": 166,
       "symbol": "module",
       "code": "\n      # @concept: docker-layer-caching\n      # 3. Build the API image. `push: false` = build only, so a broken Dockerfile fails CI\n      #    but nothing is published. `context: .` is the repo root (the Dockerfile needs several folders).\n      #    cache-from / cache-to: store the layers in the GitHub Actions cache, so the next run reuses\n      #    unchanged layers (like the pnpm install) instead of rebuilding them. mode=max also stores\n      #    the layers of the build stages that are not part of the final image. `scope` keeps the\n      #    API and web caches apart so they do not overwrite each other.\n      - name: Build API image\n        uses: docker/build-push-action@v6\n        with:\n          context: .\n          file: apps/api/Dockerfile\n          push: false\n          load: true\n          tags: minitickets-ci-api:scan\n          cache-from: type=gha,scope=api"
     },
@@ -421,6 +430,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: correlation-ids\n// One CORRELATION ID per request (series 2, P2). Fastify calls it the \"request id\" (request.id);\n// app.ts makes Fastify write it on every log line of the request as \"correlationId\", and the\n// bookings service copies it into the queue message, so the worker's lines carry it too:\n//\n//   browser ──▶ api  { correlationId: 7f3c…, msg: \"incoming request\" }\n//                    { correlationId: 7f3c…, msg: \"published booking.confirmed …\" }\n//                    message { …, correlationId: 7f3c… } ──▶ SQS ──▶ worker Lambda\n//                                                            { correlationId: 7f3c…, msg: \"email sent\" }\n//\n// One search for 7f3c… (CloudWatch Logs Insights, docs/20-deploy-day.md 3.12) shows the whole booking.\n\n// 1. The header a caller may send its own id in, and in which every answer carries ours.\n//    WHY answer with it: a user (or support) can quote it from the browser's network tab, and we\n//    find every line of that request at once.\nexport const CORRELATION_HEADER = \"x-correlation-id\";"
     },
     {
+      "id": "csrf:apps/api/src/http/security.ts:5",
+      "concept": "csrf",
+      "file": "apps/api/src/http/security.ts",
+      "line": 4,
+      "endLine": 20,
+      "symbol": "mutationAllowed",
+      "code": "//    does not stop simple cross-site POSTs; absent Origin is refused too (CLI clients set it).\n// @concept: csrf\nexport function mutationAllowed(origin: string | undefined, site: string | undefined, webOrigin: string) {\n  return origin === new URL(webOrigin).origin && site !== \"cross-site\";\n}\nexport function addSecurity(app: FastifyInstance, webOrigin: string) {\n  app.addHook(\"onRequest\", async (request, reply) => {\n    reply.header(\"X-Content-Type-Options\", \"nosniff\");\n    reply.header(\"X-Frame-Options\", \"DENY\");\n    reply.header(\"Referrer-Policy\", \"strict-origin-when-cross-origin\");\n    reply.header(\"Content-Security-Policy\", \"default-src 'none'; frame-ancestors 'none'; base-uri 'none'\");\n    if (![\"GET\", \"HEAD\", \"OPTIONS\"].includes(request.method) &&\n        !mutationAllowed(request.headers.origin, request.headers[\"sec-fetch-site\"] as string | undefined, webOrigin)) {\n      return reply.code(403).send({ error: \"Request origin is not allowed\" });\n    }\n  });\n}"
+    },
+    {
       "id": "protected-procedure:apps/api/src/procedures/account.ts:7",
       "concept": "protected-procedure",
       "file": "apps/api/src/procedures/account.ts",
@@ -520,13 +538,40 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n  // @concept: validation-at-boundaries\n  // 1. Public: anyone may browse events, so no login check.\n  //    Optional filters (venue, from, to), checked with the shared schema: a bad date, from > to or\n  //    a range over 1 year is a 400 before the service runs. `.optional()`: calling it with no\n  //    input at all (as before Step 8) still means \"all upcoming events\".\n  // 2. .output() checks the result before it leaves, so only the listed fields can ever be sent.\n  // 3. The service says how it got the list (cache \"fresh\", \"stale\", \"stale-if-error\", \"miss\" or\n  //    \"error\"; see CacheStatus there). We add that to this request's log, so the\n  //    \"request completed\" line shows it: {\"cache\":\"fresh\", \"responseTime\":1.2}.\n  list: publicProcedure\n    .input(ListEventsInput.optional())\n    .output(ListEventsOutput)\n    .query(async ({ input, ctx }) => {\n      const { events, cache } = await eventsService.listUpcomingEvents(input, ctx.req.log);\n      //    setBindings exists on the pino logger Fastify uses, but Fastify's own type leaves it out.\n      (ctx.req.log as typeof ctx.req.log & { setBindings(bindings: object): void }).setBindings({ cache });"
     },
     {
-      "id": "outbox:apps/api/src/queries/bookings.ts:82",
+      "id": "presigned-urls:apps/api/src/queries/assets.ts:7",
+      "concept": "presigned-urls",
+      "file": "apps/api/src/queries/assets.ts",
+      "line": 6,
+      "endLine": 22,
+      "symbol": "assetsEnabled",
+      "code": "//    No SDK may silently call AWS locally when the feature is unconfigured.\n// @concept: presigned-urls\nexport const assetsEnabled = env.TICKETS_BUCKET !== undefined;\nexport const s3 = new S3Client({ region: env.AWS_REGION, endpoint: env.S3_ENDPOINT,\n  forcePathStyle: !!env.S3_ENDPOINT, maxAttempts: 1, requestChecksumCalculation: \"WHEN_REQUIRED\",\n  requestHandler: { connectionTimeout: 1000, requestTimeout: 3000, throwOnRequestTimeout: true } });\nexport const ASSET_URL_SECONDS = 120;\n\nexport function assetBucket(): string {\n  if (!env.TICKETS_BUCKET) throw new Error(\"asset storage is not configured\");\n  return env.TICKETS_BUCKET;\n}\n\n// 2. Bearer links are short-lived and never cached in Redis/Next's shared cache. Ticket\n//    downloads use Content-Disposition because the HTML download attribute is cross-origin.\nexport async function signAssetGet(key: string, downloadName?: string): Promise\u003cstring> {\n  if (!/^(tickets|posters)\\/[a-zA-Z0-9/_.-]+$/.test(key) || key.includes(\"..\")) throw new Error(\"invalid asset prefix\");"
+    },
+    {
+      "id": "idempotency:apps/api/src/queries/bookings.ts:47",
+      "concept": "idempotency",
+      "file": "apps/api/src/queries/bookings.ts",
+      "line": 46,
+      "endLine": 62,
+      "symbol": "isPgConstraintError",
+      "code": "// Postgres code and constraint name may be on the error or on its cause.\n// @concept: idempotency\nfunction isPgConstraintError(err: unknown, code: string, constraint: string): boolean {\n  const pgError = (e: unknown) =>\n    typeof e === \"object\" && e !== null && \"code\" in e ? (e as { code: unknown; constraint?: unknown }) : undefined;\n  const found = pgError(err) ?? pgError((err as { cause?: unknown } | null)?.cause);\n  return found?.code === code && found.constraint === constraint;\n}\n\n// One booking row, as Postgres stores it.\ntype BookingRow = typeof bookings.$inferSelect;\n\n// What createBookingTx did:\n// - \"created\": a new booking, seats taken AND its confirmation saved in the outbox, committed;\n// - \"existing\": this user already has a booking with this key (made by an earlier copy of the same\n//   request, or by a different request that reused the key). NOTHING was written this time.\n//   The service compares it with the request: same event + quantity = a replay, else a 409."
+    },
+    {
+      "id": "outbox:apps/api/src/queries/bookings.ts:83",
       "concept": "outbox",
       "file": "apps/api/src/queries/bookings.ts",
-      "line": 81,
-      "endLine": 97,
+      "line": 82,
+      "endLine": 98,
       "symbol": "returns",
       "code": "\n// @concept: outbox\n// Book `quantity` seats of one event for one user, in ONE transaction, at most ONCE per\n// (user, idempotency key). Returns the new booking, or the one this key already has.\n//\n// THE BUG THIS PREVENTS (the \"lost update\" race): booking is read-then-write. Without a lock, two\n// requests for the last seat can both READ \"1 seat left\", both decide \"enough\", and both WRITE.\n//   A: read seats_left = 1 ........ write seats_left = 0, insert booking\n//   B:      read seats_left = 1 ........ write seats_left = 0, insert booking\n// Two bookings, one seat, and B's write silently replaced A's (A's update is \"lost\").\n// `pnpm demo:booking-race --unsafe` makes this happen on purpose.\n//\n// A TRANSACTION means: every statement between BEGIN and COMMIT counts together, or none of them do.\n// If anything fails (one of our checks below, the insert, a crash), Postgres ROLLS BACK: the seat\n// count and the booking stay exactly as they were. So there is never a seat taken without a\n// booking, or a booking without its seat taken. Drizzle runs BEGIN for us, COMMIT when the\n// function returns, and ROLLBACK (then re-throws) when it throws."
+    },
+    {
+      "id": "keyset-pagination:apps/api/src/queries/event-search.ts:7",
+      "concept": "keyset-pagination",
+      "file": "apps/api/src/queries/event-search.ts",
+      "line": 6,
+      "endLine": 22,
+      "symbol": "searchPattern",
+      "code": "// 1. Escape LIKE metacharacters: the search text means literal text, not a wildcard program.\n// @concept: keyset-pagination\nexport function searchPattern(q: string) {\n  return `%${q.replace(/[\\\\%_]/g, \"\\\\$&\")}%`;\n}\n\nexport async function search(input: SearchEventsInput, filters: { venue?: string; from?: Date; to?: Date }, asOf: string) {\n  const conditions = [gt(events.startsAt, new Date(asOf))];\n  if (filters.from) conditions.push(gte(events.startsAt, filters.from));\n  if (filters.to) conditions.push(lt(events.startsAt, new Date(filters.to.getTime() + 86_400_000)));\n  if (filters.venue) conditions.push(sql`lower(${events.venue}) = lower(${filters.venue})`);\n  // 2. This expression matches the trigram GIN index, including title/venue substring searches.\n  if (input.q) conditions.push(sql`(${events.title} || ' ' || ${events.venue}) ilike ${searchPattern(input.q)}`);\n  if (input.cursor) {\n    conditions.push(sql`(${events.startsAt}, ${events.id}) > (${input.cursor.startsAt}::timestamptz, ${input.cursor.id}::uuid)`);\n  }\n  // 3. Fetch one extra row to detect a next page. Keyset skips no growing OFFSET prefix."
     },
     {
       "id": "unit-tests:apps/api/src/queries/events-cache.test.ts:3",
@@ -556,29 +601,47 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: cache-key-versioning\n// 1. The Redis key for one list of upcoming events: e.g. \"events:upcoming:v3:g7:3f9a0c1d2b4e5f60\".\n//    - \"v3\" is the shape version. When a deploy changes the shape of the cached value or the key\n//      (a field added, renamed or removed), change this to the next number. The new code then reads\n//      a key that does not exist yet (a clean miss) and never meets old-shaped data left behind by\n//      the previous version. The old key just expires by itself after its TTL. Without a version,\n//      new code could read old-shaped data for up to one TTL, right after every deploy.\n//      v2 (Step 7): the value changed from a bare list to { data, fetchedAt } (stale-while-revalidate).\n//      v3 (Step 8): one key PER FILTER (the hash at the end), and the value got `staleAt` (jitter).\n//    - \"g\u003cgen>\" is the GENERATION (see step 1b).\n//    - the last part is a short HASH of the canonical filters (services/event-filters.ts), e.g. of\n//      {\"venue\":\"pune\"}. WHY A HASH instead of the text itself:\n//        * SHORT: always 16 characters, however long the venue is (it may be up to 200). Keys are\n//          stored in memory and sent with every command, so short keys are cheaper.\n//        * SAFE: only 0-9 and a-f. A venue could contain \":\" (our separator), \"*\" (a pattern\n//          character in SCAN/KEYS), spaces or emoji; none of that can reach the key."
     },
     {
-      "id": "fail-fast:apps/api/src/queries/events-cache.ts:47",
+      "id": "cache-stampede:apps/api/src/queries/events-cache.ts:29",
+      "concept": "cache-stampede",
+      "file": "apps/api/src/queries/events-cache.ts",
+      "line": 28,
+      "endLine": 44,
+      "symbol": "upcomingKey",
+      "code": "//      would serve one the other's list; with even a million live keys the chance is about 1 in 37 million.\n// @concept: cache-stampede\n// @concept: cache-invalidation\nexport function upcomingKey(gen: number, canonicalFilters: string): string {\n  return `events:upcoming:v3:g${gen}:${shortHash(canonicalFilters)}`;\n}\n\n// The first 16 hex characters of the SHA-256 of `text`. Same text -> always the same hash.\nfunction shortHash(text: string): string {\n  return createHash(\"sha256\").update(text).digest(\"hex\").slice(0, 16);\n}\n\n// 1b. The generation counter: a number in Redis that goes up by one every time the list changes\n//     (an event is created). A missing key means 0. Readers read it FIRST and then use the key of\n//     that generation; a writer only bumps it. Old generations' keys are never read again and\n//     expire by their TTL. The service explains why this beats deleting the key (createEvent).\n//     ONE counter for ALL filters: every filter's key contains the same \"g\u003cgen>\", so one INCR"
+    },
+    {
+      "id": "cache-invalidation:apps/api/src/queries/events-cache.ts:30",
+      "concept": "cache-invalidation",
+      "file": "apps/api/src/queries/events-cache.ts",
+      "line": 29,
+      "endLine": 45,
+      "symbol": "upcomingKey",
+      "code": "// @concept: cache-stampede\n// @concept: cache-invalidation\nexport function upcomingKey(gen: number, canonicalFilters: string): string {\n  return `events:upcoming:v3:g${gen}:${shortHash(canonicalFilters)}`;\n}\n\n// The first 16 hex characters of the SHA-256 of `text`. Same text -> always the same hash.\nfunction shortHash(text: string): string {\n  return createHash(\"sha256\").update(text).digest(\"hex\").slice(0, 16);\n}\n\n// 1b. The generation counter: a number in Redis that goes up by one every time the list changes\n//     (an event is created). A missing key means 0. Readers read it FIRST and then use the key of\n//     that generation; a writer only bumps it. Old generations' keys are never read again and\n//     expire by their TTL. The service explains why this beats deleting the key (createEvent).\n//     ONE counter for ALL filters: every filter's key contains the same \"g\u003cgen>\", so one INCR\n//     moves every filter to a new, empty key at once."
+    },
+    {
+      "id": "fail-fast:apps/api/src/queries/events-cache.ts:49",
       "concept": "fail-fast",
       "file": "apps/api/src/queries/events-cache.ts",
-      "line": 46,
-      "endLine": 62,
+      "line": 48,
+      "endLine": 64,
       "symbol": "CACHE_TIMEOUT_MS",
       "code": "\n// @concept: fail-fast\n// @concept: graceful-degradation\n// 2. How long we wait for Redis before giving up. A healthy Redis answers in about a millisecond.\n//    A slow Redis (not down, just slow) is the dangerous case: the redis client only fails fast\n//    when it is disconnected, so a slow reply would make every page wait. 100 ms is far above\n//    normal and still far below what a person notices. After that the service uses Postgres.\nexport const CACHE_TIMEOUT_MS = 100;\n\n// 3. Reject if `promise` is not finished after `ms`. The timer is always cleared, so a fast\n//    answer leaves nothing behind. (A late Redis reply is simply ignored.)\nasync function withTimeout\u003cT>(promise: Promise\u003cT>, ms: number): Promise\u003cT> {\n  let timer: NodeJS.Timeout | undefined;\n  const timeout = new Promise\u003cnever>((_, reject) => {\n    timer = setTimeout(() => reject(new Error(`Redis did not answer within ${ms} ms`)), ms);\n  });\n  try {"
     },
     {
-      "id": "graceful-degradation:apps/api/src/queries/events-cache.ts:48",
+      "id": "graceful-degradation:apps/api/src/queries/events-cache.ts:50",
       "concept": "graceful-degradation",
       "file": "apps/api/src/queries/events-cache.ts",
-      "line": 47,
-      "endLine": 63,
+      "line": 49,
+      "endLine": 65,
       "symbol": "CACHE_TIMEOUT_MS",
       "code": "// @concept: fail-fast\n// @concept: graceful-degradation\n// 2. How long we wait for Redis before giving up. A healthy Redis answers in about a millisecond.\n//    A slow Redis (not down, just slow) is the dangerous case: the redis client only fails fast\n//    when it is disconnected, so a slow reply would make every page wait. 100 ms is far above\n//    normal and still far below what a person notices. After that the service uses Postgres.\nexport const CACHE_TIMEOUT_MS = 100;\n\n// 3. Reject if `promise` is not finished after `ms`. The timer is always cleared, so a fast\n//    answer leaves nothing behind. (A late Redis reply is simply ignored.)\nasync function withTimeout\u003cT>(promise: Promise\u003cT>, ms: number): Promise\u003cT> {\n  let timer: NodeJS.Timeout | undefined;\n  const timeout = new Promise\u003cnever>((_, reject) => {\n    timer = setTimeout(() => reject(new Error(`Redis did not answer within ${ms} ms`)), ms);\n  });\n  try {\n    return await Promise.race([promise, timeout]);"
     },
     {
-      "id": "ttl:apps/api/src/queries/events-cache.ts:96",
+      "id": "ttl:apps/api/src/queries/events-cache.ts:98",
       "concept": "ttl",
       "file": "apps/api/src/queries/events-cache.ts",
-      "line": 95,
-      "endLine": 111,
+      "line": 97,
+      "endLine": 113,
       "symbol": "setUpcomingInCache",
       "code": "\n// @concept: ttl\n// 7. Store the JSON text under `key` and let Redis delete it after `ttlMs` milliseconds\n//    (\"PX\"; \"EX\" would be seconds). The caller picks the TTL (the service's HARD TTL).\nexport async function setUpcomingInCache(key: string, json: string, ttlMs: number): Promise\u003cvoid> {\n  await withTimeout(redis.set(key, json, \"PX\", ttlMs), CACHE_TIMEOUT_MS);\n}\n\n// 8. The Redis key of the REBUILD LOCK for the list under `key`: \"lock:\" + that key, e.g.\n//    \"lock:events:upcoming:v3:g7:3f9a0c1d2b4e5f60\". Whoever holds it is the one API instance allowed\n//    to rebuild that list from Postgres right now. Built from the cache key, so it has the same\n//    shape version, generation and filter hash:\n//    - a rebuild for the new generation never waits for a (now useless) rebuild of the old one;\n//    - \"pune\" and \"mumbai\" have their own locks: rebuilding one never blocks the other;\n//    - \" Pune\", \"pune\" and \"PUNE\" share one lock, like they share one cache entry.\nexport function upcomingLockKey(key: string): string {\n  return `lock:${key}`;"
     },
@@ -610,6 +673,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: health-checks\n// Asks each data store a trivial question. Each throws if its store can't answer.\n// Used by GET /ready. (Queries are the only code allowed to touch a data store.)\nexport async function pingDb() {\n  await pool.query(\"select 1\");\n}\n\nexport async function pingRedis() {\n  await redis.ping();\n}\n"
     },
     {
+      "id": "inventory-gate:apps/api/src/queries/inventory.ts:8",
+      "concept": "inventory-gate",
+      "file": "apps/api/src/queries/inventory.ts",
+      "line": 7,
+      "endLine": 23,
+      "symbol": "inventoryKeys",
+      "code": "\n// @concept: inventory-gate\nexport function inventoryKeys(eventId: string) {\n  return [`${env.SALE_REDIS_NAMESPACE}:inventory:v1:{${eventId}}:state`, `${env.SALE_REDIS_NAMESPACE}:inventory:v1:{${eventId}}:leases`] as const;\n}\nfunction execute(script: string, eventId: string, ...args: (string | number)[]) {\n  return redisOperation(redis.eval(script, 2, ...inventoryKeys(eventId), ...args));\n}\nexport async function initialize(eventId: string, seatsLeft: number) {\n  await execute(INITIALIZE, eventId, seatsLeft, randomUUID());\n}\n// 1. -1 missing, 0 denied, 1 owns a debit, 2 duplicate in-flight intent (go to DB without a debit).\nexport async function reserve(eventId: string, intent: string, owner: string, quantity: number) {\n  return z.union([z.literal(-1), z.literal(0), z.literal(1), z.literal(2)])\n    .parse(await execute(RESERVE, eventId, intent, owner, quantity));\n}\nexport async function settle(eventId: string, intent: string, owner: string, refund: boolean) {"
+    },
+    {
       "id": "outbox:apps/api/src/queries/outbox.ts:5",
       "concept": "outbox",
       "file": "apps/api/src/queries/outbox.ts",
@@ -619,38 +691,65 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: outbox\nexport type PendingMessage = Pick\u003ctypeof outbox.$inferSelect, \"id\" | \"bookingId\" | \"payload\" | \"attempts\">;\nexport type DeliveryResult = { sent: true } | { sent: false; retryInMs: number };\n\n// 1. Keep SQL and the transaction here. The service supplies ONLY the delivery callback, so it\n//    never sees SQL/a transaction and this file never knows how to talk to SQS.\nexport async function deliverBatch(deliver: (row: PendingMessage) => Promise\u003cDeliveryResult>): Promise\u003cnumber> {\n  return db.transaction(async (tx) => {\n    // 2. Hold row locks through publish AND mark-sent. Other API tasks skip these rows instead\n    //    of waiting or publishing them too. Ten rows cap each transaction at ten short SQS calls.\n    const rows = await tx.select().from(outbox)\n      .where(and(isNull(outbox.sentAt), lte(outbox.availableAt, sql`now()`)))\n      .orderBy(asc(outbox.availableAt), asc(outbox.id)).limit(10)\n      .for(\"update\", { skipLocked: true });\n\n    for (const row of rows) {"
     },
     {
+      "id": "presigned-urls:apps/api/src/queries/posters.ts:8",
+      "concept": "presigned-urls",
+      "file": "apps/api/src/queries/posters.ts",
+      "line": 7,
+      "endLine": 23,
+      "symbol": "signPosterPut",
+      "code": "//    supply Content-Length for a File body; JS must not try to set that forbidden header.\n// @concept: presigned-urls\nexport async function signPosterPut(key: string, input: PosterUploadInput) {\n  const headers = { \"content-type\": input.contentType, \"x-amz-server-side-encryption\": \"AES256\" as const };\n  const url = await getSignedUrl(s3, new PutObjectCommand({ Bucket: assetBucket(), Key: key,\n    ContentType: input.contentType, ContentLength: input.byteLength, ServerSideEncryption: \"AES256\" }), {\n    expiresIn: ASSET_URL_SECONDS, signableHeaders: new Set([\"content-type\", \"content-length\"]),\n  });\n  return { url, headers, expiresAt: new Date(Date.now() + ASSET_URL_SECONDS * 1000).toISOString() };\n}\n\nexport async function inspectPoster(key: string) {\n  // 2. Trust S3 metadata, not the completion request. Bound the body read independently too;\n  //    IfMatch ensures validation and the later copy refer to the same uploaded object.\n  const head = await s3.send(new HeadObjectCommand({ Bucket: assetBucket(), Key: key }));\n  if (!head.ETag || !head.ContentLength || head.ContentLength > MAX_POSTER_BYTES) return null;\n  if (head.ContentType !== \"image/png\" && head.ContentType !== \"image/jpeg\") return null;"
+    },
+    {
+      "id": "rate-limiting:apps/api/src/queries/rate-limits.ts:8",
+      "concept": "rate-limiting",
+      "file": "apps/api/src/queries/rate-limits.ts",
+      "line": 7,
+      "endLine": 23,
+      "symbol": "TAKE_TOKEN",
+      "code": "// 1. TIME gives every API task the same clock. Refill and consume happen in one atomic script.\n// @concept: rate-limiting\nexport const TAKE_TOKEN = `\nlocal time = redis.call('TIME')\nlocal now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)\nlocal capacity, interval = tonumber(ARGV[1]), tonumber(ARGV[2])\nlocal old = redis.call('HMGET', KEYS[1], 'tokens', 'at')\nlocal at = tonumber(old[2]) or now\nnow = math.max(now, at)\nlocal tokens = math.min(capacity, (tonumber(old[1]) or capacity) + (now - at) / interval)\nlocal allowed, retry = 0, 0\nif tokens >= 1 then tokens = tokens - 1; allowed = 1\nelse retry = math.ceil((1 - tokens) * interval) end\nredis.call('HSET', KEYS[1], 'tokens', tokens, 'at', now)\nredis.call('PEXPIRE', KEYS[1], math.ceil(capacity * interval))\nreturn {allowed, retry}\n`;"
+    },
+    {
       "id": "ttl:apps/api/src/queries/sessions.ts:5",
       "concept": "ttl",
       "file": "apps/api/src/queries/sessions.ts",
       "line": 4,
       "endLine": 20,
       "symbol": "SESSION_TTL_SECONDS",
-      "code": "\n// @concept: ttl\nexport const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;\n// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then"
+      "code": "\n// @concept: ttl\n// @concept: session-revocation\nexport const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;\n// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices."
     },
     {
-      "id": "sessions-vs-jwt:apps/api/src/queries/sessions.ts:7",
-      "concept": "sessions-vs-jwt",
+      "id": "session-revocation:apps/api/src/queries/sessions.ts:6",
+      "concept": "session-revocation",
       "file": "apps/api/src/queries/sessions.ts",
-      "line": 6,
-      "endLine": 22,
-      "symbol": "StoredSession",
-      "code": "export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;\n// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then\n  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]\n  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)"
+      "line": 5,
+      "endLine": 21,
+      "symbol": "SESSION_TTL_SECONDS",
+      "code": "// @concept: ttl\n// @concept: session-revocation\nexport const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;\n// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then"
     },
     {
-      "id": "sql-vs-nosql:apps/api/src/queries/sessions.ts:8",
-      "concept": "sql-vs-nosql",
+      "id": "sessions-vs-jwt:apps/api/src/queries/sessions.ts:8",
+      "concept": "sessions-vs-jwt",
       "file": "apps/api/src/queries/sessions.ts",
       "line": 7,
       "endLine": 23,
       "symbol": "StoredSession",
-      "code": "// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then\n  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]\n  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)\nend"
+      "code": "export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;\n// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then\n  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]\n  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)"
     },
     {
-      "id": "stateless-servers:apps/api/src/queries/sessions.ts:9",
-      "concept": "stateless-servers",
+      "id": "sql-vs-nosql:apps/api/src/queries/sessions.ts:9",
+      "concept": "sql-vs-nosql",
       "file": "apps/api/src/queries/sessions.ts",
       "line": 8,
       "endLine": 24,
+      "symbol": "StoredSession",
+      "code": "// @concept: sessions-vs-jwt\n// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then\n  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]\n  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)\nend"
+    },
+    {
+      "id": "stateless-servers:apps/api/src/queries/sessions.ts:10",
+      "concept": "stateless-servers",
+      "file": "apps/api/src/queries/sessions.ts",
+      "line": 9,
+      "endLine": 25,
       "symbol": "StoredSession",
       "code": "// @concept: sql-vs-nosql\n// @concept: stateless-servers\nconst StoredSession = z.object({ userId: z.uuid(), createdAt: z.iso.datetime() });\nconst hashId = (id: string) => createHash(\"sha256\").update(id).digest(\"hex\");\nconst keyFor = (id: string) => `session:${hashId(id)}`;\nconst indexFor = (userId: string) => `user-sessions:${userId}`;\n\nconst CREATE = `\nredis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])\nredis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])\nredis.call('EXPIRE', KEYS[2], ARGV[2])\n-- Bound per-user revocation work and session storage: retain at most 20 active devices.\nif redis.call('ZCARD', KEYS[2]) > 20 then\n  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)[1]\n  redis.call('DEL', 'session:' .. oldest); redis.call('ZREM', KEYS[2], oldest)\nend\nif ARGV[5] ~= '' then redis.call('DEL', ARGV[5]) end"
     },
@@ -680,6 +779,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 35,
       "symbol": "findByEmail",
       "code": "\n// @concept: sql-injection\n// 1. Look up one user by email. Returns the user, or undefined if there is none.\nexport async function findByEmail(email: string) {\n  const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);\n  return rows[0];\n}\n\n// 2. Look up one user by id (used to turn a session's userId into a user).\nexport async function findById(id: string) {\n  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);\n  return rows[0];\n}\n\n// 3. Insert a new user and return the saved row (with its generated id and createdAt).\nexport async function create(input: { email: string; passwordHash: string }) {\n  try {"
+    },
+    {
+      "id": "sns:apps/api/src/queues/jobs.ts:13",
+      "concept": "sns",
+      "file": "apps/api/src/queues/jobs.ts",
+      "line": 12,
+      "endLine": 22,
+      "symbol": "jobsEnabled",
+      "code": "});\n// @concept: sns\nexport const jobsEnabled = env.BOOKING_EVENTS_TOPIC_ARN !== undefined;\n\n// 2. SNS acceptance is independent of consumer completion. On failure the outbox row\n//    stays pending; raw SQS delivery preserves this exact JSON shape for each consumer.\nexport async function publishBookingConfirmed(message: BookingConfirmedMessage): Promise\u003cvoid> {\n  if (!env.BOOKING_EVENTS_TOPIC_ARN) throw new Error(\"booking events topic is not configured\");\n  await sns.send(new PublishCommand({ TopicArn: env.BOOKING_EVENTS_TOPIC_ARN, Message: JSON.stringify(message) }));\n}\n"
     },
     {
       "id": "fail-fast:apps/api/src/redis/client.ts:7",
@@ -772,6 +880,33 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "// @concept: sessions-vs-jwt\n// @concept: idempotency\n// Logout: revoke the session on the server. Idempotent: no cookie, or a session that is\n// already gone, is fine, so calling logout twice is safe.\nexport async function logout(sessionId: string | undefined) {\n  if (!sessionId) return;\n  await sessions.remove(sessionId);\n}\n\n// 5. Revoke every device, including the current one; the procedure clears its cookie.\nexport async function logoutEverywhere(userId: string) { await sessions.revokeAll(userId); }\n"
     },
     {
+      "id": "inventory-gate:apps/api/src/services/booking-inventory.ts:10",
+      "concept": "inventory-gate",
+      "file": "apps/api/src/services/booking-inventory.ts",
+      "line": 9,
+      "endLine": 25,
+      "symbol": "createGatedBooking",
+      "code": "\n// @concept: inventory-gate\nexport async function createGatedBooking(userId: string, input: BookTicketInput, log: Log, correlationId: string) {\n  const { eventId, quantity, idempotencyKey } = input;\n  const intent = createHash(\"sha256\").update(`${userId}:${idempotencyKey}`).digest(\"hex\");\n  const owner = randomUUID();\n  let decision = 2;\n  // 1. All booking events can become hot. Initialize lazily; Redis remains an advisory fast reject.\n  if (env.INVENTORY_GATE_ENABLED) {\n    try {\n      decision = await inventory.reserve(eventId, intent, owner, quantity);\n      if (decision === -1) {\n        const event = await events.findById(eventId);\n        if (event) {\n          await inventory.initialize(eventId, event.startsAt > new Date() ? event.seatsLeft : 0);\n          decision = await inventory.reserve(eventId, intent, owner, quantity);\n        }"
+    },
+    {
+      "id": "cache-filter-keys:apps/api/src/services/event-filters.ts:17",
+      "concept": "cache-filter-keys",
+      "file": "apps/api/src/services/event-filters.ts",
+      "line": 16,
+      "endLine": 32,
+      "symbol": "canonicalFilters",
+      "code": "\n// @concept: cache-filter-keys\nexport function canonicalFilters(input: ListEventsInput | undefined): EventFilters {\n  const filters: EventFilters = {};\n\n  // 1. Venue: the shared schema already trimmed it; trim again so this function is safe on its\n  //    own, then lowercase (the query compares without case). Empty = no venue filter.\n  const venue = input?.venue?.trim().toLowerCase();\n  if (venue) filters.venue = venue;\n\n  // 2. Dates: round down to the start of the UTC day. \"2026-11-20\", \"2026-11-20T00:00:00.000Z\" and\n  //    \"2026-11-20T18:30:00.000Z\" all become 2026-11-20T00:00:00.000Z. Without this, every\n  //    millisecond would be its own cache key (86,400,000 possible keys per day instead of 1).\n  if (input?.from) filters.from = startOfUtcDay(input.from);\n  if (input?.to) filters.to = startOfUtcDay(input.to);\n\n  return filters;"
+    },
+    {
+      "id": "keyset-pagination:apps/api/src/services/event-search.ts:5",
+      "concept": "keyset-pagination",
+      "file": "apps/api/src/services/event-search.ts",
+      "line": 4,
+      "endLine": 19,
+      "symbol": "searchEvents",
+      "code": "\n// @concept: keyset-pagination\nexport async function searchEvents(input: SearchEventsInput, now = new Date()) {\n  // 1. Keep the upcoming cutoff stable throughout a traversal; this is not a DB snapshot.\n  const asOf = input.cursor?.asOf ?? now.toISOString();\n  const rows = await queries.search(input, canonicalFilters(input), asOf);\n  const items = rows.slice(0, input.limit);\n  const last = items.at(-1);\n  // 2. Explicit public fields keep internal cursor precision out of each event DTO.\n  return {\n    items: items.map(row => ({ id: row.id, title: row.title, venue: row.venue,\n      startsAt: row.startsAt.toISOString(), totalSeats: row.totalSeats, seatsLeft: row.seatsLeft })),\n    nextCursor: rows.length > input.limit && last ? { startsAt: last.cursorAt, id: last.id, asOf } : null,\n  };\n}\n"
+    },
+    {
       "id": "unit-tests:apps/api/src/services/events.test.ts:3",
       "concept": "unit-tests",
       "file": "apps/api/src/services/events.test.ts",
@@ -799,13 +934,40 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "// @concept: cache-aside\n// @concept: ttl\n// 1. The cached list has TWO ages that matter (both from env, so a demo can shorten them):\n//    - SOFT TTL (default 30 s, plus 0-10% jitter, see step 1a): younger than this, the list is\n//      FRESH and served as it is.\n//    - HARD TTL (default 5 min): the key's expiry in Redis. Between soft and hard the list is STALE:\n//      it is still served, at once, while a background refresh replaces it (\"stale-while-revalidate\",\n//      step 12). Older than the hard TTL it is never served, not even when Postgres is down (step 12a).\n//    Staleness: creating an event or booking a ticket makes the list correct at once\n//    (invalidateEventLists below). Other changes (e.g. a row edited by hand in psql) do not: a busy\n//    list is refreshed about every soft TTL, but a list nobody asked for in a while can be served\n//    ONCE at up to the hard TTL old, while it refreshes.\n//    That is fine for BROWSING. Booking always checks the database (a locked row, never this\n//    cache), so a stale list can never cause overselling.\nconst SOFT_TTL_MS = env.EVENTS_CACHE_SOFT_TTL_MS;\nconst HARD_TTL_MS = env.EVENTS_CACHE_HARD_TTL_MS;\n"
     },
     {
-      "id": "graceful-degradation:apps/api/src/services/events.ts:128",
+      "id": "cache-invalidation:apps/api/src/services/events.ts:121",
+      "concept": "cache-invalidation",
+      "file": "apps/api/src/services/events.ts",
+      "line": 120,
+      "endLine": 136,
+      "symbol": "listUpcomingEvents",
+      "code": "// Upcoming events for the public list, optionally filtered by venue and dates.\n// @concept: cache-invalidation\n// @concept: stale-while-revalidate\nexport async function listUpcomingEvents(input: ListEventsInput | undefined, log: Log, now: Date = new Date()) {\n  // 4b. The CANONICAL filters (./event-filters.ts): ONE form for the Postgres query, the cache key,\n  //     the single-flight key and the lock key. So \" Pune\", \"pune\" and \"PUNE\" are the same question\n  //     everywhere: one cache entry, one rebuild, one lock.\n  const filters = canonicalFilters(input);\n  const canonical = canonicalString(filters);\n\n  // @concept: graceful-degradation\n  // 5. Ask the cache first. Redis is only a speed-up, so it must never be able to fail the request:\n  //    an error or a timeout is caught, logged as a warning, and we carry on with Postgres.\n  //    a. Read the current GENERATION first (a number that goes up whenever the list changes).\n  //       It must come BEFORE the list and before any Postgres read: createEvent explains why.\n  //    b. Build this filter's key in that generation and read it. Everything below (cache write,\n  //       lock, refresh) uses the same `key`. The key ends in a HASH of the filters, which nobody"
+    },
+    {
+      "id": "stale-while-revalidate:apps/api/src/services/events.ts:122",
+      "concept": "stale-while-revalidate",
+      "file": "apps/api/src/services/events.ts",
+      "line": 121,
+      "endLine": 137,
+      "symbol": "listUpcomingEvents",
+      "code": "// @concept: cache-invalidation\n// @concept: stale-while-revalidate\nexport async function listUpcomingEvents(input: ListEventsInput | undefined, log: Log, now: Date = new Date()) {\n  // 4b. The CANONICAL filters (./event-filters.ts): ONE form for the Postgres query, the cache key,\n  //     the single-flight key and the lock key. So \" Pune\", \"pune\" and \"PUNE\" are the same question\n  //     everywhere: one cache entry, one rebuild, one lock.\n  const filters = canonicalFilters(input);\n  const canonical = canonicalString(filters);\n\n  // @concept: graceful-degradation\n  // 5. Ask the cache first. Redis is only a speed-up, so it must never be able to fail the request:\n  //    an error or a timeout is caught, logged as a warning, and we carry on with Postgres.\n  //    a. Read the current GENERATION first (a number that goes up whenever the list changes).\n  //       It must come BEFORE the list and before any Postgres read: createEvent explains why.\n  //    b. Build this filter's key in that generation and read it. Everything below (cache write,\n  //       lock, refresh) uses the same `key`. The key ends in a HASH of the filters, which nobody\n  //       can read, so the debug line shows the canonical text next to it."
+    },
+    {
+      "id": "graceful-degradation:apps/api/src/services/events.ts:130",
       "concept": "graceful-degradation",
       "file": "apps/api/src/services/events.ts",
-      "line": 127,
-      "endLine": 143,
+      "line": 129,
+      "endLine": 145,
       "symbol": "gen",
       "code": "\n  // @concept: graceful-degradation\n  // 5. Ask the cache first. Redis is only a speed-up, so it must never be able to fail the request:\n  //    an error or a timeout is caught, logged as a warning, and we carry on with Postgres.\n  //    a. Read the current GENERATION first (a number that goes up whenever the list changes).\n  //       It must come BEFORE the list and before any Postgres read: createEvent explains why.\n  //    b. Build this filter's key in that generation and read it. Everything below (cache write,\n  //       lock, refresh) uses the same `key`. The key ends in a HASH of the filters, which nobody\n  //       can read, so the debug line shows the canonical text next to it.\n  //    WHY INVALIDATION BEATS SWR: after an event is created, the generation is new and its key is\n  //    EMPTY, so the next read is a MISS (step 6), never the stale list from before the change.\n  //    Invalidation means \"this data must not be served any more\"; SWR and stale-if-error only ever\n  //    serve a copy of the CURRENT generation, so they can never bring the old list back.\n  let cacheStatus: CacheStatus = \"miss\";\n  let key = \"\";\n  try {\n    const gen = await eventsCache.getUpcomingGeneration();"
+    },
+    {
+      "id": "inventory-gate:apps/api/src/services/inventory-reconciliation.ts:6",
+      "concept": "inventory-gate",
+      "file": "apps/api/src/services/inventory-reconciliation.ts",
+      "line": 5,
+      "endLine": 21,
+      "symbol": "reconcileEvent",
+      "code": "\n// @concept: inventory-gate\nexport async function reconcileEvent(eventId: string) {\n  // 1. Snapshot Redis BEFORE reading SQL. CAS refuses to overwrite a newer reservation/refund.\n  const view = await inventory.snapshot(eventId);\n  if (!view) return false;\n  const event = await findById(eventId);\n  const seats = event && event.startsAt > new Date() ? event.seatsLeft : 0;\n  // 2. Subtract live debits conservatively, even if a just-committed debit is counted twice.\n  //    A later pass repairs that undercount; expiry repairs crashed requests after 30 seconds.\n  return inventory.reconcile(eventId, view, seats);\n}\nexport function startInventoryReconciliation(log: Log) {\n  let stopped = false;\n  let cursor = \"0\";\n  let running: Promise\u003cvoid> = Promise.resolve();\n  let pending: string[] = [];"
     },
     {
       "id": "outbox:apps/api/src/services/outbox.ts:12",
@@ -815,6 +977,60 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 27,
       "symbol": "retryInMs",
       "code": "\n// @concept: outbox\n// 1. Retry indefinitely, from 1 second to 60 seconds; persisted due times survive API restarts.\n//    The cap also bounds exponential arithmetic for a row that has failed for a long time.\nexport function retryInMs(attempts: number): number {\n  return Math.min(60_000, 1000 * 2 ** Math.min(attempts, 6));\n}\n\nexport async function relayOnce(log: Log): Promise\u003cnumber> {\n  // 2. Missing queue configuration pauses delivery, never discards a committed confirmation.\n  if (!jobs.jobsEnabled) return 0;\n  return outbox.deliverBatch(async (row) => {\n    let correlationId: string | undefined;\n    try {\n      // 3. Treat stored JSON as input too. Keep both the original messageId and correlationId;\n      //    logs use ids only (the payload contains the customer's email address).\n      const message = BookingConfirmedMessage.parse(row.payload);"
+    },
+    {
+      "id": "presigned-urls:apps/api/src/services/posters.ts:11",
+      "concept": "presigned-urls",
+      "file": "apps/api/src/services/posters.ts",
+      "line": 10,
+      "endLine": 26,
+      "symbol": "uploadKey",
+      "code": "//    URL or arbitrary key from the browser. Each event gets an independent upload capability.\n// @concept: presigned-urls\nfunction uploadKey(userId: string, eventId: string, uploadId: string) {\n  return `poster-uploads/${eventId}/${userId}/${uploadId}`;\n}\nasync function requireEvent(id: string) {\n  if (!await events.findById(id)) throw new NotFoundError(\"Event not found\");\n}\n\nexport async function start(userId: string, input: PosterUploadInput) {\n  await requireEvent(input.eventId);\n  const uploadId = randomUUID();\n  return { uploadId, ...await posters.signPosterPut(uploadKey(userId, input.eventId, uploadId), input) };\n}\n\nexport async function complete(userId: string, input: CompletePosterInput) {\n  await requireEvent(input.eventId);"
+    },
+    {
+      "id": "rate-limiting:apps/api/src/services/rate-limits.ts:5",
+      "concept": "rate-limiting",
+      "file": "apps/api/src/services/rate-limits.ts",
+      "line": 4,
+      "endLine": 20,
+      "symbol": "RATE_POLICIES",
+      "code": "// 1. A modest burst supports normal use; sustained traffic gets one fresh token per interval.\n// @concept: rate-limiting\nexport const RATE_POLICIES = {\n  login: { capacity: 20, refillMs: 3000 },\n  booking: { capacity: 10, refillMs: 1000 },\n} as const;\nexport async function enforceRateLimit(scope: keyof typeof RATE_POLICIES, identity: string) {\n  const policy = RATE_POLICIES[scope];\n  let result;\n  try { result = await takeToken(scope, identity, policy.capacity, policy.refillMs); }\n  catch {\n    // 2. Fail closed for abuse protection. Do not run expensive password hashes/DB writes unbounded.\n    throw new UnavailableError(\"Please try again shortly\");\n  }\n  if (!result.allowed) throw new RateLimitedError(result.retryAfterSeconds);\n}\n"
+    },
+    {
+      "id": "cache-stampede:apps/api/src/services/single-flight.ts:16",
+      "concept": "cache-stampede",
+      "file": "apps/api/src/services/single-flight.ts",
+      "line": 15,
+      "endLine": 31,
+      "symbol": "singleFlight",
+      "code": "\n// @concept: cache-stampede\nexport function singleFlight\u003cT>(key: string, work: () => Promise\u003cT>): Promise\u003cT> {\n  // 2. Already running for this key? Then just wait for the SAME promise: no new work.\n  const running = inFlight.get(key);\n  if (running) return running as Promise\u003cT>;\n\n  // 3. Not running: start it and remember it, so callers arriving meanwhile join in.\n  //    `finally` removes the entry when the work ends, on success AND on error:\n  //    - success: the next caller (after this) must start fresh work, not reuse an old answer\n  //      forever (keeping answers is the cache's job, with its TTL);\n  //    - error: every caller waiting right now gets the same error, but the next caller tries\n  //      again instead of getting a stuck failure.\n  const promise = work().finally(() => inFlight.delete(key));\n  inFlight.set(key, promise);\n  return promise;\n}"
+    },
+    {
+      "id": "web-vitals:apps/api/src/services/telemetry.ts:5",
+      "concept": "web-vitals",
+      "file": "apps/api/src/services/telemetry.ts",
+      "line": 4,
+      "endLine": 10,
+      "symbol": "reportVital",
+      "code": "//    Browser measurements are untrusted observations, never business/accounting data.\n// @concept: web-vitals\nexport function reportVital(input: WebVitalInput, log: { info: (data: object, message: string) => void }) {\n  log.info({ webVital: input }, \"web vital\");\n  return { ok: true } as const;\n}\n"
+    },
+    {
+      "id": "rbac:apps/api/src/services/users.ts:10",
+      "concept": "rbac",
+      "file": "apps/api/src/services/users.ts",
+      "line": 9,
+      "endLine": 25,
+      "symbol": "makeAdmin",
+      "code": "// Postgres on every admin request (getRole, used by trpc/init.ts), it keeps no copy in the session.\n// @concept: rbac\n// @concept: session-revocation\nexport async function makeAdmin(email: string) {\n  // 1. One UPDATE. If no user has this email, nothing changed: say so clearly.\n  const existing = await users.findByEmail(email);\n  if (!existing) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);\n  // Revoke before privilege changes, fail closed on Redis errors, then close the concurrent-login window.\n  await sessions.revokeAll(existing.id);\n  const user = await users.setRoleByEmail(email, \"admin\");\n  if (!user) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);\n\n  await sessions.revokeAll(user.id);\n  // 2. Only the safe fields.\n  return { id: user.id, email: user.email, role: user.role };\n}\n"
+    },
+    {
+      "id": "session-revocation:apps/api/src/services/users.ts:11",
+      "concept": "session-revocation",
+      "file": "apps/api/src/services/users.ts",
+      "line": 10,
+      "endLine": 26,
+      "symbol": "makeAdmin",
+      "code": "// @concept: rbac\n// @concept: session-revocation\nexport async function makeAdmin(email: string) {\n  // 1. One UPDATE. If no user has this email, nothing changed: say so clearly.\n  const existing = await users.findByEmail(email);\n  if (!existing) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);\n  // Revoke before privilege changes, fail closed on Redis errors, then close the concurrent-login window.\n  await sessions.revokeAll(existing.id);\n  const user = await users.setRoleByEmail(email, \"admin\");\n  if (!user) throw new NotFoundError(`No user with email ${email}. Sign up first, then run this again.`);\n\n  await sessions.revokeAll(user.id);\n  // 2. Only the safe fields.\n  return { id: user.id, email: user.email, role: user.role };\n}\n\n// The user's current role, or null if the user no longer exists (the session outlived the account)."
     },
     {
       "id": "trpc-context:apps/api/src/trpc/context.ts:12",
@@ -878,6 +1094,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 96,
       "symbol": "isAuthed",
       "code": "// @concept: protected-procedure\n// @concept: authn-vs-authz\n// 5. isAuthed: a middleware that only lets logged-in callers through.\n//    This is the REAL security check for private data. A frontend guard can be skipped\n//    by anyone who calls the API directly (curl, scripts), this cannot.\nconst isAuthed = t.middleware(({ ctx, next }) => {\n  if (!ctx.session) {\n    throw new TRPCError({ code: \"UNAUTHORIZED\", message: \"You must be logged in\" });\n  }\n  // Passing `session` to next() replaces ctx.session with the non-null version, so in a\n  // protected procedure TypeScript then knows ctx.session.userId exists (no null check needed).\n  return next({ ctx: { session: ctx.session } });\n});\n\n// 5b. isAdmin: a middleware that only lets admins through. It runs AFTER isAuthed, so ctx.session\n//     is never null here.\n//     Two different answers, on purpose (authentication vs authorization):"
+    },
+    {
+      "id": "rbac:apps/api/src/trpc/init.ts:130",
+      "concept": "rbac",
+      "file": "apps/api/src/trpc/init.ts",
+      "line": 129,
+      "endLine": 139,
+      "symbol": "router",
+      "code": "//    publicProcedure: a procedure anyone can call (no login check yet), with error mapping.\n// @concept: rbac\nexport const router = t.router;\n//    createCallerFactory: lets tests call a router directly as a function, with no HTTP server.\nexport const createCallerFactory = t.createCallerFactory;\n//    protectedProcedure: a public procedure plus the login check above.\nexport const publicProcedure = t.procedure.use(errorMapper);\nexport const protectedProcedure = publicProcedure.use(isAuthed);\n//    adminProcedure: a protected procedure plus the role check above (401 first, then 403).\nexport const adminProcedure = protectedProcedure.use(isAdmin);\n"
     },
     {
       "id": "rpc-vs-rest:apps/api/src/trpc/router.ts:10",
@@ -1004,6 +1229,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 48,
       "symbol": "module",
       "code": "\n  // @concept: session-cookie\n  // 3. The session cookie is HttpOnly: page JavaScript can't see it.\n  expect(await page.evaluate(() => document.cookie)).not.toContain(\"sid\");\n\n  // 4. A full reload asks the API again; the cookie keeps us logged in.\n  await page.reload();\n  await expect(header.getByText(`Signed in as ${email}`)).toBeVisible();\n});\n\ntest(\"wrong password shows the error and stays logged out\", async ({ page }) => {\n  await page.goto(\"/login\");\n  await page.getByLabel(\"Email\").fill(email);\n  await page.getByLabel(\"Password\").fill(\"not-the-password\");\n  await page.getByRole(\"button\", { name: \"Log in\" }).click();\n\n  // Scoped to the form: Next.js has its own role=\"alert\" element for route announcements."
+    },
+    {
+      "id": "accessible-forms:apps/web/e2e/security.spec.ts:1",
+      "concept": "accessible-forms",
+      "file": "apps/web/e2e/security.spec.ts",
+      "line": 1,
+      "endLine": 16,
+      "symbol": "api",
+      "code": "// @concept: accessible-forms\nimport { randomUUID } from \"node:crypto\";\nimport { execFileSync } from \"node:child_process\";\nimport path from \"node:path\";\nimport AxeBuilder from \"@axe-core/playwright\";\nimport { expect, test } from \"@playwright/test\";\nconst api = process.env.NEXT_PUBLIC_API_URL || \"http://localhost:4000\";\nconst secret = \"correct-horse-battery\";\n\ntest(\"CSRF checks reject absent, lookalike and cross-site origins on public/private mutations\", async ({ request }) => {\n  for (const headers of ([{ origin: \"\" }, { origin: \"https://evil.example\" },\n    { origin: process.env.E2E_BASE_URL ?? \"http://localhost:3000\", \"sec-fetch-site\": \"cross-site\" }] as Record\u003cstring, string>[])) {\n    for (const route of [\"auth.login\", \"bookings.create\", \"telemetry.report\"]) {\n      expect((await request.post(`${api}/trpc/${route}`, { headers, data: {} })).status()).toBe(403);\n    }\n  }"
     },
     {
       "id": "monorepo:apps/web/next.config.ts:43",
@@ -1321,6 +1555,24 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: ui-error-handling\nexport function EventList({ input, filtered }: { input: ListEventsInput; filtered: boolean }) {\n  const [text, setText] = useState(\"\");\n  const events = useEventSearch(input, text);\n  const items = events.data?.pages.flatMap(page => page.items) ?? [];\n  // 1. Previous results remain visible during a new search, but cannot load pages of the old key.\n  const busy = events.isFetching || events.typing;\n  function more() {\n    if (events.hasNextPage && !busy && !events.isPlaceholderData) void events.fetchNextPage();\n  }\n  return (\n    \u003csection aria-label=\"Search events\" className=\"space-y-4\">\n      \u003cInput id=\"event-search\" label=\"Search title or venue\" maxLength={200} value={text}\n        onChange={event => setText(event.target.value)} />\n      \u003cp role=\"status\" className=\"text-sm text-gray-600\">{busy ? \"Updating events…\" : `${items.length} events loaded`}\u003c/p>\n      {events.isPending ? \u003cEventListSkeleton /> : null}"
     },
     {
+      "id": "virtualization:apps/web/src/features/events/components/virtual-event-list.tsx:11",
+      "concept": "virtualization",
+      "file": "apps/web/src/features/events/components/virtual-event-list.tsx",
+      "line": 10,
+      "endLine": 26,
+      "symbol": "VirtualEventList",
+      "code": "\n// @concept: virtualization\nexport function VirtualEventList({ items, onEnd }: { items: Event[]; onEnd: () => void }) {\n  const [top, setTop] = useState(0);\n  // 1. Small lists keep their natural height. Large lists mount only visible rows + overscan.\n  const virtual = items.length > 20;\n  const start = virtual ? Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN) : 0;\n  const end = virtual ? Math.min(items.length, Math.ceil((top + VIEWPORT) / ROW_HEIGHT) + OVERSCAN) : items.length;\n  function scroll(event: UIEvent\u003cHTMLDivElement>) {\n    setTop(event.currentTarget.scrollTop);\n    if (event.currentTarget.scrollTop + VIEWPORT >= items.length * ROW_HEIGHT - ROW_HEIGHT * 3) onEnd();\n  }\n  return (\n    \u003cdiv onScroll={scroll} tabIndex={virtual ? 0 : undefined}\n      aria-label=\"Event results\" role=\"region\"\n      style={virtual ? { height: VIEWPORT, overflowY: \"auto\", overflowAnchor: \"none\" } : undefined}>\n      \u003cul className={virtual ? \"relative\" : \"space-y-4\"}"
+    },
+    {
+      "id": "search-races:apps/web/src/features/events/hooks/use-event-search.ts:6",
+      "concept": "search-races",
+      "file": "apps/web/src/features/events/hooks/use-event-search.ts",
+      "line": 5,
+      "endLine": 21,
+      "symbol": "useEventSearch",
+      "code": "\n// @concept: search-races\nexport function useEventSearch(filters: ListEventsInput, text: string) {\n  const trpc = useTRPC();\n  const [q, setQ] = useState(\"\");\n  // 1. Debounce typing, and clear each timer so intermediate text never starts a query.\n  useEffect(() => {\n    const timer = setTimeout(() => setQ(text.trim()), 250);\n    return () => clearTimeout(timer);\n  }, [text]);\n  // 2. Each input has a separate query key. Consuming the abort signal cancels stale requests;\n  //    even a server ignoring cancellation can only update its own key, never the new search.\n  const query = useInfiniteQuery(trpc.events.search.infiniteQueryOptions(\n    { ...filters, q, limit: 50 },\n    { getNextPageParam: page => page.nextCursor ?? undefined,\n      placeholderData: keepPreviousData, staleTime: 30_000, trpc: { abortOnUnmount: true } },\n  ));"
+    },
+    {
       "id": "feature-folders:apps/web/src/features/events/hooks/use-events.ts:5",
       "concept": "feature-folders",
       "file": "apps/web/src/features/events/hooks/use-events.ts",
@@ -1357,6 +1609,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "  // @concept: tanstack-query\n  // @concept: hydration\n  // 1. The cache key is the procedure path PLUS the input:\n  //    [[\"events\",\"list\"], { input: { venue: \"Pune\" }, type: \"query\" }]. So each filter has its own\n  //    cached answer in the browser, and every component asking for the same filters shares one.\n  //    The server prefetches with the SAME input (app/events/page.tsx passes one object to both),\n  //    so the keys match and hydration finds the data. A different input here (even {} instead of\n  //    { venue: \"Pune\" }) would be a different key: the browser would fetch again.\n  // 2. staleTime: 30 s. By default TanStack Query treats data as old the moment it arrives and\n  //    re-fetches when a component mounts. The data from the server is only milliseconds old,\n  //    so without this the browser would ask for the same list again right after hydrating.\n  //    30 s covers the trip to the browser; after that, a remount or a tab focus fetches fresh seats.\n  return useQuery(trpc.events.list.queryOptions(input, { staleTime: 30_000 }));\n}\n"
     },
     {
+      "id": "next-data-cache:apps/web/src/features/events/server/cached-events.ts:53",
+      "concept": "next-data-cache",
+      "file": "apps/web/src/features/events/server/cached-events.ts",
+      "line": 52,
+      "endLine": 68,
+      "symbol": "getCachedEvents",
+      "code": "//      how the web server's log tells a hit (no line, and no request in the API log) from a miss.\n// @concept: next-data-cache\nexport const getCachedEvents = unstable_cache(\n  async (canonicalInput: ListEventsInput) => {\n    serverLog(\"info\", \"next data cache miss: events.list\", { input: canonicalInput });\n    return makeServerTrpcClient().events.list.query(canonicalInput);\n  },\n  [\"events.list\"],\n  { tags: [EVENTS_TAG], revalidate: 30 },\n);\n\n// 3. Empty every cached events list, NOW. Called by the revalidate hook after an event is created.\n//    { expire: 0 } = \"expired right away\": the next request waits for a fresh list from the API.\n//    NOT \"max\" (what the docs recommend for most cases): \"max\" only marks the lists STALE, so the\n//    next visitor still gets the OLD list once while Next refreshes in the background; the admin's\n//    reload would not show the new event. Next's docs name { expire: 0 } for exactly this case:\n//    an invalidation that comes from ANOTHER service through a Route Handler (updateTag, the"
+    },
+    {
       "id": "csr-vs-ssr:apps/web/src/features/events/server/prefetch-events.ts:6",
       "concept": "csr-vs-ssr",
       "file": "apps/web/src/features/events/server/prefetch-events.ts",
@@ -1382,6 +1643,24 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 14,
       "symbol": "LandingPage",
       "code": "\n// @concept: feature-folders\n// Puts the landing sections in order. app/page.tsx renders only this.\nexport function LandingPage() {\n  return (\n    \u003c>\n      \u003cHero />\n      \u003cFeaturesList />\n    \u003c/>\n  );\n}\n"
+    },
+    {
+      "id": "web-vitals:apps/web/src/features/telemetry/hooks/use-web-vitals.ts:4",
+      "concept": "web-vitals",
+      "file": "apps/web/src/features/telemetry/hooks/use-web-vitals.ts",
+      "line": 3,
+      "endLine": 19,
+      "symbol": "report",
+      "code": "\n// @concept: web-vitals\nfunction report(metric: { name: string; value: number; id: string; rating: string }) {\n  // 1. Strip ids/query strings before sending, so private URLs never enter telemetry logs.\n  const path = window.location.pathname;\n  const route = /^\\/events\\/[^/]+$/.test(path) ? \"/events/[id]\" : path;\n  const parsed = WebVitalInput.safeParse({ name: metric.name, value: metric.value, id: metric.id,\n    rating: metric.rating, route: WebVitalInput.shape.route.safeParse(route).success ? route : \"/other\" });\n  if (!parsed.success) return;\n  // 2. Keep a stable callback and use keepalive for navigation/unload. No cookies, retries or user ids.\n  void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? \"\"}/trpc/telemetry.report`, {\n    method: \"POST\", headers: { \"content-type\": \"application/json\" }, body: JSON.stringify(parsed.data),\n    credentials: \"omit\", keepalive: true,\n  }).catch(() => {});\n}\nexport function useWebVitals() { useReportWebVitals(report); }\n"
+    },
+    {
+      "id": "csp:apps/web/src/lib/security-policy.ts:3",
+      "concept": "csp",
+      "file": "apps/web/src/lib/security-policy.ts",
+      "line": 2,
+      "endLine": 15,
+      "symbol": "securityPolicy",
+      "code": "//    style elements require a nonce in production. Dev additionally needs eval/HMR connections.\n// @concept: csp\nexport function securityPolicy(nonce: string, dev: boolean, apiOrigin = \"\") {\n  const api = apiOrigin ? new URL(apiOrigin).origin : \"\";\n  const s3 = \"https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com\";\n  return [\n    \"default-src 'self'\", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? \" 'unsafe-eval'\" : \"\"}`,\n    `style-src 'self' ${dev ? \"'unsafe-inline'\" : `'nonce-${nonce}'`}`, \"style-src-attr 'unsafe-inline'\",\n    `connect-src 'self' ${api} ${s3}${dev ? \" http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*\" : \"\"}`,\n    `img-src 'self' data: blob: ${s3}${dev ? \" http://localhost:* http://127.0.0.1:*\" : \"\"}`,\n    \"font-src 'self'\", \"object-src 'none'\", \"base-uri 'self'\", \"form-action 'self'\", \"frame-ancestors 'none'\",\n  ].join(\"; \");\n}\n"
     },
     {
       "id": "config-validation:apps/web/src/lib/server-env.ts:4",
@@ -1507,7 +1786,16 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "line": 3,
       "endLine": 19,
       "symbol": "proxy",
-      "code": "\n// @concept: route-guard-proxy\nexport function proxy(request: NextRequest) {\n  // 1. Replace caller-provided nonce/CSP headers; Next reads this request CSP to nonce its scripts.\n  const nonce = Buffer.from(crypto.randomUUID()).toString(\"base64\");\n  const csp = securityPolicy(nonce, process.env.NODE_ENV !== \"production\", process.env.NEXT_PUBLIC_API_URL);\n  const headers = new Headers(request.headers);\n  headers.set(\"x-nonce\", nonce); headers.set(\"Content-Security-Policy\", csp);\n  const privatePage = /^\\/(dashboard|admin|tickets)(\\/|$)/.test(request.nextUrl.pathname);\n  // 2. Cookie presence is only a navigation convenience; API session/authz checks remain decisive.\n  const loginUrl = new URL(\"/login\", request.url);\n  loginUrl.searchParams.set(\"next\", request.nextUrl.pathname);\n  const response = privatePage && !request.cookies.has(\"sid\")\n    ? NextResponse.redirect(loginUrl) : NextResponse.next({ request: { headers } });\n  response.headers.set(\"Content-Security-Policy\", csp);\n  response.headers.set(\"Cache-Control\", \"private, no-store\");\n  response.headers.set(\"X-Content-Type-Options\", \"nosniff\");"
+      "code": "\n// @concept: route-guard-proxy\n// @concept: csp\nexport function proxy(request: NextRequest) {\n  // 1. Replace caller-provided nonce/CSP headers; Next reads this request CSP to nonce its scripts.\n  const nonce = Buffer.from(crypto.randomUUID()).toString(\"base64\");\n  const csp = securityPolicy(nonce, process.env.NODE_ENV !== \"production\", process.env.NEXT_PUBLIC_API_URL);\n  const headers = new Headers(request.headers);\n  headers.set(\"x-nonce\", nonce); headers.set(\"Content-Security-Policy\", csp);\n  const privatePage = /^\\/(dashboard|admin|tickets)(\\/|$)/.test(request.nextUrl.pathname);\n  // 2. Cookie presence is only a navigation convenience; API session/authz checks remain decisive.\n  const loginUrl = new URL(\"/login\", request.url);\n  loginUrl.searchParams.set(\"next\", request.nextUrl.pathname);\n  const response = privatePage && !request.cookies.has(\"sid\")\n    ? NextResponse.redirect(loginUrl) : NextResponse.next({ request: { headers } });\n  response.headers.set(\"Content-Security-Policy\", csp);\n  response.headers.set(\"Cache-Control\", \"private, no-store\");"
+    },
+    {
+      "id": "csp:apps/web/src/proxy.ts:5",
+      "concept": "csp",
+      "file": "apps/web/src/proxy.ts",
+      "line": 4,
+      "endLine": 20,
+      "symbol": "proxy",
+      "code": "// @concept: route-guard-proxy\n// @concept: csp\nexport function proxy(request: NextRequest) {\n  // 1. Replace caller-provided nonce/CSP headers; Next reads this request CSP to nonce its scripts.\n  const nonce = Buffer.from(crypto.randomUUID()).toString(\"base64\");\n  const csp = securityPolicy(nonce, process.env.NODE_ENV !== \"production\", process.env.NEXT_PUBLIC_API_URL);\n  const headers = new Headers(request.headers);\n  headers.set(\"x-nonce\", nonce); headers.set(\"Content-Security-Policy\", csp);\n  const privatePage = /^\\/(dashboard|admin|tickets)(\\/|$)/.test(request.nextUrl.pathname);\n  // 2. Cookie presence is only a navigation convenience; API session/authz checks remain decisive.\n  const loginUrl = new URL(\"/login\", request.url);\n  loginUrl.searchParams.set(\"next\", request.nextUrl.pathname);\n  const response = privatePage && !request.cookies.has(\"sid\")\n    ? NextResponse.redirect(loginUrl) : NextResponse.next({ request: { headers } });\n  response.headers.set(\"Content-Security-Policy\", csp);\n  response.headers.set(\"Cache-Control\", \"private, no-store\");\n  response.headers.set(\"X-Content-Type-Options\", \"nosniff\");"
     },
     {
       "id": "docker-multi-stage:apps/worker/Dockerfile:3",
@@ -1546,6 +1834,24 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: correlation-ids\n// The correlation id of one queue message (series 2, P2): the id of the api request that booked\n// (apps/api/src/http/correlation-id.ts), carried in the message body. The worker writes it on each\n// of its log lines for that message, so the api's lines and the worker's lines of ONE booking are\n// found with one search.\n//\n// Read BEFORE the handler validates the message, on purpose: even a message that turns out to be\n// invalid (and fails, and ends in the DLQ) still has its id on the failure lines, so we can find the\n// request that sent it. undefined when there is none: bad JSON, a message sent before P2, or a value\n// that is not a UUID (never copy unchecked text into our logs).\nexport function correlationIdOf(body: string): string | undefined {\n  try {\n    const parsed: unknown = JSON.parse(body);\n    if (typeof parsed !== \"object\" || parsed === null || !(\"correlationId\" in parsed)) return undefined;\n    const id = CorrelationId.safeParse(parsed.correlationId);\n    return id.success ? id.data : undefined;"
     },
     {
+      "id": "idempotency:apps/worker/src/handlers/booking-confirmed.ts:36",
+      "concept": "idempotency",
+      "file": "apps/worker/src/handlers/booking-confirmed.ts",
+      "line": 35,
+      "endLine": 51,
+      "symbol": "handleBookingConfirmed",
+      "code": "// does not log; it only hands the logger to the mailer, so the mailer's line belongs to the booking.\n// @concept: idempotency\nexport async function handleBookingConfirmed(rawMessage: unknown, deps: Deps, log: Log): Promise\u003cHandleResult> {\n  // 1. Validate with the shared schema. The queue holds text that anything could have put there,\n  //    and it may be an older or newer version. A message that does not match throws (ZodError),\n  //    and nothing is sent. The caller (batch.ts) reports it as failed, so after 3 tries the queue\n  //    moves it to the dead-letter queue.\n  const message = BookingConfirmedMessage.parse(rawMessage);\n\n  // 2. The job's identity: the BUSINESS key (what the job is about), not the messageId (which\n  //    envelope it came in). The same booking could be published twice with two different\n  //    messageIds (for example by the outbox relay later, which may publish a row again after a\n  //    crash). Keyed by messageId, both copies would look new and the customer would get 2 emails.\n  //    Keyed by booking, the second copy is recognised: one booking = one confirmation email.\n  const jobKey = `booking.confirmed:${message.bookingId}`;\n\n  // 3. Already done? Then this is a duplicate: skip it, and report SUCCESS so the queue deletes it."
+    },
+    {
+      "id": "ticket-signing:apps/worker/src/handlers/tickets.ts:11",
+      "concept": "ticket-signing",
+      "file": "apps/worker/src/handlers/tickets.ts",
+      "line": 10,
+      "endLine": 26,
+      "symbol": "handleTickets",
+      "code": "\n// @concept: ticket-signing\nexport async function handleTickets(input: unknown, deps: TicketDeps): Promise\u003c{ created: number; skipped: number }> {\n  // 1. Stable ids are derived from the booking, NEVER the queue/message id. Publishing the\n  //    same booking again therefore cannot mint more seats. Bound quantity before doing work.\n  const message = TicketBookingMessage.parse(input);\n  const secret = await deps.secret();\n  let created = 0;\n  let skipped = 0;\n  for (let seat = 1; seat \u003c= message.quantity; seat++) {\n    const ticketId = `${message.bookingId}:${seat}`;\n    const claims = { version: 1 as const, ticketId, bookingId: message.bookingId, userId: message.userId,\n      eventId: message.eventId, seat, eventStartsAt: message.eventStartsAt };\n    const ticket = TicketRecord.parse({ ...claims, eventDate: message.eventStartsAt.slice(0, 10),\n      eventDateKey: `${message.eventStartsAt}#${ticketId}`, objectKey: `tickets/${message.bookingId}/${seat}.png`,\n      qrToken: signTicket(claims, secret), status: \"creating\", createdAt: message.occurredAt });\n    const stored = await deps.tickets.reserve(ticket);"
+    },
+    {
       "id": "aws-lambda:apps/worker/src/lambda.ts:14",
       "concept": "aws-lambda",
       "file": "apps/worker/src/lambda.ts",
@@ -1580,6 +1886,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 20,
       "symbol": "SesMailer",
       "code": "\n// @concept: ses-email\n// The REAL mailer, used on AWS (MAILER=ses, set by infra/src/jobs/worker-lambda.ts): sends the\n// email through Amazon SES (Simple Email Service). Locally the worker keeps LogMailer (mailer.ts):\n// no SES there, and nobody gets real emails from a laptop by accident.\n//\n// What SES checks before it sends (infra/src/jobs/email.ts sets these up):\n//   - FROM must be an address of a VERIFIED identity: our domain, proven with 3 DKIM DNS records.\n//   - SANDBOX (every new AWS account starts there): SES also sends only TO verified addresses, at\n//     most 200 emails a day and 1 per second. Any other recipient -> \"MessageRejected\", the message\n//     fails, is retried 3 times and lands in the dead-letter queue. Leaving the sandbox is a request\n//     to AWS (console: SES -> Account dashboard -> \"Request production access\").\n//   - IAM: the Lambda's role may call ses:SendEmail only on our identities, only from MAIL_FROM\n//     (infra/src/jobs/worker-iam.ts).\nexport class SesMailer implements Mailer {\n  private readonly client: Pick\u003cSESv2Client, \"send\">;\n  private readonly from: string;"
+    },
+    {
+      "id": "ticket-signing:apps/worker/src/tickets/token.ts:6",
+      "concept": "ticket-signing",
+      "file": "apps/worker/src/tickets/token.ts",
+      "line": 5,
+      "endLine": 21,
+      "symbol": "TicketSigningSecret",
+      "code": "// 1. At least 256 bits, stored as 64 hex characters in Secrets Manager. Never log it.\n// @concept: ticket-signing\nexport const TicketSigningSecret = z.string().regex(/^[0-9a-f]{64}$/);\n\nexport function signTicket(claims: TicketClaims, secret: string): string {\n  const payload = Buffer.from(JSON.stringify(TicketClaims.parse(claims))).toString(\"base64url\");\n  const signature = createHmac(\"sha256\", Buffer.from(TicketSigningSecret.parse(secret), \"hex\"))\n    .update(payload).digest(\"base64url\");\n  return `${payload}.${signature}`;\n}\n\n// 2. Authenticate the ORIGINAL bytes before parsing. Strict encoding and a fixed-length,\n//    constant-time comparison reject tampering; an HMAC proves issuance, not one-time use.\nexport function verifyTicket(token: string, secret: string): TicketClaims {\n  if (token.length > 2048 || !/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$/.test(token)) throw new Error(\"invalid ticket token\");\n  const [payload, signature] = token.split(\".\");\n  const expected = createHmac(\"sha256\", Buffer.from(TicketSigningSecret.parse(secret), \"hex\")).update(payload).digest();"
     },
     {
       "id": "migrations:docker-compose.yml:114",
@@ -1670,6 +1985,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 45,
       "symbol": "createBudget",
       "code": "// @concept: budget-alerts\n// @concept: alerting\nexport function createBudget(inputs: BudgetInputs): void {\n  // 2. Monthly cost budget\n  // WHAT: a $20 per month limit that emails us as spending approaches or passes it.\n  // WHY: cloud bills can grow quietly. This is our smoke alarm. It only warns, it never\n  //      stops anything.\n  // DEPENDS ON: inputs.alertEmail (a plain value read from config in index.ts, not a resource;\n  //             the budget watches the whole AWS account, not one resource).\n  // ACTUAL alerts: 25%, 50%, 100% of what we have really spent so far.\n  // FORECASTED alert: AWS predicts the month-end total and warns if it will pass 100%.\n  // includeCredit false: credits are NOT counted as a discount. The budget tracks real\n  //   usage even while credits pay the bill, so we see what the project would cost once the\n  //   credits run out.\n  new aws.budgets.Budget(`${prefix}-monthly-budget`, {\n    name: `${prefix}-monthly-cost`,\n    budgetType: \"COST\","
+    },
+    {
+      "id": "cd-oidc:infra/src/cicd.ts:60",
+      "concept": "cd-oidc",
+      "file": "infra/src/cicd.ts",
+      "line": 59,
+      "endLine": 75,
+      "symbol": "createCicd",
+      "code": "\n// @concept: cd-oidc\nexport function createCicd(inputs: CicdInputs): CicdOutputs {\n  // 2. The OIDC provider: tells IAM \"tokens signed by GitHub's issuer may be used here\".\n  //    WHAT: registers GitHub as an identity provider in our AWS account (one per account,\n  //      per URL: a second one with the same URL is refused).\n  //    clientIdLists [\"sts.amazonaws.com\"]: the \"audience\" a token must be made for. GitHub's\n  //      AWS action asks for exactly this audience.\n  //    No thumbprintLists: AWS checks GitHub's certificate against its own list of trusted\n  //      authorities, so the old certificate fingerprint is no longer needed.\n  //    WHY: without it, AWS would not accept GitHub's tokens at all.\n  // DEPENDS ON: nothing.\n  const provider = new aws.iam.OpenIdConnectProvider(`${prefix}-github-oidc`, {\n    url: `https://${githubOidcHost}`,\n    clientIdLists: [\"sts.amazonaws.com\"],\n    tags: tagsFor(`${prefix}-github-oidc`),\n  });"
     },
     {
       "id": "ecs-cluster:infra/src/compute/cluster.ts:24",
@@ -2284,6 +2608,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n  // @concept: health-checks\n  // 2. Health check timing, the same for both.\n  //    Every 15 s the ALB calls the path on every task. Answer within 5 s with HTTP 200 = pass.\n  //    2 passes in a row = healthy (gets traffic). 3 failures in a row = unhealthy (no traffic,\n  //    and the ECS service replaces the task).\n  const healthCheckTiming = {\n    protocol: \"HTTP\",\n    matcher: \"200\",\n    interval: 15,\n    timeout: 5,\n    healthyThreshold: 2,\n    unhealthyThreshold: 3,\n  };\n\n  // 3. api target group\n  // WHAT: the list of api task IPs, on port 4000."
     },
     {
+      "id": "sns:infra/src/jobs/booking-events.ts:8",
+      "concept": "sns",
+      "file": "infra/src/jobs/booking-events.ts",
+      "line": 7,
+      "endLine": 23,
+      "symbol": "createBookingEvents",
+      "code": "//    request-billed with no idle fee. Retain the existing email queue and its waiting messages.\n// @concept: sns\nexport function createBookingEvents(email: JobQueuesOutputs, tickets: JobQueuesOutputs) {\n  const name = \"minitickets-dev-booking-events\";\n  const topic = new aws.sns.Topic(name, { name, tags: tagsFor(name) });\n  const subscriptions: aws.sns.TopicSubscription[] = [];\n  for (const [consumer, queue] of [[\"email\", email], [\"tickets\", tickets]] as const) {\n    // 2. WHO: SNS only, from THIS topic in THIS account. WHAT: SendMessage on ONE queue.\n    //    ATTACHED: the queue resource policy, not either Lambda's execution role.\n    const policy = new aws.sqs.QueuePolicy(`${name}-${consumer}`, {\n      queueUrl: queue.queueUrl,\n      policy: pulumi.jsonStringify({ Version: \"2012-10-17\", Statement: [{ Effect: \"Allow\",\n        Principal: { Service: \"sns.amazonaws.com\" }, Action: \"sqs:SendMessage\", Resource: queue.queueArn,\n        Condition: { ArnEquals: { \"aws:SourceArn\": topic.arn },\n          StringEquals: { \"aws:SourceAccount\": aws.getCallerIdentityOutput().accountId } },\n      }] }),\n    });"
+    },
+    {
       "id": "ses-email:infra/src/jobs/email.ts:43",
       "concept": "ses-email",
       "file": "infra/src/jobs/email.ts",
@@ -2491,6 +2824,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "\n// @concept: aws-lambda\n// 3. Repository policy for the worker: let the LAMBDA SERVICE pull its image (S1c).\n//    WHY: ECS pulls with the task's EXECUTION ROLE (an IAM permission on our side). Lambda is\n//      different: the Lambda service itself pulls the image when the function is created or\n//      updated, so the REPOSITORY must allow it (a \"resource policy\": a rule stuck on the repo,\n//      saying who may use it). Without it, AWS tries to add this rule by itself on the first\n//      deploy, which needs extra rights (ecr:SetRepositoryPolicy) on whoever creates the function.\n//      Written down here, it is visible and reviewed like any other code.\n//    WHAT it allows: only the two read actions an image pull needs (manifest + layers), only for\n//      the Lambda service, and only when it works for a function named minitickets-dev-* in our\n//      account and region (aws:SourceArn). Without that condition, Lambda working for ANY account\n//      could pull our image if it knew the address (the \"confused deputy\", see compute/iam.ts).\n//    DEPENDS ON: the worker repository.\nfunction allowLambdaPull(repo: aws.ecr.Repository) {\n  const accountId = aws.getCallerIdentityOutput().accountId;\n  const region = aws.getRegionOutput().region;"
     },
     {
+      "id": "release-guard:infra/src/release.ts:35",
+      "concept": "release-guard",
+      "file": "infra/src/release.ts",
+      "line": 34,
+      "endLine": 50,
+      "symbol": "imageTagParameterName",
+      "code": "//    readDeployedImageTag (3) can list the path and IAM can name exactly this one (cicd.ts).\n// @concept: release-guard\nexport const imageTagParameterName = \"/minitickets/dev/image-tag\";\nconst parameterPath = \"/minitickets/dev\";\n\n// 1b. The deploy guard's record (after the incident of 2026-10-15, scripts/deploy-guard.sh): the\n//     full git commit whose infrastructure code CD applied last. Same path, so the deploy role's\n//     path rule (cicd.ts 10i) covers it.\nexport const deployedCommitParameterName = \"/minitickets/dev/deployed-commit\";\n\nexport interface ReleaseOutputs {\n  parameterName: pulumi.Output\u003cstring>;\n  parameterArn: pulumi.Output\u003cstring>;\n  deployedCommitParameterArn: pulumi.Output\u003cstring>;\n}\n\nexport function createRelease(): ReleaseOutputs {"
+    },
+    {
       "id": "security-groups:infra/src/security.ts:48",
       "concept": "security-groups",
       "file": "infra/src/security.ts",
@@ -2563,6 +2905,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "code": "//     Log ids (messageId, bookingId) instead.\n// @concept: correlation-ids\n// The CORRELATION ID (series 2, P2): one id per api request, written on EVERY log line that request\n// causes, in every service. The api makes it (apps/api/src/http/correlation-id.ts), puts it in the\n// messages it sends, and the worker writes it on its own log lines (apps/worker/src/correlation.ts).\n// So one search for the id finds the whole story of one booking: api request -> queue -> email.\n// A UUID, and nothing else: the api accepts an id from the caller's header, and a strict format\n// keeps a caller from writing arbitrary text into our logs.\nexport const CorrelationId = z.uuid();\n\nexport const BookingConfirmedMessage = z.object({\n  type: z.literal(\"booking.confirmed\"),\n  version: z.literal(1),\n  // Unique per message: lets the consumer recognise a duplicate (queues deliver at least once).\n  messageId: z.uuid(),\n  bookingId: z.uuid(),\n  // P4: optional for old email messages; the ticket consumer requires these two ids."
     },
     {
+      "id": "web-vitals:packages/shared/src/schemas/web-vitals.ts:4",
+      "concept": "web-vitals",
+      "file": "packages/shared/src/schemas/web-vitals.ts",
+      "line": 3,
+      "endLine": 13,
+      "symbol": "WebVitalInput",
+      "code": "// 1. Bounded, anonymous measurements; never accept URLs/query strings, cookies or user identity.\n// @concept: web-vitals\nexport const WebVitalInput = z.object({\n  name: z.enum([\"LCP\", \"INP\", \"CLS\", \"TTFB\", \"FCP\"]),\n  value: z.number().finite().nonnegative().max(3_600_000),\n  id: z.string().min(1).max(100),\n  rating: z.enum([\"good\", \"needs-improvement\", \"poor\"]),\n  route: z.enum([\"/\", \"/events\", \"/events/[id]\", \"/login\", \"/signup\", \"/dashboard\", \"/tickets\", \"/admin/events/new\", \"/other\"]),\n});\nexport type WebVitalInput = z.infer\u003ctypeof WebVitalInput>;\n"
+    },
+    {
       "id": "monorepo:pnpm-workspace.yaml:1",
       "concept": "monorepo",
       "file": "pnpm-workspace.yaml",
@@ -2570,6 +2921,15 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 7,
       "symbol": "module",
       "code": "# @concept: monorepo\n# Tells pnpm which folders are packages in this monorepo.\npackages:\n  - \"apps/*\"\n  - \"packages/*\"\n  - \"infra\"\n"
+    },
+    {
+      "id": "release-guard:scripts/deploy-guard.sh:30",
+      "concept": "release-guard",
+      "file": "scripts/deploy-guard.sh",
+      "line": 29,
+      "endLine": 45,
+      "symbol": "module",
+      "code": "# 1. Stop at the first error and on unset variables: a guard that fails must REFUSE, never pass.\n# @concept: release-guard\nset -euo pipefail\n\n: \"${CHECKED:?}\" \"${RECORDED:?}\"\nMAIN_TIP=\"${MAIN_TIP:-}\"\nALLOW_OLDER=\"${ALLOW_OLDER:-false}\"\n\n# 2. refuse \u003cmessage>: one ::error:: line, then exit 1 (the deploy stops before anything changes).\nrefuse() {\n  echo \"::error::$1\"\n  exit 1\n}\n\n# 3. Full 40-character ids, so \"6ea9575\" and its full id compare as the same commit.\nCHECKED=\"$(git rev-parse --verify --quiet \"$CHECKED^{commit}\")\" || refuse \"Commit $CHECKED is not in the checked-out history.\"\nSHORT=\"${CHECKED:0:7}\""
     },
     {
       "id": "immutable-image-tags:scripts/push-images.sh:26",
@@ -2633,6 +2993,24 @@ el('previous').onclick=()=>select(data[(current+data.length-1)%data.length]);el(
       "endLine": 19,
       "symbol": "SECRET",
       "code": "\n// @concept: twelve-factor-config\n// Checks the four local env files: each one exists, has every setting its .env.example has, and\n// the files agree with each other. Pure functions (no file or network access), so they are unit\n// tested in env-checks.test.ts. RULE: a value is never printed, only compared. The fix lines are\n// copied from the .env.example files, which hold no secrets.\n\ntype EnvFiles = Record\u003cEnvFileKey, EnvFile>;\n\nconst SECRET = \"REVALIDATE_SECRET\";\nconst MIN_SECRET_LENGTH = 32; // the same minimum as RevalidateSecretSchema (packages/shared)\n\n// 1. Why some settings matter, printed next to a missing one (so a missing line is not a mystery).\nconst WHY: Record\u003cstring, string> = {\n  WEB_INTERNAL_URL: \"the revalidate hook (with REVALIDATE_SECRET): without it the 2 admin e2e tests fail\",\n  JOBS_QUEUE_URL: \"without it the local email worker cannot read confirmations\",\n  JOBS_DLQ_URL: \"used by pnpm jobs:dlq and pnpm jobs:redrive\","
+    },
+    {
+      "id": "unit-tests:vitest.config.mts:4",
+      "concept": "unit-tests",
+      "file": "vitest.config.mts",
+      "line": 3,
+      "endLine": 19,
+      "symbol": "module",
+      "code": "\n// @concept: unit-tests\n// @concept: testing-pyramid\n// Unit tests live next to the code they test, as *.test.ts. Playwright's e2e tests are\n// *.spec.ts in apps/web/e2e, so this pattern never picks them up.\n// infra/src: only its pure helpers have tests (e.g. entry/mode.ts); Pulumi resources are checked\n// with `pulumi preview` instead. scripts/stack: the pure parts of `pnpm stack:check` (env-checks.ts, ...).\n// scripts/*.test.ts: the CD deploy guard (deploy-guard.sh, run against a throw-away git repo).\nexport default defineConfig({\n  test: {\n    include: [\n      \"apps/*/src/**/*.test.ts\",\n      \"packages/*/src/**/*.test.ts\",\n      \"infra/src/**/*.test.ts\",\n      \"scripts/*.test.ts\",\n      \"scripts/stack/*.test.ts\",\n    ],"
+    },
+    {
+      "id": "testing-pyramid:vitest.config.mts:5",
+      "concept": "testing-pyramid",
+      "file": "vitest.config.mts",
+      "line": 4,
+      "endLine": 20,
+      "symbol": "module",
+      "code": "// @concept: unit-tests\n// @concept: testing-pyramid\n// Unit tests live next to the code they test, as *.test.ts. Playwright's e2e tests are\n// *.spec.ts in apps/web/e2e, so this pattern never picks them up.\n// infra/src: only its pure helpers have tests (e.g. entry/mode.ts); Pulumi resources are checked\n// with `pulumi preview` instead. scripts/stack: the pure parts of `pnpm stack:check` (env-checks.ts, ...).\n// scripts/*.test.ts: the CD deploy guard (deploy-guard.sh, run against a throw-away git repo).\nexport default defineConfig({\n  test: {\n    include: [\n      \"apps/*/src/**/*.test.ts\",\n      \"packages/*/src/**/*.test.ts\",\n      \"infra/src/**/*.test.ts\",\n      \"scripts/*.test.ts\",\n      \"scripts/stack/*.test.ts\",\n    ],\n  },"
     }
   ]
 }

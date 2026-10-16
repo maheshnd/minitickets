@@ -27,7 +27,7 @@
       "apps/web/src/features/events/hooks/use-event-search.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+    "codeLink": "code-tours.html#search-races%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts%3A6"
   },
   {
     "id": "debounce-throttle",
@@ -58,7 +58,7 @@
       "apps/web/src/features/events/components/virtual-event-list.tsx"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+    "codeLink": "code-tours.html#virtualization%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx%3A11"
   },
   {
     "id": "virtual-lists",
@@ -88,7 +88,7 @@
       "apps/web/src/features/events/components/virtual-event-list.tsx"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx"
+    "codeLink": "code-tours.html#virtualization%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx%3A11"
   },
   {
     "id": "rendering-models",
@@ -215,7 +215,7 @@
       "apps/api/src/services/telemetry.ts"
     ],
     "source": "https://web.dev/articles/vitals",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Ftelemetry%2Fhooks%2Fuse-web-vitals.ts"
+    "codeLink": "code-tours.html#web-vitals%3Aapps%2Fapi%2Fsrc%2Fservices%2Ftelemetry.ts%3A5"
   },
   {
     "id": "bundle-size",
@@ -307,7 +307,7 @@
       "apps/web/e2e/security.spec.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fe2e%2Fsecurity.spec.ts"
+    "codeLink": "code-tours.html#accessible-forms%3Aapps%2Fweb%2Fe2e%2Fsecurity.spec.ts%3A1"
   },
   {
     "id": "live-seats",
@@ -428,7 +428,7 @@
       "apps/api/src/queries/bookings.ts"
     ],
     "source": "https://www.postgresql.org/docs/current/transaction-iso.html",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "idempotency",
@@ -552,7 +552,7 @@
       "apps/api/src/queries/rate-limits.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Frate-limits.ts"
+    "codeLink": "code-tours.html#rate-limiting%3Aapps%2Fapi%2Fsrc%2Fqueries%2Frate-limits.ts%3A8"
   },
   {
     "id": "api-n-plus-one",
@@ -584,7 +584,7 @@
       "apps/api/src/server.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "postgres-cache",
@@ -645,7 +645,7 @@
       "apps/api/drizzle/0008_lethal_amazoness.sql"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Fevent-search.ts"
+    "codeLink": "code-tours.html#keyset-pagination%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fevent-search.ts%3A7"
   },
   {
     "id": "migrations",
@@ -736,7 +736,7 @@
       "apps/api/src/services/single-flight.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fsingle-flight.ts"
+    "codeLink": "code-tours.html#cache-stampede%3Aapps%2Fapi%2Fsrc%2Fservices%2Fsingle-flight.ts%3A16"
   },
   {
     "id": "cache-invalidation",
@@ -827,7 +827,7 @@
       "apps/api/src/services/event-filters.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fevent-filters.ts"
+    "codeLink": "code-tours.html#cache-filter-keys%3Aapps%2Fapi%2Fsrc%2Fservices%2Fevent-filters.ts%3A17"
   },
   {
     "id": "outbox",
@@ -857,7 +857,7 @@
       "apps/api/src/queries/bookings.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "fanout",
@@ -888,7 +888,7 @@
       "apps/api/src/queues/jobs.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fjobs%2Fbooking-events.ts"
+    "codeLink": "code-tours.html#sns%3Aapps%2Fapi%2Fsrc%2Fqueues%2Fjobs.ts%3A13"
   },
   {
     "id": "consumer-idempotency",
@@ -896,7 +896,7 @@
     "area": "Async",
     "status": "built",
     "tour": "booking",
-    "answer": "It can skip known completed message ids, but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.",
+    "answer": "It can skip known completed business keys (booking.confirmed:\u003cbookingId>), but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.",
     "how": "`apps/worker/src/handlers/booking-confirmed.ts` and `processed-jobs.ts` mark successful mail after send. `handlers/tickets.ts` reserves a canonical ticket and resumes partial work; `tickets/store.ts` uses conditional writes. `pnpm demo:tickets` checks duplicates and crash-resume behavior.",
     "flow": [
       "Receive at least once",
@@ -918,7 +918,7 @@
       "apps/worker/src/handlers/booking-confirmed.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Fhandlers%2Fbooking-confirmed.ts"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fworker%2Fsrc%2Fhandlers%2Fbooking-confirmed.ts%3A36"
   },
   {
     "id": "dlq-failure",
@@ -1009,7 +1009,7 @@
       "apps/api/src/services/booking-inventory.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fbooking-inventory.ts"
+    "codeLink": "code-tours.html#inventory-gate%3Aapps%2Fapi%2Fsrc%2Fservices%2Fbooking-inventory.ts%3A10"
   },
   {
     "id": "waiting-room",
@@ -1131,7 +1131,7 @@
       "infra/src/publish-policy.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fcicd.ts"
+    "codeLink": "code-tours.html#cd-oidc%3Ainfra%2Fsrc%2Fcicd.ts%3A60"
   },
   {
     "id": "network-boundaries",
@@ -1255,7 +1255,7 @@
       "apps/api/src/services/posters.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fposters.ts"
+    "codeLink": "code-tours.html#presigned-urls%3Aapps%2Fapi%2Fsrc%2Fservices%2Fposters.ts%3A11"
   },
   {
     "id": "reminders",
@@ -1315,7 +1315,7 @@
       "apps/worker/src/tickets/token.ts"
     ],
     "source": "https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+    "codeLink": "code-tours.html#ticket-signing%3Aapps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts%3A6"
   },
   {
     "id": "regions-cost",
@@ -1405,7 +1405,7 @@
       "apps/api/src/http/security.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fhttp%2Fsecurity.ts"
+    "codeLink": "code-tours.html#csrf%3Aapps%2Fapi%2Fsrc%2Fhttp%2Fsecurity.ts%3A5"
   },
   {
     "id": "csp-xss",
@@ -1466,7 +1466,7 @@
       "infra/src/tickets/iam.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+    "codeLink": "code-tours.html#ticket-signing%3Aapps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts%3A6"
   },
   {
     "id": "delivery-rollback",
@@ -1529,7 +1529,7 @@
       ".github/workflows/cd.yml"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=scripts%2Fdeploy-guard.sh"
+    "codeLink": "code-tours.html#release-guard%3Ainfra%2Fsrc%2Frelease.ts%3A35"
   },
   {
     "id": "observability",

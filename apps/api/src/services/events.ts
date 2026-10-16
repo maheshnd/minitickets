@@ -118,6 +118,8 @@ export type CacheStatus = "fresh" | "stale" | "stale-if-error" | "miss" | "error
 let lastRefreshFailed = false;
 
 // Upcoming events for the public list, optionally filtered by venue and dates.
+// @concept: cache-invalidation
+// @concept: stale-while-revalidate
 export async function listUpcomingEvents(input: ListEventsInput | undefined, log: Log, now: Date = new Date()) {
   // 4b. The CANONICAL filters (./event-filters.ts): ONE form for the Postgres query, the cache key,
   //     the single-flight key and the lock key. So " Pune", "pune" and "PUNE" are the same question

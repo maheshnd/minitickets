@@ -5,6 +5,7 @@ import { assetBucket, ASSET_URL_SECONDS, s3 } from "./assets";
 
 // 1. Sign an EXACT Content-Length and MIME header, not only client-side limits. Browsers
 //    supply Content-Length for a File body; JS must not try to set that forbidden header.
+// @concept: presigned-urls
 export async function signPosterPut(key: string, input: PosterUploadInput) {
   const headers = { "content-type": input.contentType, "x-amz-server-side-encryption": "AES256" as const };
   const url = await getSignedUrl(s3, new PutObjectCommand({ Bucket: assetBucket(), Key: key,

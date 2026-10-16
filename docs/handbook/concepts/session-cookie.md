@@ -2,120 +2,79 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Auth & Security · Status: ✅ built · Step doc: [07 login](../../07-login-session.md)
+Area: Auth & Security · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-The `sid` cookie is **HttpOnly** (page JavaScript can't read it), **SameSite=Lax** (not sent on
-cross-site POSTs), **Secure** in production (HTTPS only), `Path=/`, and lives 7 days.
+The sid cookie carries only an opaque random token. HttpOnly/SameSite apply, Secure is production-only, max age is seven days, and server-side token/index membership is authoritative; page cookie presence is UX only.
 
 ## 2. Real-life comparison
 
-A hotel key card that works only on your door (Path), can't be photocopied by the shop next door
-(HttpOnly), only works when you come in through the hotel's own entrance (SameSite), and only over
-the secure corridor (Secure).
+A visitor badge can be cancelled in the central register, even if someone still holds the paper copy.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    login["auth.login"] -->|"Set-Cookie: sid=...; Max-Age=604800;<br/>Path=/; HttpOnly; SameSite=Lax; Secure (prod)"| b["browser jar"]
-    b -->|"same-site requests"| api["api"]
-    js["page JavaScript<br/>document.cookie"] -.->|"cannot see sid"| b
+    n0["Random cookie"] --> n1
+    n1["Hashed session and user index"] --> n2
+    n2["Authoritative role check"] --> n3
+    n3["Allowed procedure"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `apps/api/src/procedures/auth.ts` · `cookieOptions`, `login` (`setCookie`), `logout` (`clearCookie`).
-- Anchor: `apps/web/e2e/login.spec.ts` · step 3: `document.cookie` does not contain `sid`.
+- Anchor: `apps/api/src/procedures/auth.ts` — `cookieOptions`; follow the numbered comments at this boundary.
+- Anchor: `apps/web/e2e/login.spec.ts` — `module configuration`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. `cookieOptions = { httpOnly: true, sameSite: "lax", path: "/", secure: env.NODE_ENV === "production" }`.
-2. Login: `ctx.res.setCookie("sid", sessionId, { ...cookieOptions, maxAge: SESSION_MAX_AGE_SECONDS })`.
-3. Logout: `clearCookie("sid", cookieOptions)`. The same attributes matter: a browser only replaces
-   the cookie when name, path (and domain) match.
-4. `Secure` is on wherever `NODE_ENV=production` (the Docker images and ECS). On AWS the browser
-   talks HTTPS to CloudFront, so it works; plain-HTTP `localhost` dev keeps it off.
-5. No `Domain` attribute: the cookie belongs to the exact host that set it.
+`apps/api/src/queries/sessions.ts` implements indexed creation/read/revokeAll; `services/users.ts` revokes around makeAdmin. `pnpm demo:security` checks old-cookie, all-device and role revocation. Cookies are HttpOnly/SameSite with Secure in production. An in-flight authorized request cannot be recalled; two-store role/revocation is not a global transaction.
 
 ## 5. See it yourself
 
-Recorded against a local api:
+Run `pnpm demo:security` and inspect the asserted outcome described above.
 
-```text
-set-cookie: sid=aZzY…; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax
-set-cookie: sid=; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax   (logout)
-```
-
-In the browser: DevTools → Application → Cookies: `sid` with ✓ HttpOnly, SameSite `Lax`, and on
-AWS ✓ Secure. In the Console, `document.cookie` does not show `sid`.
-
-**Break it on purpose:** set `httpOnly: false`. The e2e test `login.spec.ts` fails at "The session
-cookie is HttpOnly", and any XSS bug could now read the session.
+Failure thought experiment: Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [sessions-vs-jwt](sessions-vs-jwt.md) (the value), [config-validation](config-validation.md)
-  (`NODE_ENV`), HTTPS from [cloudfront](cloudfront.md).
-- **Gives →** protection against [xss](xss.md) cookie theft and part of [csrf](csrf.md); read by
-  [route-guard-proxy](route-guard-proxy.md) (exists or not).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#sessions-roles) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-| Flag | Value | Why |
-| ---- | ----- | --- |
-| `HttpOnly` | true | XSS can't steal the session. |
-| `SameSite` | `Lax` | Not sent on cross-site POSTs or fetches; still sent when a user follows a link to us. |
-| `Secure` | production only | HTTPS only; localhost is HTTP. |
-| `Path` | `/` | Valid for pages and `/trpc`. |
-| `Max-Age` | 604800 | Same as the Redis TTL. |
+The sid cookie carries only an opaque random token. HttpOnly/SameSite apply, Secure is production-only, max age is seven days, and server-side token/index membership is authoritative; page cookie presence is UX only. A role embedded forever in a session becomes stale after a privilege change.
 
 ## 8. Trade-offs
 
-- **Pros:** strong browser-enforced defaults with no extra code.
-- **Cons:** `Lax` still sends the cookie on top-level GET navigations from other sites (so GETs
-  must never change data); local dev runs without `Secure`.
+Redis/index eviction fails closed and forces login. The 20-device bound makes revoke work bounded. Session-versioning/transactional role changes are proposed improvements for larger deployments.
 
 ## 9. Alternatives and when to choose them
 
-- **`SameSite=Strict`:** never sent from another site, even following a link (user arrives logged
-  out). Good for admin apps.
-- **`__Host-` cookie prefix:** forces `Secure`, `Path=/` and no `Domain` (needs HTTPS everywhere,
-  including dev).
-- **Tokens in `localStorage`:** readable by any script; avoid for sessions.
+10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- `Secure` on plain HTTP: the browser drops the cookie; login "succeeds" but you stay logged out.
-- Different attributes on clear: logout leaves the cookie. The logout e2e test reloads and checks.
+Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** The login cookie is locked down so scripts and other sites can't use it.
-- **Senior:** `sid` is HttpOnly, SameSite=Lax, Path=/, Secure in production, Max-Age 7 days, set in
-  the procedure (an HTTP concern), and cleared with the same attributes. An e2e test proves page
-  JavaScript can't read it.
-- **Lead:** Cookie flags are the cheapest strong defence: HttpOnly limits XSS impact, SameSite cuts
-  most CSRF, Secure needs HTTPS end to end at the browser. I'd add the `__Host-` prefix and an Origin
-  check for state-changing requests.
+- **Simple:** The sid cookie carries only an opaque random token.
+- **Senior:** Opaque session cookies keep revocation server-side; JWTs reduce lookup dependence but revocation/role changes need expiry or another authoritative version. MiniTickets hashes random tokens in Redis, rotates login sessions, indexes at most 20 devices and checks membership on every read. Admin authorization reads Postgres; role changes revoke sessions before and after the update.
+- **Lead:** 10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Lax vs Strict?* Strict never sends cross-site; Lax allows top-level GET navigations.
-- *Why isn't HttpOnly enough against XSS?* The script can still send requests as the user; it just
-  can't steal the cookie.
+Is the presence cookie authorization? No; it only avoids a predictable redirect flash; API verifies the real session.
+
+What happens if session membership is missing? **Authentication fails closed.**
 
 ## 15. Say it in 30 seconds
 
-"The sid cookie is HttpOnly, SameSite=Lax, Path=/, Secure in production, and lives 7 days like the
-Redis session. It's set in the procedure, cleared with identical attributes, and an e2e test checks
-that page JavaScript can't see it."
+Opaque session cookies keep revocation server-side; JWTs reduce lookup dependence but revocation/role changes need expiry or another authoritative version. MiniTickets hashes random tokens in Redis, rotates login sessions, indexes at most 20 devices and checks membership on every read. Admin authorization reads Postgres; role changes revoke sessions before and after the update.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: monitor auth-store failures and session churn. 100x: coordinated auth versioning, device management and key/credential rotation.
 
 ## Where it appears in the story
 
-- [App story: 7. The procedure](../app-story.md#7-the-procedure)
+- [app-story: 5b. Session identity, roles and revocation](../app-story.md#5b-session-identity-roles-and-revocation)

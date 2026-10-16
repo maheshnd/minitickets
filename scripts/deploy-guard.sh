@@ -27,6 +27,7 @@
 #   ALLOW_OLDER  "true" only for a manual run with allow_older_infra (rule 2 becomes a warning)
 
 # 1. Stop at the first error and on unset variables: a guard that fails must REFUSE, never pass.
+# @concept: release-guard
 set -euo pipefail
 
 : "${CHECKED:?}" "${RECORDED:?}"

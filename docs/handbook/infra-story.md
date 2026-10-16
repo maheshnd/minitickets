@@ -33,6 +33,8 @@ the folder is obvious (`entry/cdn.ts` = `infra/src/entry/cdn.ts`).
 
 ## 1. CloudFront
 
+**Optional, inactive now:** cdnEnabled=false. This chapter describes the edge path only when enabled. Current visitors use HTTPS ALB directly.
+
 ### 1. In one line
 
 The front door for every visitor: HTTPS at a nearby edge, cached static files, and everything else
@@ -340,14 +342,11 @@ On-demand base + Spot; 2+ tasks across AZs; auto scaling; EC2 capacity for stead
 **Planned: the web task calling the api task.** Server-side rendering of `/events` (app story 10b)
 needs the web task to call the api directly ([server-to-server-calls](concepts/server-to-server-calls.md)).
 Today nothing allows it: the ALB accepts only CloudFront, the api group accepts only the alb group,
-and the web task definition has no `API_INTERNAL_URL`. The planned fix is ECS Service Connect with a
-Cloud Map namespace (the api becomes `http://api:4000` inside the VPC) plus one rule api ← web on
-4000 ([service-connect](concepts/service-connect.md)). Other options: an internal ALB, or calling
-the public CloudFront URL ([docs/22](../22-events-ssr.md), section 7).
+Service Connect now supplies private api/web aliases, explicit 14000/13000 proxy ingress and runtime API_INTERNAL_URL. See the private-discovery chapter immediately after this stop.
 
 ```mermaid
 flowchart LR
-    web["web task"] -.->|"planned: Service Connect<br/>http://api:4000"| api["api task"]
+    web["web task"] -->|"Service Connect<br/>http://api:4000"| api["api task"]
     alb["ALB<br/>(CloudFront only)"] --> web
     alb --> api
 ```
@@ -387,6 +386,76 @@ health checks, circuit breaker rollback and ECS Exec for debugging."
 ✅ built (dev sizing). Planned: Service Connect so the web task can reach the api (SSR on AWS is 🟡 until then).
 
 ---
+
+## 4b. Private service discovery and asynchronous workers
+
+### 1. In one line
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+### 2. Real-life comparison
+
+Follow one receipt from the visitor through the desk responsible for this decision; each desk has one clear job.
+
+### 3. Picture it
+
+```mermaid
+flowchart LR
+    n0["Browser HTTPS ALB"] --> n1
+    n1["Target SG and task ENI"] --> n2
+    n2["API private route"] --> n3
+    n3["DB SG and credentials"]
+```
+
+### 4. Where in our code
+
+Service Connect uses a shared Cloud Map namespace and ECS sidecars for private api/web names. App ports stay 4000/3000; proxy ingress is 14000/13000 with source SG rules. Fresh tasks learn endpoints; loopback forwarded headers are untrusted. See [service-connect](concepts/service-connect.md).
+
+API_INTERNAL_URL is runtime server-only configuration: localhost locally, api:4000 via Docker/Service Connect on AWS. The browser uses same-origin /trpc on AWS and never resolves internal service names. See [server-to-server-calls](concepts/server-to-server-calls.md).
+
+CloudFront mode restricts ALB ingress and requires X-Origin-Verify. ALB-only mode instead uses selected allowedCidrs and HTTPS; current cdnEnabled=false means the CDN secret/prefix-list path is inactive. See [origin-protection](concepts/origin-protection.md).
+
+Current public TLS terminates at the ACM-backed ALB for minitickets.theversehub.in. Optional CloudFront mode terminates at the edge and uses the existing HTTP origin design; CloudFront-to-ALB HTTPS is explain-only. See [tls-termination](concepts/tls-termination.md).
+
+### 5. See it yourself
+
+`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
+
+### 6. How it connects
+
+A valid password cannot repair a missing route or blocked SG.
+
+### 7. Our settings and WHY
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+### 8. Trade-offs
+
+Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.
+
+### 9. Alternatives
+
+10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+
+### 10. Failure modes
+
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+
+### 13. Interview answers
+
+Simple: A valid password cannot repair a missing route or blocked SG. Senior: First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL. Lead: 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+
+### 14. Follow-up
+
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+
+### 15. Say it in 30 seconds
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+### 16. Status
+
+Built and explain-only pieces are labelled in the linked cards. Local evidence does not replace AWS acceptance.
 
 ## 5. IAM roles
 
@@ -779,6 +848,95 @@ days."
 
 ---
 
+## 9b. Follow a booking through symptoms
+
+### 1. In one line
+
+Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
+
+### 2. Real-life comparison
+
+Follow one receipt from the visitor through the desk responsible for this decision; each desk has one clear job.
+
+### 3. Picture it
+
+```mermaid
+flowchart LR
+    n0["User outcome SLI"] --> n1
+    n1["Target over window"] --> n2
+    n2["Error budget"] --> n3
+    n3["Multi-window burn alert"]
+```
+
+### 4. Where in our code
+
+Explain-only: timed spans and propagated W3C trace context would add causal timing beyond current UUID correlation logs; no collector, X-Ray permissions or tracing resources exist. See [tracing](concepts/tracing.md).
+
+Explain-only: a user-outcome SLI and target/window would define an error budget, with multi-window burn alerts; no production SLO or automated release-budget policy exists. See [slo-error-budget](concepts/slo-error-budget.md).
+
+Structured JSON logs from API/web/workers carry validated correlation where meaningful. Four symptom alarms, SNS email, dashboard and saved queries are defined; no automatic distributed traces are built. See [cloudwatch-logs](concepts/cloudwatch-logs.md).
+
+A validated UUID ties API, outbox and consumer logs to one booking. It is returned in x-correlation-id and copied in messages. SSR cached calls do not attach a misleading per-user id; correlation is not a timed trace. See [correlation-ids](concepts/correlation-ids.md).
+
+API errors, worker failures, old queue work and DLQ messages drive four CloudWatch alarms with SNS email. Confirm the subscription and inspect missing-data behavior live; deployment code alone does not prove notifications work. See [alerting](concepts/alerting.md).
+
+Metrics aggregate symptoms over time; structured logs explain events. Current alarms/dashboard use managed metrics, and browser vitals are JSON logs. Dedicated field-percentile analytics, tracing and SLOs are explain-only. See [metrics](concepts/metrics.md).
+
+### 5. See it yourself
+
+WHERE IN MINITICKETS: proposed apps/api/src/tracing.ts loaded before server modules, ADOT sidecar in API task, Lambda tracing config and narrowly scoped X-Ray write IAM. Propagate W3C traceparent through the message envelope. Proposed CloudWatch SLI for booking success/latency and email delay; logs remain current evidence. No OTel collector, tracing grants or SLO resource is built.
+
+
+Existing integration point: `apps/api/src/http/correlation-id.ts`.
+
+`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
+
+### 6. How it connects
+
+Average latency and raw error counts can hide a failing user journey.
+
+A user symptom spans asynchronous boundaries, not one process log.
+
+### 7. Our settings and WHY
+
+Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
+
+Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
+
+### 8. Trade-offs
+
+Sampling loses individual traces; sidecars cost CPU/memory and collector operations. ALB errors alone do not fully describe business success. Use a business metric where needed.
+
+Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
+
+### 9. Alternatives
+
+10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+
+10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
+
+### 10. Failure modes
+
+Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
+
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
+
+### 13. Interview answers
+
+Simple: Average latency and raw error counts can hide a failing user journey. Senior: Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO. Lead: 10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+
+### 14. Follow-up
+
+Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
+
+### 15. Say it in 30 seconds
+
+Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
+
+### 16. Status
+
+Built and explain-only pieces are labelled in the linked cards. Local evidence does not replace AWS acceptance.
+
 ## 10. The network: VPC, subnets, route tables, internet gateway
 
 ### 1. In one line
@@ -1161,75 +1319,199 @@ hourly-billed layers on and off."
 
 ## The deploy story
 
-How code gets from a commit to `https://<id>.cloudfront.net`. The full runbook with every command and
-expected output is [docs/20-deploy-day.md](../20-deploy-day.md).
+This is the normal approved CD path, replacing historical laptop image-tag deployment. The owner runbook retains explicit bootstrap/recovery exceptions.
 
-```mermaid
-sequenceDiagram
-    participant Dev as Owner (laptop)
-    participant ECR
-    participant P as pulumi up
-    participant ECS
-    Dev->>ECR: pnpm images:push (tag = git SHA)
-    Dev->>P: set apiImageTag, webImageTag, switches on
-    P->>ECS: new task definition revisions, services
-    ECS->>ECS: rolling deploy, health checks, circuit breaker
-    Dev->>ECS: pnpm infra:migrate (one-off FARGATE task)
-```
+### 1. In one line
 
-1. **Build and push:** `pnpm images:push` refuses a dirty tree, builds ARM64 images and pushes them as
-   `:<short SHA>` to immutable repos ([immutable-image-tags](concepts/immutable-image-tags.md)).
-2. **Point Pulumi at them:** `pulumi config set apiImageTag/webImageTag`, commit `Pulumi.dev.yaml`.
-3. **Data on, then compute + entry on:** `pulumi up` (owner). The api task definition waits for
-   CloudFront's `appUrl` (its `WEB_ORIGIN`).
-4. **Rolling deploy:** new task first, healthy, old one drained 30 s, SIGTERM, graceful shutdown
-   ([zero-downtime-deploys](concepts/zero-downtime-deploys.md)); the
-   [circuit breaker](concepts/circuit-breaker.md) rolls back a revision that never gets healthy
-   (after 3 failed tasks: AWS's default of 50% of the desired count, minimum 3).
-5. **Migrate:** `pnpm infra:migrate` runs the same task definition once with
-   `node dist/migrate.js`, on on-demand Fargate.
-6. **Verify:** browser, cookie flags, e2e tests against `appUrl`, the blocked ALB, cache Hit/Miss,
-   `/ready` via ECS Exec, logs with the real visitor IP.
-7. **Off:** entry, compute, data (or all at once); about 20-30 minutes, mostly CloudFront.
+Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
 
-**Not built:** continuous deployment. CI checks and builds images but pushes nothing
-([docs/10](../10-ci.md)); migrations are not yet gated before the service update.
+### 2. Real-life comparison
 
-## The security story
+Follow one receipt through the desks responsible for the request; each boundary checks only its own responsibility.
 
-Every defense layer, outside in, and the attack it stops:
+### 3. Picture it
 
 ```mermaid
 flowchart LR
-    a["HTTPS at the edge"] --> b["Lock 1: prefix list"]
-    b --> c["Lock 2: secret header + 403"]
-    c --> d["SGs: one caller per door"]
-    d --> e["Private data, TLS, tokens"]
-    e --> f["IAM: least privilege"]
+    n0["CI tests"] --> n1
+    n1["Publish SHA once"] --> n2
+    n2["Approved CD plus migration"] --> n3
+    n3["Roll and smoke test"]
 ```
 
-| Layer | Where | Attack or mistake it stops |
-| ----- | ----- | -------------------------- |
-| HTTPS + `redirect-to-https` | `entry/cdn.ts` | Eavesdropping and cookie theft on public Wi-Fi; the `Secure` cookie needs it |
-| Methods per behavior | `entry/cdn.ts` (pages: GET/HEAD) | POSTs to page paths never reach the origin |
-| Never cache `/trpc/*` | `entry/cdn.ts` | One user's data served to another from the cache |
-| Lock 1: CloudFront prefix list | `security.ts` | Skipping CloudFront by calling the ALB directly |
-| Lock 2: `X-Origin-Verify` + 403 default | `entry/listener.ts`, `entry/origin-secret.ts` | Someone else's CloudFront distribution pointed at our ALB |
-| `dropInvalidHeaderFields` | `entry/alb.ts` | Request smuggling with malformed headers |
-| Security groups by group reference | `security.ts` | Anything but the ALB reaching the apps; anything but the api reaching the data |
-| Private subnets, no public IP for data | `network.ts`, `data/postgres.ts` | Direct internet access to the database or cache |
-| TLS to RDS with verified certificate | `apps/api/src/config/database.ts`, `apps/api/Dockerfile` | A machine in the middle impersonating the database |
-| TLS + auth token on Valkey | `data/cache.ts` | Reading session ids on the network; unauthenticated commands |
-| Encryption at rest | `data/postgres.ts`, `data/cache.ts` | Reading stolen disks or snapshots |
-| Machine-generated secrets, ARNs only in code | `data/*.ts`, `compute/task.ts`, `.dockerignore` | Passwords leaking through git, images, outputs or logs |
-| Execution vs task role, exact ARNs | `compute/iam.ts`, `compute/web-iam.ts` | A compromised app process reading other secrets via IAM |
-| `aws:SourceAccount` on trust policies | `compute/iam.ts` | The confused deputy |
-| Immutable SHA tags | `registry.ts`, `scripts/push-images.sh` | Silently swapped images; untraceable deploys |
-| Read-only CI token | `.github/workflows/ci.yml` | A malicious dependency in CI writing to the repo |
+### 4. Where in our code
 
-App-level defenses (argon2id, session cookie flags, CSRF, XSS, rate limiting) are in the
-[app security story](app-story.md#the-app-security-story). **Gaps we know about:** no WAF, no rate limiting yet, the edge → ALB hop is plain HTTP, the
-origin secret never rotates, tasks have public IPs, open egress on alb/web/api, no alarms.
+The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
+
+`scripts/deploy-guard.sh` compares ancestry; `infra/src/release.ts` defines the deployed-commit parameter; `.github/workflows/cd.yml` checks it before changes. Unit tests cover stale runs and rollback conditions. Run `pnpm test` and follow runbook bootstrap; current guard permissions still need AWS acceptance.
+
+`infra/src/compute/migration-task.ts` defines the one-off task; `.github/workflows/cd.yml` invokes it before app rollout. `docs/20-deploy-day.md` explains tag rollback and migration limits. Proposed large backfills belong in explicit resumable scripts with bounded batches and progress, not API startup.
+
+Cards: [circuit-breaker](concepts/circuit-breaker.md), [immutable-image-tags](concepts/immutable-image-tags.md), [zero-downtime-deploys](concepts/zero-downtime-deploys.md).
+
+### 5. See it yourself
+
+The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
+
+`scripts/deploy-guard.sh` compares ancestry; `infra/src/release.ts` defines the deployed-commit parameter; `.github/workflows/cd.yml` checks it before changes. Unit tests cover stale runs and rollback conditions. Run `pnpm test` and follow runbook bootstrap; current guard permissions still need AWS acceptance.
+
+`infra/src/compute/migration-task.ts` defines the one-off task; `.github/workflows/cd.yml` invokes it before app rollout. `docs/20-deploy-day.md` explains tag rollback and migration limits. Proposed large backfills belong in explicit resumable scripts with bounded batches and progress, not API startup.
+
+### 6. How it connects
+
+Rebuilding on deploy can ship bytes that were never reviewed or tested.
+
+A stale infrastructure program can interpret newer resources as removed.
+
+Old and new tasks overlap during rolling deployment.
+
+### 7. Our settings and WHY
+
+Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
+
+Approvals can outlive the commit they refer to. Record the deployed commit and refuse an older ancestor before applying infrastructure. Cancel/supersede waiting runs, but keep a server-side guard: concurrency alone may still leave an old pending run. Allow app rollback explicitly without applying an old infrastructure graph.
+
+Run migrations once from the same published SHA before rolling tasks. Prefer expand/contract: add compatible schema, deploy readers/writers, backfill, then remove old columns in a later release. Application rollback must not assume a destructive migration can be undone. MiniTickets runs a dedicated migration task; full zero-downtime backfill orchestration is explain-only.
+
+### 8. Trade-offs
+
+Rolling deployment overlaps versions. Blue/green gives a switchable target but costs overlap and still needs compatible migrations. Secrets/config are part of release compatibility.
+
+SSM records AWS release state without granting repo writes. Drift detection finds differences but does not itself prevent a destructive stale apply.
+
+CREATE INDEX CONCURRENTLY has transaction restrictions. Long locks can stall traffic. A forward fix may be safer than rolling back code after incompatible data changes.
+
+### 9. Alternatives and scale
+
+10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
+
+10x: approval expiry and environment rules. 100x: policy-as-code denying destructive stateful changes and separate deployment accounts.
+
+10x: inspect lock duration on a copy. 100x: online index/backfill tooling, compatibility windows and rehearsed restore.
+
+### 10. Failure modes
+
+Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
+
+Why not just cancel pending runs? Human approval and queued concurrency can still select an obsolete run.
+
+Can rollback remove a column safely? Only if no running version uses it and recovery is planned.
+
+### 13. Interview answers at 3 levels
+
+- Simple: Rebuilding on deploy can ship bytes that were never reviewed or tested.
+- Senior: Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
+- Lead: 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
+
+### 14. Follow-up questions
+
+Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
+
+### 15. Say it in 30 seconds
+
+Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
+
+### 16. Status
+
+Implemented portions and proposed extensions are distinguished above. Local evidence does not imply AWS acceptance.
+
+## The security story
+
+Current public entry is ACM HTTPS on the ALB, cdnEnabled=false. CloudFront prefix-list/secret-header restrictions apply only in optional CDN mode.
+
+### 1. In one line
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+### 2. Real-life comparison
+
+Follow one receipt through the desks responsible for the request; each boundary checks only its own responsibility.
+
+### 3. Picture it
+
+```mermaid
+flowchart LR
+    n0["Browser HTTPS ALB"] --> n1
+    n1["Target SG and task ENI"] --> n2
+    n2["API private route"] --> n3
+    n3["DB SG and credentials"]
+```
+
+### 4. Where in our code
+
+`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
+
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
+
+`apps/api/src/http/security.ts` → `mutationAllowed` guards all non-safe methods, including missing-Origin refusal. CLI callers explicitly send Origin. `pnpm demo:security` exercises same/cross/missing metadata and cookie isolation; one isolated inverted-origin mutation made both relevant tests fail.
+
+Cards: .
+
+### 5. See it yourself
+
+`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
+
+`infra/src/cicd.ts` restricts OIDC subjects and PassRole. `infra/src/publish-policy.ts` includes ECR read/write actions needed by publish; `compute/iam.ts` separates API execution/application roles. Read the D1 Every IAM badge tour and runbook §3.11. Live deploy acceptance remains owner work.
+
+`apps/api/src/http/security.ts` → `mutationAllowed` guards all non-safe methods, including missing-Origin refusal. CLI callers explicitly send Origin. `pnpm demo:security` exercises same/cross/missing metadata and cookie isolation; one isolated inverted-origin mutation made both relevant tests fail.
+
+### 6. How it connects
+
+A valid password cannot repair a missing route or blocked SG.
+
+A reachable AWS endpoint is not permission to invoke it.
+
+A request can cause side effects even if its response is unreadable.
+
+### 7. Our settings and WHY
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+A trust policy says who can assume a role; a permission policy says which actions/resources it can access; attachment says which runtime uses it. GitHub OIDC exchanges an approved repository/environment identity for short-lived AWS credentials. Task execution retrieves images/secrets; application roles authorize runtime AWS calls.
+
+CSRF tricks a browser into sending an authenticated action from another site. CORS controls whether browser code can read cross-origin responses; it is not a mutation authorization check. SameSite helps but is not the entire policy. MiniTickets requires the exact trusted Origin on mutations and rejects cross-site Sec-Fetch-Site.
+
+### 8. Trade-offs
+
+Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.
+
+Resource wildcards needed for APIs without resource scoping require conditions where supported. Broad deploy capability is dangerous; do not let old infrastructure runs apply.
+
+Non-browser clients must follow the explicit Origin contract; XSS on the trusted origin bypasses CSRF defenses, so output safety/CSP still matter. Proxy headers need their own trust policy.
+
+### 9. Alternatives and scale
+
+10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+
+10x: environment protection/expiry and policy review. 100x: separate accounts, policy-as-code and change approvals tied to exact SHA.
+
+10x: centralize trusted origin/environment validation. 100x: service-to-service auth and tenant origin rules with tests.
+
+### 10. Failure modes
+
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+
+Why did worker publish need BatchGetImage? Publishing tooling reads image manifests as well as uploading layers.
+
+Is Origin cryptographic API authentication? No; non-browser clients can set it. Sessions still authorize actions.
+
+### 13. Interview answers at 3 levels
+
+- Simple: A valid password cannot repair a missing route or blocked SG.
+- Senior: First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+- Lead: 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+
+### 14. Follow-up questions
+
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+
+### 15. Say it in 30 seconds
+
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+
+### 16. Status
+
+Implemented portions and proposed extensions are distinguished above. Local evidence does not imply AWS acceptance.
 
 ## The cost story
 
@@ -1278,7 +1560,7 @@ flowchart TB
 | Valkey | 1 node | replica with automatic failover across AZs |
 | Edge | `*.cloudfront.net`, HTTP to the ALB, static secret header | custom domain, ACM, HTTPS to the ALB, rotated secret or private origin, WAF + rate limiting |
 | ALB | deletion protection off | on, with access logs |
-| Deploys | laptop push, owner's `pulumi up`; `app.close()` right at SIGTERM | CI/CD with OIDC role, migrations before service update, expand/contract; a short wait after SIGTERM before closing (planned, see [zero-downtime-deploys](concepts/zero-downtime-deploys.md)) |
+| Deploys | OIDC publish, approved two-phase CD, dedicated migration and bounded shutdown | Expand/contract and live drain/rollback drills (see [zero-downtime-deploys](concepts/zero-downtime-deploys.md)) |
 | Observability | logs only, cost alert | golden-signal alarms, dashboards, tracing, SLOs, CloudTrail alerts |
 | Images | basic scan (OS packages only, at push), not enforced; npm dependencies not scanned | dependency scanning (Inspector enhanced scanning or Trivy in CI), CI vulnerability gate, digest pinning |
 

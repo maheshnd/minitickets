@@ -85,7 +85,7 @@ change (it is recorded as done), while fresh ones do: environments drift. Always
 ## 9. Alternatives and when to choose them
 
 - **Migrate on api startup with a lock:** simpler, slows startup, risky with many tasks.
-- **A CD pipeline step** before `pulumi up`: the production way (planned with CD).
+- **Dedicated CD migration task**: phase A points it at the new API SHA, it must exit 0 before phase B rolls services. Expand/contract protects overlapping versions.
 - **Expand and contract:** add, deploy, backfill, then remove (explain-only card
   `expand-contract-migrations`, Phase 5).
 

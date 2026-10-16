@@ -33,6 +33,7 @@ export type HandleResult = { status: "sent" | "skipped-duplicate"; jobKey: strin
 
 // `log`: the logger of THIS message (batch.ts makes it, with its correlationId). The handler itself
 // does not log; it only hands the logger to the mailer, so the mailer's line belongs to the booking.
+// @concept: idempotency
 export async function handleBookingConfirmed(rawMessage: unknown, deps: Deps, log: Log): Promise<HandleResult> {
   // 1. Validate with the shared schema. The queue holds text that anything could have put there,
   //    and it may be an older or newer version. A message that does not match throws (ZodError),

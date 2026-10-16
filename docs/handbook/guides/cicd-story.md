@@ -10,6 +10,8 @@ answering on AWS, and how to read the two files that make it happen:
 **Who this page is for:** someone who has never seen GitHub Actions, bash or Pulumi. Every
 technical word is explained the first time it shows up. Every example is copied from our two files.
 
+**Current scope:** api, web and worker images; publish/deploy are jobs in cd.yml. The newest deploy guard checks SSM release ancestry; two Lambdas share the worker image. CI also audits dependencies and scans images for CRITICAL findings. Some shell teaching examples below isolate api/web syntax; inspect the generated source tour for the complete current workflow. [Current release scenario](interview-scenarios.md#delivery-rollback).
+
 **How to read it:**
 
 - [Part 1](#part-1-the-story) is the story: what happens, and why. Read it first.
@@ -130,7 +132,7 @@ runs, but CD will never deploy it (Chapter 2 explains why).
 ```mermaid
 flowchart LR
     q["quality<br/>typecheck, lint,<br/>unit tests, docs:check"] --> e["e2e<br/>real browser + real<br/>Postgres and Redis"]
-    q --> d["docker<br/>do both images build?"]
+    q --> d["docker<br/>do all three images build?"]
 ```
 
 - `quality`: are the types right (`pnpm typecheck`: does every value have the shape the code
@@ -139,7 +141,7 @@ flowchart LR
   (`pnpm docs:check`)?
 - `e2e` ("end to end"): start the whole app with a real database (Postgres) and a real cache
   (Redis, a fast short-term memory), open a real browser, and click through it like a user.
-- `docker`: build both images, but throw them away. This only proves they CAN be built.
+- `docker`: build all three images, but throw them away. This only proves they CAN be built.
   (**Docker** is the tool that builds and runs images.)
 
 When CI is done, GitHub tells `cd.yml`, because `cd.yml` listens for that:
@@ -1107,7 +1109,7 @@ check web "$WEB_REPO_NAME"
 ```
 
 `check() { … }` defines a small reusable command. `check api minitickets-dev-api` runs it with
-`$1 = api` and `$2 = minitickets-dev-api`. So the same code checks both images.
+`$1 = api` and `$2 = minitickets-dev-api`. So the same code checks all three images.
 
 ### `exit 1`
 

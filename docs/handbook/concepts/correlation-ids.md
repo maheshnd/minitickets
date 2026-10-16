@@ -2,109 +2,81 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: 🟡 partial (P2: a UUID per api request, returned in `x-correlation-id` and carried to the worker; the text below predates P2, see PENDING.md) · Step doc: [02 errors](../../02-errors.md)
+Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-A **request id** tags every log line of one request so you can find them all; a **correlation id**
-is the same idea carried across services (browser → CloudFront → ALB → api). We have the first, not
-the second.
+A validated UUID ties API, outbox and consumer logs to one booking. It is returned in x-correlation-id and copied in messages. SSR cached calls do not attach a misleading per-user id; correlation is not a timed trace.
 
 ## 2. Real-life comparison
 
-A parcel's tracking number: every depot writes it on its log, so you can follow one parcel through
-the whole journey. Ours is only written inside the last depot.
+A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    b["browser"] --> cf["CloudFront<br/>X-Amz-Cf-Id"]
-    cf --> alb["ALB<br/>X-Amzn-Trace-Id"]
-    alb --> api["api<br/>reqId: req-1, req-2 …"]
-    api -.->|"not linked today"| cf
+    n0["Booking correlation id"] --> n1
+    n1["API and worker JSON"] --> n2
+    n2["Logs Insights"] --> n3
+    n3["Queue/DLQ alarm"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `apps/api/src/app.ts` · `genReqId` + `LogController({ requestIdLogLabel: "correlationId" })` (P2): Fastify adds `correlationId` to every request log line (was `reqId: req-1, …` before P2).
-- Anchor: `apps/api/src/http/correlation-id.ts` · `correlationIdFor`, `addCorrelationIdHeader`: the caller's UUID or a new one; every answer carries `x-correlation-id` (P2).
-- Anchor: `packages/shared/src/schemas/jobs.ts` · `CorrelationId`, `BookingConfirmedMessage.correlationId` (optional, so still version 1): the id travels in the queue message (P2).
-- Anchor: `apps/worker/src/correlation.ts` · `correlationIdOf`: the worker reads it from the message body and writes it on each of its lines for that message (P2).
+- Anchor: `apps/api/src/app.ts` — `statusCode`; follow the numbered comments at this boundary.
+- Anchor: `apps/api/src/http/correlation-id.ts` — `CORRELATION_HEADER`; follow the numbered comments at this boundary.
+- Anchor: `apps/worker/src/correlation.ts` — `correlationIdOf`; follow the numbered comments at this boundary.
+- Anchor: `packages/shared/src/schemas/jobs.ts` — `CorrelationId`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. Fastify gives each request an id. With `requestIdHeader` at its default `false`, it ignores any
-   incoming header and uses `genReqId`: increasing numbers per process, `req-1`, `req-2`, …
-   (verified in the installed Fastify 5.12.5 docs, `Server.md`; and seen in our logs).
-2. Every log line in that request carries `"reqId"`, so one request's lines can be grouped.
-3. Our error logs add `reqId` explicitly.
-4. **Not done:** the id is not returned to the client, not read from the ALB's or CloudFront's
-   headers, and resets per process, so two tasks both have a `req-1`.
+`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
 
 ## 5. See it yourself
 
-In any api log, the "incoming request" and "request completed" lines of one request share a `reqId`
-(see [structured-logging](structured-logging.md)). On AWS, filter one request in Logs Insights:
-`filter reqId = "req-42"` (scoped to one log stream, because ids repeat across tasks).
+Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
 
-**Break it on purpose (thought experiment):** set `requestIdHeader: "x-request-id"`. Now any caller
-can choose the id that appears in our logs (Fastify's docs warn about this), so it must be validated
-or trusted only from the ALB.
+Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [structured-logging](structured-logging.md), [trust-proxy](trust-proxy.md) (trusting
-  headers from the ALB).
-- **Gives →** debugging one request; the base for distributed tracing (explain-only card
-  `distributed-tracing`).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
 
 ## 7. Our settings and WHY
 
-Fastify defaults. WHY: enough for one service on one task; nothing to correlate yet.
+A validated UUID ties API, outbox and consumer logs to one booking. It is returned in x-correlation-id and copied in messages. SSR cached calls do not attach a misleading per-user id; correlation is not a timed trace. A user symptom spans asynchronous boundaries, not one process log.
 
 ## 8. Trade-offs
 
-- **Pros:** zero code; safe (callers can't set it).
-- **Cons:** not unique across tasks or restarts; can't link a user's error report to a log line.
+Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
 
 ## 9. Alternatives and when to choose them
 
-- **`genReqId` using the ALB's `X-Amzn-Trace-Id`** (trusted, because only the ALB reaches us):
-  links ALB access logs and app logs.
-- **Random UUID per request + `x-request-id` response header:** users and support can quote it.
-- **OpenTelemetry trace ids:** across many services.
+10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-With 2+ tasks, `req-7` exists on each; queries must be scoped by log stream or they mix requests.
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** Each request gets a number on all its log lines.
-- **Senior:** Fastify's default `genReqId` gives `req-N` per process and puts it on every log line;
-  our error logs include it. We don't accept ids from headers (default `requestIdHeader: false`) and
-  don't return it to clients, so it's per-service only.
-- **Lead:** Correlation is what makes logs useful across hops. I'd derive the id from the ALB's
-  trace header (trusted because of the security group), return it as `x-request-id`, and move to
-  OpenTelemetry when there's more than one service.
+- **Simple:** A validated UUID ties API, outbox and consumer logs to one booking.
+- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
+- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not trust the client's request id?* They could inject misleading values into our logs.
-- *Request id vs trace id?* Same idea; a trace id also links parent/child spans across services.
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
+
+Which signal explains a specific failed booking? **Correlated structured logs.**
 
 ## 15. Say it in 30 seconds
 
-"Fastify tags every log line of a request with a reqId, req-1, req-2 and so on, and our error logs
-include it. It's per process and not shared with the ALB or the client, so it's a request id, not a
-real correlation id yet. Next step: base it on the ALB's trace header and return it to the client."
+Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
 
-## 16. Status
+## 16. Status and production work
 
-🟡 partial. **To make it production-grade:** unique ids (or the ALB trace id), returned in a response
-header, then OpenTelemetry traces.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
 ## Where it appears in the story
 
-- [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)
+- [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)

@@ -2,141 +2,86 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: AWS Network · Status: ✅ built · Step doc: [19 CloudFront](../../19-infra-cloudfront.md)
+Area: AWS Network · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**CloudFront** is AWS's CDN: browsers connect over HTTPS to a nearby **edge location**, which
-answers from its cache or fetches from our **origin** (the ALB).
+CloudFront is implemented but inactive (cdnEnabled=false); browser traffic currently reaches HTTPS ALB. Optional mode has prefix-list/header origin protection and zero minimum/default HTML TTL; never assume it is deployed.
 
 ## 2. Real-life comparison
 
-Local branch offices of a shop. You walk into the branch in your town. If it has the item on the
-shelf, you get it at once; if not, the branch orders it from the central warehouse in Virginia.
+Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    b["Browser"] -->|"HTTPS, *.cloudfront.net cert"| e["Edge location"]
-    e -->|"cache HIT"| b
-    e -->|"cache MISS: HTTP :80<br/>+ X-Origin-Verify"| alb["ALB (origin)<br/>us-east-1"]
+    n0["User cookie"] --> n1
+    n1["Dynamic private HTML"] --> n2
+    n2["Browser only"] --> n3
+    n3["No shared CDN page"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/entry/cdn.ts` · `distribution`: the one distribution, its origin, three cache behaviors and the default certificate.
+- Anchor: `infra/src/entry/cdn.ts` — `distribution`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. Look up three AWS managed policies by name: `Managed-CachingOptimized`,
-   `Managed-CachingDisabled`, `Managed-AllViewer`.
-2. `origins`: one origin, id `alb`, `domainName: albDnsName`, `originProtocolPolicy: "http-only"`,
-   plus the `X-Origin-Verify` custom header.
-3. `orderedCacheBehaviors`: `/_next/static/*` (cached) and `/trpc/*` (not cached, all methods);
-   `defaultCacheBehavior` for pages (not cached, GET/HEAD). Details: [cdn-caching](cdn-caching.md).
-4. `viewerProtocolPolicy: "redirect-to-https"` on every behavior: `http://` gets a 301.
-5. `httpVersion: "http2and3"`, `priceClass: "PriceClass_100"`, no geo restriction.
-6. `viewerCertificate: { cloudfrontDefaultCertificate: true }`: the free `*.cloudfront.net`
-   certificate, so we need no domain.
-7. Returns `appUrl = https://<id>.cloudfront.net`, which `index.ts` passes to the api task as
-   `WEB_ORIGIN`.
+`apps/web/src/proxy.ts` and `apps/web/next.config.ts` guard HTML caching. `apps/web/src/features/events/server/cached-events.ts` only stores public catalogue data. `infra/src/entry/cdn.ts` has zero minimum/default TTL on the events policy. CloudFront is inactive: `cdnEnabled=false`. Run `pnpm demo:security`.
 
 ## 5. See it yourself
 
-```bash
-cd infra && APP=$(pulumi stack output appUrl)
-curl -sI "$APP/" | grep -iE '^(x-cache|via|x-amz-cf-pop)'
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "http://${APP#https://}/"   # 301 https://…
-```
+Run `pnpm demo:security` and inspect the asserted outcome described above.
 
-`x-amz-cf-pop` names the edge location that answered.
-
-**Break it on purpose (scratch branch):** set the `/trpc/*` behavior's `allowedMethods` to
-`["GET", "HEAD"]`. Login, signup and logout (POST) get CloudFront's own 403 page.
+Failure thought experiment: Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** the [ALB](alb.md) DNS name; the origin secret ([origin-protection](origin-protection.md)).
-- **Gives →** HTTPS for the browser ([tls-termination](tls-termination.md)), so the `Secure` session
-  cookie works; edge caching ([cdn-caching](cdn-caching.md)); HTTP/2 and 3
-  ([http-versions](http-versions.md)); `appUrl` → `WEB_ORIGIN`; two proxy hops for `trustProxy`.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#private-page-cache) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Certificate | default `*.cloudfront.net` | Free HTTPS without owning a domain. |
-| `priceClass` | `PriceClass_100` | Cheapest edge group (North America, Europe, Israel). Others still work, from farther away. |
-| Origin protocol | `http-only` | We cannot get a certificate for the ALB's AWS-owned name. Dev compromise. |
-| Viewer protocol | `redirect-to-https` | Nobody uses the site over plain HTTP. |
-| One origin | the ALB | Same-origin routing happens behind it. |
+CloudFront is implemented but inactive (cdnEnabled=false); browser traffic currently reaches HTTPS ALB. Optional mode has prefix-list/header origin protection and zero minimum/default HTML TTL; never assume it is deployed. A cross-user cache leak exposes private data, and cached nonce HTML breaks CSP assumptions.
 
 ## 8. Trade-offs
 
-- **Pros:** free HTTPS, global edge, cached static files, no hourly price.
-- **Cons:** slow to create (5-15 min) and slower to delete (it must be disabled first); an extra
-  hop for every uncached request; the edge-to-ALB hop is unencrypted in dev.
+Per-user edge keys are difficult to audit and multiply cache entries. No-store simplifies privacy at server cost. Static JS/images can still be cached.
 
 ## 9. Alternatives and when to choose them
 
-- **ACM certificate + custom domain on the ALB, no CDN:** simplest HTTPS if users are near one region
-  and nothing needs edge caching. The ALB costs the same either way.
-- **CloudFront + custom domain + HTTPS to origin:** production.
-- **Another CDN (Cloudflare, Fastly):** multi-cloud or specific edge features.
+10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-| You see | Means |
-| ------- | ----- |
-| CloudFront `502` | It cannot connect to the ALB (security group, listener missing, or `https-only` with no 443 listener) |
-| CloudFront `403` page | Method not allowed on that path |
-| ALB plain-text `Forbidden` | Header mismatch, e.g. a distribution change still rolling out |
-| Logged out right after login | You used `http://` or the ALB name, not `appUrl` |
+Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
 
 ## 11. Reach / Allowed / Password
 
-- **Reach:** browser → edge over the public internet; edge → ALB on port 80, allowed only from
-  CloudFront's prefix list.
-- **Allowed:** no IAM on requests; Pulumi creates the distribution with the owner's login.
-- **Password:** the `X-Origin-Verify` header proves to the ALB that the request came from our
-  distribution.
+Prove the network path separately from the scoped IAM action and the runtime credential. [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached) shows trust, permissions and attachment. No AWS endpoint needs an inbound SG simply because a non-VPC Lambda calls it.
 
 ## 12. Cost
 
-No hourly price. The free tier covers 1 TB out and 10 million requests a month; data from the ALB
-to CloudFront is free. Dev traffic: $0 ([docs/19](../../19-infra-cloudfront.md), section 3.12).
+Existing resource/usage costs are detailed in the corresponding infra guide chapter. No new resources were deployed by this documentation change. Historical phase costs are illustrative snapshots, not a current quote; inspect billing and current regional pricing before a capacity decision.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** A CDN serves content from servers near the user and gives us HTTPS.
-- **Senior:** One distribution with the ALB as origin over HTTP plus a secret header. Three
-  behaviors: hashed static files cached with CachingOptimized, `/trpc/*` and pages never cached with
-  CachingDisabled and AllViewer so the cookie passes through. The default `*.cloudfront.net`
-  certificate gives HTTPS, which makes the `Secure` cookie work.
-- **Lead:** CloudFront is where I'd add edge security (WAF, rate limiting), and the path to
-  production is a custom domain, an ACM certificate in `us-east-1`, HTTPS to the origin, and
-  monitoring of cache hit rate and 5xx at the edge.
+- **Simple:** CloudFront is implemented but inactive (cdnEnabled=false); browser traffic currently reaches HTTPS ALB.
+- **Senior:** Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
+- **Lead:** 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why did login not work before CloudFront?* The cookie is `Secure`; on plain HTTP the browser
-  drops it.
-- *Why must a custom-domain certificate be in `us-east-1`?* CloudFront only reads certificates from
-  ACM in `us-east-1`.
-- *Why is deleting slow?* It must be disabled at every edge first, then deleted.
+Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
+
+Which CloudFront setting can override no-store? **A positive minimum TTL.**
 
 ## 15. Say it in 30 seconds
 
-"CloudFront sits in front of the ALB and gives us HTTPS on a `*.cloudfront.net` address for free.
-Hashed static files are cached at the edge; pages and `/trpc` are never cached and get the cookie
-passed through. It talks to the ALB over HTTP with a secret header, which the ALB requires."
+Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built. **To make it production-grade:** custom domain, HTTPS to the origin, WAF, monitoring.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
 ## Where it appears in the story
 
-- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)
-- [Big picture: 4. Components](../00-big-picture.md#4-components)
+- [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)

@@ -1,0 +1,489 @@
+{
+  "entries": [
+    {
+      "entry": "- **Step:** Feature 1, Step 5: cache stampede protection for `events.list` (would be `docs/25-*`).",
+      "sourceHash": "ac46222c664866e4872e5825257e98a507684a1e054baa35a2cd35406e45687c",
+      "stepDoc": "docs/25-cache-stampede.md",
+      "scenarios": [
+        "cache-stampede"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0003-cache-coordination.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cache-stampede.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 1, Step 6: cache invalidation for `events.list` + admin role to create events (would be `docs/26-*`).",
+      "sourceHash": "d8095ea5bf6d6b9aab9a4a08822615820afa34cf2f795c73fda9e6bbdedca3c5",
+      "stepDoc": "docs/26-cache-invalidation-rbac.md",
+      "scenarios": [
+        "cache-invalidation",
+        "sessions-roles"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0004-generation-swr-keys.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cache-invalidation.md",
+        "docs/handbook/concepts/rbac.md",
+        "docs/handbook/concepts/session-revocation.md",
+        "docs/handbook/concepts/authn-vs-authz.md",
+        "docs/handbook/concepts/sessions-vs-jwt.md",
+        "docs/handbook/concepts/session-cookie.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 1, Step 7: stale-while-revalidate (SWR) + stale-if-error for `events.list` (would be `docs/27-*`).",
+      "sourceHash": "ae5dd53961d6a28c8e1cf7e9a9473174deb38726c2654c77f64139ccc937d9f0",
+      "stepDoc": "docs/27-stale-while-revalidate.md",
+      "scenarios": [
+        "swr-caches"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/stale-while-revalidate.md",
+        "docs/handbook/concepts/cache-aside.md",
+        "docs/handbook/concepts/ttl.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 1, Step 8: filters for `events.list` (venue, from, to) + filter-aware cache keys (would be `docs/28-*`).",
+      "sourceHash": "b60be6797fa4328badae9a932207b235a7d773d3df07fdbcce5ea0c671cfa0b4",
+      "stepDoc": "docs/28-filter-aware-cache-keys.md",
+      "scenarios": [
+        "hot-keys-privacy"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cache-filter-keys.md",
+        "docs/handbook/concepts/cache-key-versioning.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 1, Step 9a: Next.js data cache for `/events` + on-demand revalidation from the API (would be `docs/29-*`).",
+      "sourceHash": "7f65441f192ec4449a06fed1308c306933f68bf2a0798282fce64e9f167de09c",
+      "stepDoc": "docs/29-next-data-cache.md",
+      "scenarios": [
+        "rendering-models",
+        "cache-invalidation"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0004-generation-swr-keys.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cache-invalidation.md",
+        "docs/handbook/concepts/next-data-cache.md",
+        "docs/handbook/concepts/csr-vs-ssr.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 1, Step 9b: HTTP cache headers, CloudFront page caching for `/events`, cache privacy (would be `docs/30-*`).",
+      "sourceHash": "46064713a7d57dfdfa07f7755b724da9841644bffe5012ba87f38fcbe853992c",
+      "stepDoc": "docs/30-cache-privacy.md",
+      "scenarios": [
+        "private-page-cache"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0005-dynamic-nonce-html.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cdn-caching.md",
+        "docs/handbook/concepts/cloudfront.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Step 12a: CD part 1, publish images to ECR from GitHub Actions with OIDC, no deploy yet (would be `docs/31-*`).",
+      "sourceHash": "d53899f7f69661c117f7b6f31bd1de0d2c441d3e382d14129b6aacaa8e594a28",
+      "stepDoc": "docs/31-oidc-publish.md",
+      "scenarios": [
+        "iam-oidc",
+        "delivery-rollback"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0007-oidc-build-once.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cd-oidc.md",
+        "docs/handbook/concepts/ci-pipeline.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Step 11h: ECS Service Connect, so web and api tasks call each other inside AWS (SSR `API_INTERNAL_URL`, revalidate `WEB_INTERNAL_URL`); would be `docs/32-*`.",
+      "sourceHash": "f6faddf0ba218557e0190c09f2ec455d65ebcb403d729184b353f53bfca6a5a5",
+      "stepDoc": "docs/32-service-connect.md",
+      "scenarios": [
+        "network-boundaries"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0008-private-service-connect.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/service-connect.md",
+        "docs/handbook/concepts/server-to-server-calls.md",
+        "docs/handbook/concepts/origin-protection.md",
+        "docs/handbook/concepts/tls-termination.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Step 11i: HTTPS on the ALB with our own subdomain + `cdnEnabled` switch (deploy without CloudFront); would be `docs/33-*`. Config: `cdnEnabled` (default true), `domainName`, `allowedCidrs` (default `[\"0.0.0.0/0\"]`), validated in `entry/mode.ts`.",
+      "sourceHash": "f8c39ddb2863ee2e2a53b336536fe7989e02471ecf50bfa088600f7de257fbaf",
+      "stepDoc": "docs/33-alb-https.md",
+      "scenarios": [
+        "network-boundaries",
+        "private-page-cache"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0005-dynamic-nonce-html.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/service-connect.md",
+        "docs/handbook/concepts/server-to-server-calls.md",
+        "docs/handbook/concepts/cdn-caching.md",
+        "docs/handbook/concepts/cloudfront.md",
+        "docs/handbook/concepts/origin-protection.md",
+        "docs/handbook/concepts/tls-termination.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Step 12b: CD part 2, deploy through GitHub Actions with approval (two-phase deploy, migrate-before-deploy, rollback by tag); would be `docs/34-*`.",
+      "sourceHash": "525379bca6afed8d429b500894c8c1ddebddd436b318f8bed49114be7bb9c87a",
+      "stepDoc": "docs/34-approved-delivery.md",
+      "scenarios": [
+        "delivery-rollback",
+        "old-deploy",
+        "migrations"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0007-oidc-build-once.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/release-guard.md",
+        "docs/handbook/concepts/ci-pipeline.md",
+        "docs/handbook/concepts/zero-downtime-deploys.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 2, Step F2a: book a ticket + \"My tickets\" (would be `docs/35-*`). Local only, no infra change. Prompt: [prompts/f2a.md](prompts/f2a.md). Also new rule: during the ticketing + serverless series, no handbook / guide / explorer edits (CLAUDE.md + AGENTS.md \"Workflow\"), prompts in `docs/handbook/prompts/`, ROADMAP \"Next\" replaced by the series.",
+      "sourceHash": "df6f300ffca59d86d111b90bb54322ee9806d766228e7708c453c84a2feb984d",
+      "stepDoc": "docs/35-booking-transactions.md",
+      "scenarios": [
+        "database-concurrency",
+        "locking-latest",
+        "api-n-plus-one"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/graceful-shutdown.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Feature 2, Step F2b: idempotency key for booking (would be `docs/36-*`). Local only, no infra change. Prompt: [prompts/f2b.md](prompts/f2b.md). Also new rule: ROADMAP status lines and new prompt files need no CHANGELOG entry (CLAUDE.md + AGENTS.md); CHANGELOG's empty 2026-10-12 \"Commit:\" filled in (`97f9cab`, found by subject).",
+      "sourceHash": "8ae5a3d8c9a6c96e5399293e93cfd643c67f557452fabbd9710ab56dd174a404",
+      "stepDoc": "docs/36-booking-idempotency.md",
+      "scenarios": [
+        "idempotency",
+        "optimistic-ui"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0009-locked-idempotent-booking.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/idempotency.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Serverless S1a: booking confirmation through a background queue (would be `docs/37-*`). Local only, no infra change. Prompt: [prompts/s1a.md](prompts/s1a.md).",
+      "sourceHash": "1b1f5dd3fb5eec94f9b09c837d3f2a7b82833916f3c2c9712e077cb1a91ad930",
+      "stepDoc": "docs/37-background-jobs.md",
+      "scenarios": [
+        "fanout",
+        "consumer-idempotency"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0011-fanout-workers.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/sns.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Serverless S1b: failure handling for the background jobs (would be `docs/38-*`). Local only, no AWS resources. Prompt: [prompts/s1b.md](prompts/s1b.md). New local container: DynamoDB Local; new dependency `@aws-sdk/client-dynamodb` (worker only).",
+      "sourceHash": "36ecc5689c6c426a57ddf9fcef7fd2a64fae0f3e62779ce4921d3a4aeaebef41",
+      "stepDoc": "docs/38-job-failures.md",
+      "scenarios": [
+        "dlq-failure",
+        "retry-backoff",
+        "consumer-idempotency"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/retry-policy.md",
+        "docs/handbook/concepts/sqs.md",
+        "docs/handbook/concepts/dead-letter-queue.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Series 2, P0: local stack health (would be `docs/39-*`). Local only, no infra change. Prompt: [prompts/series-2.md](prompts/series-2.md) (P0). No new dependency.",
+      "sourceHash": "647b5bc4ee5a8cc374b9fc650a8b89bd7950bcc588ea9afd74826af553f7e153",
+      "stepDoc": "docs/39-local-stack-health.md",
+      "scenarios": [
+        "dev-parity"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/outbox.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Series 2, P1 = S1c: the job pipeline on AWS (would be `docs/40-*`). Infra + CD + worker. Prompt: [prompts/series-2.md](prompts/series-2.md) (P1). New dependencies (worker only): `@aws-sdk/client-sesv2`, `esbuild` (dev, same version as the api's). Also: `pnpm run doctor` renamed to **`pnpm stack:check`** (`scripts/stack-check.ts`; pnpm's built-in `doctor` shadowed it); `eslint.config.mjs` ignores `**/dist/**`.",
+      "sourceHash": "df2834b94b7d6e7d0ad1d70c48bce833bbb45988bf15bb8eea5d89cae0f38b9d",
+      "stepDoc": "docs/40-aws-job-pipeline.md",
+      "scenarios": [
+        "compute-choices",
+        "ses-email",
+        "iam-oidc"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cd-oidc.md",
+        "docs/handbook/concepts/aws-lambda.md",
+        "docs/handbook/concepts/ses-email.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Series 2, P1 = S1c fix: CD publish \"not authorized ... ecr:BatchGetImage on minitickets-dev-worker\". Infra code only; no AWS change (preview identical before/after).",
+      "sourceHash": "5e2ab56d40610570a1794785308727e741f7187249cba934576a5a1b1d017e26",
+      "stepDoc": "docs/40-aws-job-pipeline.md",
+      "scenarios": [
+        "compute-choices",
+        "ses-email",
+        "iam-oidc"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/cd-oidc.md",
+        "docs/handbook/concepts/aws-lambda.md",
+        "docs/handbook/concepts/ses-email.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** CD safety fix: the deploy guard (never apply old infrastructure code), before P2. Infra (1 SSM parameter, deploy policy) + CD + runbook (`docs/20-deploy-day.md` 3.11).",
+      "sourceHash": "ca5fc0e4ac6109fda70aa895dcdb6908b7c1e477fd48ce1fdb332ba7afb42dff",
+      "stepDoc": "docs/34-approved-delivery.md",
+      "scenarios": [
+        "delivery-rollback",
+        "old-deploy",
+        "migrations"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0007-oidc-build-once.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/release-guard.md",
+        "docs/handbook/concepts/ci-pipeline.md",
+        "docs/handbook/concepts/zero-downtime-deploys.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Series 2, P2 = S1d: observability (would be `docs/41-*`). App code (api, worker, web server, shared) + infra (11 resources) + runbook (`docs/20-deploy-day.md` 3.12). Prompt: [prompts/series-2.md](prompts/series-2.md) (P2). No new dependency.",
+      "sourceHash": "34ab3c1f2ed9b8e68a0073d2b27ae517b0a2af79d8b4765054f95a385e55dd02",
+      "stepDoc": "docs/41-observability.md",
+      "scenarios": [
+        "observability",
+        "tracing-slos"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0016-local-emulator-boundaries.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/tracing.md",
+        "docs/handbook/concepts/slo-error-budget.md",
+        "docs/handbook/concepts/cloudwatch-logs.md",
+        "docs/handbook/concepts/correlation-ids.md",
+        "docs/handbook/concepts/alerting.md",
+        "docs/handbook/concepts/metrics.md"
+      ]
+    },
+    {
+      "entry": "- **Step:** Series 2, P3: transactional outbox for booking confirmations.",
+      "sourceHash": "43700ad7f8e10f80bec0f12fe5b7991f337dea6eddc39e01f392dcadb15a24e6",
+      "stepDoc": "docs/42-transactional-outbox.md",
+      "scenarios": [
+        "outbox"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0010-outbox-relay.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/outbox.md"
+      ]
+    },
+    {
+      "entry": "## Series 2 \u2014 P4 Part A: SNS fan-out and signed QR ticket issuance",
+      "sourceHash": "f28525dd6b8b6fc95366d3ff5a7324a280e303b61fe55b6349f2dadcca9f7f74",
+      "stepDoc": "docs/43-signed-qr-tickets.md",
+      "scenarios": [
+        "fanout",
+        "dynamodb",
+        "consumer-idempotency",
+        "secrets-forgery"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0011-fanout-workers.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/sns.md",
+        "docs/handbook/concepts/ticket-signing.md",
+        "docs/handbook/concepts/dynamodb.md"
+      ]
+    },
+    {
+      "entry": "## Series 2 \u2014 P4 Part B: private ticket downloads and constrained poster uploads",
+      "sourceHash": "3a9645978d4a71c401f084fbbeda58d351de1add01cd98bb891396c60abac094",
+      "stepDoc": "docs/44-ticket-assets.md",
+      "scenarios": [
+        "presigned-uploads",
+        "optimistic-ui"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0012-ticket-state-assets.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/presigned-urls.md"
+      ]
+    },
+    {
+      "entry": "## Series 2 \u2014 P7: indexed search and big lists",
+      "sourceHash": "ab6eb20c5eca510a2e5d5cdbdabd47648130b688d53540265ae5303957a6f7a5",
+      "stepDoc": "docs/45-search-big-lists.md",
+      "scenarios": [
+        "search-races",
+        "indexes-pagination",
+        "virtual-lists"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0013-search-keyset-window.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/search-races.md",
+        "docs/handbook/concepts/keyset-pagination.md",
+        "docs/handbook/concepts/virtualization.md",
+        "docs/handbook/concepts/indexing.md"
+      ]
+    },
+    {
+      "entry": "## Series 2 \u2014 P8: sale-day limits and advisory inventory",
+      "sourceHash": "f214ba4ebe88ba06c71890f8fec6610439bd88a534ce300833c30de22cc79f03",
+      "stepDoc": "docs/46-sale-day.md",
+      "scenarios": [
+        "rate-limits",
+        "sale-day",
+        "waiting-room",
+        "autoscaling"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0014-advisory-sale-gate.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/rate-limiting.md",
+        "docs/handbook/concepts/inventory-gate.md",
+        "docs/handbook/concepts/autoscaling.md",
+        "docs/handbook/concepts/trust-proxy.md"
+      ]
+    },
+    {
+      "entry": "## Series 2 \u2014 P10: security hardening, vitals and accessibility",
+      "sourceHash": "3c2765b188facf0296caf7d6e1ddd6b7b494dd996b2576f62c691589ddf4d5e5",
+      "stepDoc": "docs/47-security-vitals-accessibility.md",
+      "scenarios": [
+        "sessions-roles",
+        "csrf-cors",
+        "csp-xss",
+        "web-vitals",
+        "accessibility"
+      ],
+      "decisions": [
+        "docs/handbook/decisions/0006-roles-and-sessions.md"
+      ],
+      "conceptCards": [
+        "docs/handbook/concepts/rbac.md",
+        "docs/handbook/concepts/csp.md",
+        "docs/handbook/concepts/web-vitals.md",
+        "docs/handbook/concepts/session-revocation.md",
+        "docs/handbook/concepts/authn-vs-authz.md",
+        "docs/handbook/concepts/csrf.md",
+        "docs/handbook/concepts/xss.md",
+        "docs/handbook/concepts/sessions-vs-jwt.md",
+        "docs/handbook/concepts/session-cookie.md",
+        "docs/handbook/concepts/image-scanning.md",
+        "docs/handbook/concepts/accessible-forms.md"
+      ]
+    }
+  ],
+  "stepDocs": [
+    "docs/25-cache-stampede.md",
+    "docs/26-cache-invalidation-rbac.md",
+    "docs/27-stale-while-revalidate.md",
+    "docs/28-filter-aware-cache-keys.md",
+    "docs/29-next-data-cache.md",
+    "docs/30-cache-privacy.md",
+    "docs/31-oidc-publish.md",
+    "docs/32-service-connect.md",
+    "docs/33-alb-https.md",
+    "docs/34-approved-delivery.md",
+    "docs/35-booking-transactions.md",
+    "docs/36-booking-idempotency.md",
+    "docs/37-background-jobs.md",
+    "docs/38-job-failures.md",
+    "docs/39-local-stack-health.md",
+    "docs/40-aws-job-pipeline.md",
+    "docs/41-observability.md",
+    "docs/42-transactional-outbox.md",
+    "docs/43-signed-qr-tickets.md",
+    "docs/44-ticket-assets.md",
+    "docs/45-search-big-lists.md",
+    "docs/46-sale-day.md",
+    "docs/47-security-vitals-accessibility.md"
+  ],
+  "currentNotes": {
+    "25": "The cache lock protects duplicate public-list rebuilds, not booking correctness. Single-flight is per process, the Redis lease is cross-process, and every new lock holder double-checks.",
+    "26": "Authorization is lazy: only admin middleware reads the role from Postgres. Context verifies the Redis session without making every public request depend on Postgres. P10 additionally revokes sessions around role changes. Invalidation uses the current v3 generation/filter keys.",
+    "27": "Current list envelopes have data, fetchedAt and staleAt. Soft TTL defaults to 30 s with 0\u201310% jitter; hard TTL is 300 s. No old-generation fallback is allowed. A quiet list can be served once near the hard age limit. Search uses a separate uncached path.",
+    "28": "Exact venue filtering trims/lowercases; dates use UTC days. The date-range cap only applies with both bounds. Literal title/venue substring search is separate P7 functionality, not a change of venue filter semantics. Local Redis allkeys-lru is a committed setting; actual running/AWS eviction settings require inspection.",
+    "29": "The explicit unstable_cache helper and signed fixed-tag revalidation endpoint remain. P7 current catalogue SSR calls events.search and bypasses the list data cache to avoid cursor/text key explosion. P10 makes nonce HTML dynamic/no-store. Do not assume the older events.list cache is the current search request path.",
+    "30": "P10 supersedes the earlier public /events HTML caching experiment: all HTML/RSC responses use private,no-store and fresh CSP nonces. Static assets retain their normal caching. CloudFront code is implemented but inactive (cdnEnabled=false); its minimum/default events TTL is zero.",
+    "31": "Publish and deploy are jobs in .github/workflows/cd.yml. Publish now covers three repositories (api, web, worker). The immutable OIDC subject is configured from owner/repo ids; deploy uses the environment:dev subject. Only CD writes the SSM image tag. There is no separate publish.yml.",
+    "32": "Service Connect is implemented with api and web aliases and proxy ingress 14000/13000. ALB traffic stays on app ports 4000/3000. Loopback peers are never trusted for forwarded-header identity. Initial endpoint discovery can require an API rollout after web is created; CD handles this.",
+    "33": "The committed shape is ALB HTTPS on minitickets.theversehub.in, with cdnEnabled=false. ACM DNS validation records must remain for renewal. Do not promise a fixed certificate lifetime/renewal month. Domain CNAME and allowedCidrs are owner operations; switching CDN mode requires entry off first.",
+    "34": "Shape is committed Pulumi.dev.yaml; image tag and deployed infrastructure commit are SSM records. CD uses the newest guard and refuses superseded/ancestor infrastructure runs. App rollback uses current infrastructure and an older compatible image. Dedicated migration definition runs the new SHA before application rollout; no manual per-image config tags belong in committed YAML.",
+    "35": "The locked query owns the three availability checks so they remain in the transaction. Relative seat decrement plus CHECK is the last defense. P3 adds outbox atomicity, P8 adds advisory admission and replay fast paths, P10 adds 2 s pool acquisition/5 s statement budgets. Plain row readers use MVCC; DDL locks can still block reads. My tickets remains an unbounded API aggregate despite paginated Dynamo reads.",
+    "36": "One UUID identifies one user intent. Same event duplicates queue behind the row lock; cross-event duplicates resolve through the unique constraint and rollback. P8 can replay committed intents before entering the hot transaction. Keys are stored with successful bookings and do not expire. Signup still has no replay-response contract.",
+    "37": "The original direct-send gap is historical: P3 now writes an outbox; P4 relay publishes SNS and fan-outs to independent queues. Event-carried state keeps workers out of the VPC. Email dedup uses booking.confirmed:<bookingId>, not envelope messageId.",
+    "38": "AWS email queue visibility is 60 s; the older 30 s local-only phase is historical. Backoff is 10/40/120 s, no jitter. Email dedup is a conditional completed-job record after send with a 30-day TTL; two-workers/send-before-record windows remain. Partial-batch reporting must be enabled on the mapping.",
+    "39": "The supported command is pnpm stack:check, not pnpm doctor. pnpm dev runs idempotent setup before apps; reset is separate and local-only. Moto now supplies SNS/S3 and related queues while ElasticMQ remains for legacy exercises. No owner env or server changes are implied by these documents.",
+    "40": "P4 now routes API publishing through SNS, so historical API sqs:SendMessage permissions are superseded by sns:Publish. The single imageServices list feeds registry and publish permissions. Lambda/SES/IAM quotas and delivery require live acceptance; historical preview counts are not a current preview.",
+    "41": "Four symptom alarms, SNS email and a dashboard are defined; subscription confirmation and live signal checks remain owner acceptance. P10 adds webVital logs. Correlation ids are validated UUIDs, not timed traces. Tracing/SLO resources remain explain-only.",
+    "42": "The queue adapter now publishes SNS rather than the P3 SQS target. The outbox invariant and at-least-once duplicate window remain. Batches are 10, idle polling 1 s, retry delay capped at 60 s without maximum attempts. No historical-booking backfill or sent-row retention job exists.",
+    "43": "Ticket id is bookingId:seat; storage uses owner keys and a date GSI. A creating record reserves canonical token/object identity, deterministic PNG writes resume, ready skips repeated work. HMAC proves issuance, not confidentiality or one-time admission. Automated key rotation/check-in are explain-only.",
+    "44": "Owner-scoped API verifies every ticket record against booking identity before issuing 120 s signed GETs. Admin poster PUT signs exact declared headers; bounded byte/header checks and ETag-pinned copy publish an immutable key. This is not malware scanning/full decoding. Dynamo pages are paginated internally; the final owner response is not bounded yet.",
+    "45": "Search uses events.search with literal escaped title/venue terms, pg_trgm GIN and (starts_at,id) keyset traversal. The cursor preserves microsecond ordering and a stable upcoming cutoff, not a DB snapshot. SSR and browser use the same infinite-query key. Fixed-height virtualization bounds DOM, not retained page memory.",
+    "46": "Redis is advisory admission; every confirmed booking still commits in Postgres. Idempotent retries at zero stock replay correctly. Settlement can be ambiguous after network/commit failures; versioned reconciliation avoids overwriting in-flight debits. Waiting rooms, queued booking, customer timed holds and autoscaling are not built.",
+    "47": "P10 is locally production-tested: exact mutation Origin/metadata, fresh nonce CSP/no-store HTML, bounded indexed sessions and revocation, database deadlines, anonymous vitals and axe. CI gates critical dependency/image findings. Audit has 0 critical, high braces and moderate esbuild remain. Trivy execution/AWS headers, logs and live deployment remain acceptance."
+  }
+}

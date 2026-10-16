@@ -17,7 +17,7 @@ flowchart LR
    uncommitted changes).
 2. Add a new entry at the top: `## YYYY-MM-DD · <commit subject>`, a `Why:` line, and one line per
    changed file: which sections were added or changed, and why.
-3. A commit can't contain its own hash, so write `Commit: 97f9cab`,
+3. A commit can't contain its own hash, so write `Commit: filled in by the next handbook commit`,
    and replace that text in the **previous** entry with its real hash
    (`git log -1 --format=%h -- docs/handbook`).
 
@@ -25,9 +25,135 @@ flowchart LR
 
 ---
 
-## 2026-10-15 · docs(interviews): add source-linked scenarios and offline practice (D2)
+## 2026-10-15 · docs(handbook): complete the learning path and pending catch-up (D3)
 
 Commit: filled in by the next handbook commit
+
+Why: close the reduced series with an ordered learning path and current teaching material, while preserving measured history and explicit live-acceptance limits.
+
+- `00-big-picture.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+- `PENDING.md`: clear 25 entries only after hashing and mapping them to 23 step docs, cards, scenarios and ADRs.
+- `README.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+- `ROADMAP.md`: mark all reduced build/doc phases complete and retain the live AWS/CI acceptance list.
+- `app-story.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+- `aws-foundations.md`: environment credentials replace committed profile; dedicated migration definition and current IAM flow.
+- `concept-map.md`: index all 151 cards with current status and anchored locations.
+- `concepts/accessible-forms.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/alerting.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/authn-vs-authz.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/autoscaling.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/aws-lambda.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cache-aside.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cache-filter-keys.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cache-invalidation.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cache-key-versioning.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cache-stampede.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cd-oidc.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cdn-caching.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/ci-pipeline.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cloudfront.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cloudwatch-logs.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/connection-pooling.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/correlation-ids.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/cost-switches.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/csp.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/csr-vs-ssr.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/csrf.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/dead-letter-queue.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/door-checkin.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/dynamodb.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/e2e-tests.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/ecr.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/execution-vs-task-role.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/explain-analyze.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/fail-fast.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/graceful-degradation.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/graceful-shutdown.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/http-status-codes.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/idempotency.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/image-scanning.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/immutable-image-tags.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/indexing.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/infrastructure-as-code.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/inventory-gate.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/keyset-pagination.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/least-privilege.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/lighthouse-ci.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/live-seats.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/metrics.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/migrations.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/next-data-cache.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/origin-protection.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/outbox.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/postgres-page-cache.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/presigned-urls.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/query-invalidation.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/rate-limiting.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/rbac.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/release-guard.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/reminders.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/retry-policy.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/search-races.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/secrets-management.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/secrets-manager.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/server-to-server-calls.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/service-connect.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/ses-email.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/session-cookie.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/session-revocation.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/sessions-vs-jwt.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/slo-error-budget.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/sns.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/sqs.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/stale-while-revalidate.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/tanstack-query.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/task-definition.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/testing-pyramid.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/ticket-signing.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/tls-termination.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/tracing.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/trpc-context.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/trust-proxy.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/ttl.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/twelve-factor-config.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/virtualization.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/web-vitals.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/xss.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `concepts/zero-downtime-deploys.md`: current definition, source anchors, settings, failure/scale answers and story links; remove superseded claims.
+- `decisions/0002-events-cache-aside-fail-open.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0003-cache-coordination.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0004-generation-swr-keys.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0005-dynamic-nonce-html.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0006-roles-and-sessions.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0007-oidc-build-once.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0008-private-service-connect.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0009-locked-idempotent-booking.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0010-outbox-relay.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0011-fanout-workers.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0012-ticket-state-assets.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0013-search-keyset-window.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0014-advisory-sale-gate.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0015-observability-and-gates.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `decisions/0016-local-emulator-boundaries.md`: record context, options, decision, consequences and revisit criteria with a small boundary diagram.
+- `generated/catchup-coverage.json`: rebuild deterministic source/scenario data or preserve every cleared entry’s evidence and destinations.
+- `generated/code-tours.json`: rebuild deterministic source/scenario data or preserve every cleared entry’s evidence and destinations.
+- `generated/scenarios.json`: rebuild deterministic source/scenario data or preserve every cleared entry’s evidence and destinations.
+- `glossary.md`: correct ACM/internal URL/cache freshness and define the series vocabulary.
+- `guides/cicd-story.md`: current release/source/scenario links and offline navigation; fix zero-state/theme/source-to-map behavior.
+- `guides/code-tours.html`: current release/source/scenario links and offline navigation; fix zero-state/theme/source-to-map behavior.
+- `guides/index.html`: five-stop learning path, saved checks, keyboard/theme support and shelf linking every guide.
+- `guides/infra-explorer.html`: current release/source/scenario links and offline navigation; fix zero-state/theme/source-to-map behavior.
+- `guides/interview-scenarios.md`: current release/source/scenario links and offline navigation; fix zero-state/theme/source-to-map behavior.
+- `guides/scenarios.html`: current release/source/scenario links and offline navigation; fix zero-state/theme/source-to-map behavior.
+- `infra-story.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+- `interview-drills.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+- `system-design.md`: current paths, diagrams and reading links, with implemented/inactive/explain-only status kept distinct.
+
+Validation: 404 unit tests/57 files, typecheck, lint, actionlint and docs:check pass; source generators are fresh (332 snippets, 152 files). Headless checks cover 144 map tour navigations, 220 scenario visits and four start/source configurations across light/dark and 1280/1024 widths, with no browser errors. App/shared/infra TypeScript emits identical JavaScript after comment anchors; workflow/guard edits are comments only. Full app e2e, image scans, AWS acceptance and Pulumi preview were not repeated for this documentation-only phase. Mermaid CLI validated all 364 catch-up diagrams. The generator now includes .mts/.cts, and direct source-to-tour / managed-zone collapse checks pass.
+
+## 2026-10-15 · docs(interviews): add source-linked scenarios and offline practice (D2)
+
+Commit: d5ca53b
 
 Why: practice the implemented decisions and defend proposed extensions without confusing them with shipped features.
 
@@ -71,7 +197,7 @@ Why: narrow the remaining builds to P7, P8 and P10, with deferred features taugh
 
 ## 2026-10-15 · feat(bookings): persist confirmations in a transactional outbox (series 2, P3)
 
-Commit: 8b4cb33
+Commit: 35ee5b6
 
 Why: P3 permits anchor stubs so new code stays discoverable without writing the deferred guides.
 

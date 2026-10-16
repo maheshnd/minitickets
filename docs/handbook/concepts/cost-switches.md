@@ -2,116 +2,75 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: DevOps & CI/CD · Status: ✅ built · Step docs: [14 data](../../14-infra-data.md) (section 3.10), [17](../../17-infra-ecs-api.md) (3.15), [19](../../19-infra-cloudfront.md) (3.13), [20 deploy day](../../20-deploy-day.md)
+Area: DevOps & CI/CD · Status: ✅ built in repository; live acceptance is separate
 
 ## 1. In one line
 
-Three Pulumi config switches, `dataEnabled`, `computeEnabled` and `entryEnabled`, create or delete the
-layers that cost money every hour, so the stack costs almost nothing while we are not working.
+Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off.
 
 ## 2. Real-life comparison
 
-Light switches per room. The building (network, security groups) stays, but you switch off the
-expensive rooms (database, kitchen, reception) at night.
+A sealed package is built once, then checked at a gate before the manager installs that exact version.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    always["Always on, ~$0:<br/>network, SGs, budget, ECR"] --> data["dataEnabled<br/>RDS, Valkey, secret"]
-    data --> compute["computeEnabled<br/>cluster, roles, api"]
-    compute --> entry["entryEnabled<br/>ALB, CloudFront, web"]
+    n0["CI tests"] --> n1
+    n1["Publish SHA once"] --> n2
+    n2["Approved CD plus migration"] --> n3
+    n3["Roll and smoke test"]
 ```
-
-Each switch needs the ones to its left; `index.ts` refuses invalid combinations.
 
 ## 4. Where in our code
 
 - Anchor: `infra/index.ts` · `dataEnabled`, `computeEnabled`, `entryEnabled` and the two `RunError` checks.
 
-Step by step:
-
-1. `config.getBoolean("dataEnabled") ?? false`: missing = off.
-2. Each expensive layer is `dataEnabled ? createX(...) : undefined`.
-3. `computeEnabled && !dataEnabled` → `pulumi.RunError` with a clear message; same for entry without
-   data and compute.
-4. Outputs of switched-off layers are `null` (not `undefined`, which would warn on every preview).
-5. Off deletes for real: RDS has no final snapshot ([backups-dr](backups-dr.md)).
+`infra/Pulumi.dev.yaml` commits the shape; `apps/api/src/config/env.ts` validates INVENTORY_GATE_ENABLED. Proposed feature flags belong in validated API config/service policy with browser-safe public values only. Incident response starts from symptom, recent release, health/queue/DB evidence and reversible app rollback, not an unreviewed infrastructure teardown.
 
 ## 5. See it yourself
 
-```bash
-cd infra
-pulumi config get dataEnabled; pulumi config get computeEnabled; pulumi config get entryEnabled
-pulumi config set entryEnabled true && pulumi preview    # without data/compute: the RunError message
-pulumi config set entryEnabled false
-```
+`infra/Pulumi.dev.yaml` commits the shape; `apps/api/src/config/env.ts` validates INVENTORY_GATE_ENABLED. Proposed feature flags belong in validated API config/service policy with browser-safe public values only. Incident response starts from symptom, recent release, health/queue/DB evidence and reversible app rollback, not an unreviewed infrastructure teardown.
 
-(The preview is read-only. Only the owner runs `pulumi up`.)
+Failure thought experiment: Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
 
 ## 6. How it connects
 
-- **Uses ←** [infrastructure-as-code](infrastructure-as-code.md).
-- **Gives →** low running cost; the deploy-day on/off routine; [budget alerts](budget-alerts.md) as the
-  safety net when someone forgets "off".
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#delivery-rollback) and [explorer tour](../guides/infra-explorer.html?tour=deploy).
 
 ## 7. Our settings and WHY
 
-| Layer | ~Per hour | Why switchable |
-| ----- | --------- | -------------- |
-| data | ~$0.033 | RDS and Valkey bill every hour they exist. |
-| compute | ~$0.008 | Tasks and public IPs bill per second. |
-| entry | ~$0.04 | The ALB has a fixed hourly price. |
-| everything on | ~$0.08 | About $2 a day if forgotten ([docs/20](../../20-deploy-day.md)). |
+Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off. A reversible behavior switch can reduce blast radius but stale flags create hidden paths.
 
 ## 8. Trade-offs
 
-- **Pros:** dev costs cents per session; every "on" is a fresh, reproducible build.
-- **Cons:** data is lost on "off"; "on" takes 25-40 minutes; CloudFront delete is slow.
+Blue/green costs overlapping capacity and still shares data migration risk. Remote flag services add availability and privacy dependencies.
 
 ## 9. Alternatives and when to choose them
 
-- **Scale to zero** (desired count 0, Aurora Serverless pause): keep data, pay less while idle.
-- **Scheduled start/stop** (EventBridge, RDS stop): automatic nightly savings.
-- **Ephemeral preview environments per pull request:** teams.
+10x: flag owner/expiry and compatibility tests. 100x: staged cohorts, audit history and automated canary criteria.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Forgetting "off": the budget alert emails eventually.
-- Wrong order: `RunError` stops the program before anything changes.
-
-## 11. Reach / Allowed / Password
-
-Not a connection.
-
-## 12. Cost
-
-This card is about cost: everything off leaves only cents a month (ECR storage).
+Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We switch the expensive parts of AWS off when not using them.
-- **Senior:** Three boolean config switches gate the data, compute and entry layers; `index.ts` refuses
-  invalid combinations; outputs become null when off. Everything on is about 8 cents an hour; off is
-  nearly free.
-- **Lead:** For a team I'd automate this (scheduled scale-down or ephemeral environments) and keep
-  production always on with budgets per environment, because a manual switch depends on discipline.
+- **Simple:** Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off.
+- **Senior:** An environment switch controls infrastructure shape; a product feature flag controls behavior and needs ownership, expiry and safe defaults. MiniTickets commits data/compute/entry/CDN switches and uses a runtime inventory gate setting. It has rolling ECS deployments; blue/green and a general flag service are explain-only.
+- **Lead:** 10x: flag owner/expiry and compatibility tests. 100x: staged cohorts, audit history and automated canary criteria.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not just stop RDS?* AWS restarts a stopped RDS instance automatically after 7 days, and the
-  ALB, tasks and IPs would still cost money.
-- *Why null outputs?* Undefined outputs make Pulumi warn on every preview.
+Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
 
 ## 15. Say it in 30 seconds
 
-"Three config switches create or delete the data, compute and entry layers, in that dependency order,
-with clear errors for invalid combinations. Everything on costs about 8 cents an hour; off, only ECR
-storage remains."
+An environment switch controls infrastructure shape; a product feature flag controls behavior and needs ownership, expiry and safe defaults. MiniTickets commits data/compute/entry/CDN switches and uses a runtime inventory gate setting. It has rolling ECS deployments; blue/green and a general flag service are explain-only.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
 
 ## Where it appears in the story
 

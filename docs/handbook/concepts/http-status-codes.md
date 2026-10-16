@@ -37,7 +37,7 @@ Our table (tRPC code → HTTP status from responses recorded against a local api
 | 200 | Success | every successful call |
 | 400 | Invalid input (`ZodError`) | signup with a bad email |
 | 401 | No or bad session; wrong login | `UNAUTHORIZED`: `account.profile` without a cookie; login with a wrong password |
-| 403 | Logged in but not allowed | `FORBIDDEN`: defined, not used yet (no roles) |
+| 403 | Logged in but not allowed | `FORBIDDEN`: admin-only mutations reject authenticated non-admin users |
 | 404 | Not found | `NOT_FOUND`: profile of a deleted user |
 | 405 | Wrong method | POST to a query (`auth.me`) |
 | 409 | Conflict with existing data | `CONFLICT`: duplicate email on signup |

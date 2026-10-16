@@ -2,113 +2,79 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Auth & Security · Status: 🟡 partial (React escaping + HttpOnly cookie; no Content-Security-Policy) · Step doc: [07 login](../../07-login-session.md)
+Area: Auth & Security · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**XSS** is an attacker's JavaScript running inside our page; React escapes everything we render, and
-the session cookie is HttpOnly so even injected script can't steal it, but we have no
-Content-Security-Policy yet.
+XSS runs attacker code in a trusted page. React escaping, HttpOnly cookies and nonce CSP reduce exposure; CSP is not a sanitizer and a trusted-origin injection could still bypass CSRF metadata.
 
 ## 2. Real-life comparison
 
-A notice board where anyone can pin a note. If the board shows notes as written text (escaping), a
-note saying "open the safe" is just text. If it treats notes as instructions, the note runs. HttpOnly
-is the safe key kept where notes can't reach.
+A guard checks both the visitor and the particular action; a readable invitation is not permission to every room.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    data["email from api<br/>(could contain markup)"] --> react["React {profile.data.email}<br/>escapes as text"]
-    react --> page["shown as text, not HTML"]
-    script["injected script (if any)"] -.->|"HttpOnly: can't read sid"| cookie["sid cookie"]
+    n0["Fresh request nonce"] --> n1
+    n1["Allowed scripts only"] --> n2
+    n2["Escaped React output"] --> n3
+    n3["CI advisory gates"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `apps/api/src/procedures/auth.ts` · `cookieOptions.httpOnly: true`: limits the damage.
-- Anchor: `apps/web/src/features/account/components/profile-card.tsx` · `{profile.data.email}`: user data rendered through React's escaping.
+- Anchor: `apps/api/src/procedures/auth.ts` — `cookieOptions`; follow the numbered comments at this boundary.
+- Anchor: `apps/web/src/features/account/components/profile-card.tsx` — `memberSince`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. React turns `{value}` into a text node; `<`, `>` and quotes are never parsed as HTML.
-2. We never use `dangerouslySetInnerHTML`, `eval`, or put user data into `href` without checks
-   (`getSafeNext` refuses `javascript:` URLs: [open-redirect](open-redirect.md)).
-3. Emails are validated as emails, which already blocks most markup at signup.
-4. HttpOnly: even if a script ran, `document.cookie` has no `sid` (e2e-tested,
-   [session-cookie](session-cookie.md)).
-5. **Missing:** a Content-Security-Policy header that would stop inline or third-party scripts from
-   running at all.
+`apps/web/src/proxy.ts` generates/overwrites nonce headers; `lib/security-policy.ts` defines script policy; `lib/trpc/client.ts` disables Zod JIT to avoid eval probes. CI audits critical dependencies and scans three images with Trivy CRITICAL. `pnpm demo:security` asserts no CSP violations. Audit: 0 critical, one high braces and one moderate esbuild remain; image scan execution is unverified locally.
 
 ## 5. See it yourself
 
-```bash
-grep -rn "dangerouslySetInnerHTML\|eval(" apps/web/src     # nothing
-```
+Run `pnpm demo:security` and inspect the asserted outcome described above.
 
-On AWS or locally, check response headers of `/`: there is no `content-security-policy` header.
-
-**Break it on purpose (thought experiment):** render
-`<div dangerouslySetInnerHTML={{ __html: profile.data.email }} />`. Any HTML stored in a user field
-would now run in every viewer's browser.
+Failure thought experiment: Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** React's rendering, [session-cookie](session-cookie.md),
-  [validation-at-boundaries](validation-at-boundaries.md).
-- **Gives →** protection of the session; pairs with [csrf](csrf.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#csp-xss) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-Rely on React escaping and HttpOnly; no raw HTML anywhere. WHY: the two strongest defaults, free.
+XSS runs attacker code in a trusted page. React escaping, HttpOnly cookies and nonce CSP reduce exposure; CSP is not a sanitizer and a trusted-origin injection could still bypass CSRF metadata. Defense in depth reduces damage from accidental injection and known dependency flaws.
 
 ## 8. Trade-offs
 
-- **Pros:** no XSS sink in our code today; cookie theft impossible by design.
-- **Cons:** an XSS bug could still act as the user (send requests from the page); no CSP as a second
-  wall; third-party scripts (none today) would be trusted fully.
+Nonce pages require dynamic/no-store HTML. Style attributes remain allowed for current UI. Scanners cannot prove safety and unfixed findings need tracked decisions.
 
 ## 9. Alternatives and when to choose them
 
-- **Content-Security-Policy** (with nonces in Next.js): blocks injected scripts; the next step.
-- **Sanitisers (DOMPurify):** when rich text must be rendered.
-- **Trusted Types:** browser-enforced rules for DOM sinks.
+10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-A future feature showing ticket text as HTML (Markdown preview) without sanitising: stored XSS.
-Nothing would alert us; code review and a CSP would.
+Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We show user text as text, never as code, and the login cookie can't be read by
-  scripts.
-- **Senior:** React escapes all rendered values and we have no `dangerouslySetInnerHTML`; redirect
-  targets are validated so `javascript:` URLs can't sneak in; the session cookie is HttpOnly, which
-  an e2e test checks. There's no CSP header yet.
-- **Lead:** XSS defence is layers: safe rendering by default, sanitising where HTML is needed, a
-  strict CSP with nonces, and HttpOnly cookies to limit impact. Tickets will bring user-written
-  content, so CSP and a sanitiser come before that feature ships.
+- **Simple:** XSS runs attacker code in a trusted page.
+- **Senior:** XSS executes unwanted code in a trusted page. Validate input, render escaped text and use a per-request nonce CSP to limit script execution. Production does not allow unsafe-eval. CI dependency and image scanners catch known advisories, not every vulnerability or malicious business rule. Gates need a clear severity policy and honest residual findings.
+- **Lead:** 10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Stored vs reflected vs DOM XSS?* Saved in the database; echoed from the request; created by
-  client-side code.
-- *Does HttpOnly stop XSS?* No, it limits it: the script can't steal the cookie but can act as the
-  user.
+Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy.
+
+What must differ on each nonce HTML request? **The nonce.**
 
 ## 15. Say it in 30 seconds
 
-"React escapes everything we render and we never use dangerouslySetInnerHTML, redirect targets are
-validated, and the session cookie is HttpOnly so a script can't steal it. The gap is a
-Content-Security-Policy, which should come before tickets bring user-written content."
+XSS executes unwanted code in a trusted page. Validate input, render escaped text and use a per-request nonce CSP to limit script execution. Production does not allow unsafe-eval. CI dependency and image scanners catch known advisories, not every vulnerability or malicious business rule. Gates need a clear severity policy and honest residual findings.
 
-## 16. Status
+## 16. Status and production work
 
-🟡 partial. **To make it production-grade:** a strict Content-Security-Policy (nonces), a sanitiser
-for any rich text, security headers checked in CI.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
 
 ## Where it appears in the story
 
-- [App story: The app security story](../app-story.md#the-app-security-story)
+- [app-story: 4b. Mutation admission and browser security](../app-story.md#4b-mutation-admission-and-browser-security)

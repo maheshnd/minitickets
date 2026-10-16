@@ -3,7 +3,7 @@
 <style>
 :root{color-scheme:light dark;--paper:#f7f3e9;--ink:#243739;--muted:#546565;--line:#bdc9c0;--accent:#286a61;--wash:#e9eee4;--mark:#a34737}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 system-ui,sans-serif}body.dark{--paper:#172728;--ink:#e9e7d9;--muted:#a8bcb5;--line:#48625b;--accent:#9fd7b8;--wash:#223b36;--mark:#e99c85}h1,h2,h3{font-family:Georgia,serif;line-height:1.2}h1{font-size:2.5rem;margin:.4em 0}h2{font-size:1.8rem}h3{font-size:1.25rem}a{color:var(--accent);text-underline-offset:3px}button,input,select{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);padding:7px 10px;border-radius:3px}button{cursor:pointer}button:hover,button[aria-current=true]{background:var(--wash)}:focus-visible{outline:3px solid var(--mark);outline-offset:3px}header{max-width:1380px;margin:auto;padding:24px 32px;border-bottom:2px solid var(--ink)}nav,.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.eyebrow{letter-spacing:.15em;text-transform:uppercase;font-size:.75rem;color:var(--muted)}main{max-width:1380px;margin:auto;display:grid;grid-template-columns:minmax(250px,31%) minmax(0,1fr)}aside{padding:24px;border-right:1px solid var(--line)}aside label{display:block;margin:10px 0}aside input,aside select{width:100%}#questions{max-height:70vh;overflow:auto;list-style:none;padding:0}#questions button{border:0;border-bottom:1px solid var(--line);border-radius:0;width:100%;text-align:left;padding:14px 8px}small,.muted{color:var(--muted)}article{padding:28px 40px;min-width:0;border-left:4px solid var(--mark);margin-left:10px}article p{max-width:80ch}code{background:var(--wash);padding:2px 4px;overflow-wrap:anywhere;font-size:.9em}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--wash);padding:14px}.meta{display:flex;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}.status{border:1px solid var(--line);padding:0 8px}#diagram{width:100%;height:auto;max-height:150px;margin:20px 0}#diagram text{fill:var(--ink);font:15px system-ui}#diagram rect{fill:var(--wash);stroke:var(--accent)}#diagram path{stroke:var(--accent);fill:none}fieldset{border:1px solid var(--line);padding:16px}fieldset label{display:block;margin:12px 0}#feedback{border-left:3px solid var(--accent);padding-left:12px}#progress{font-size:.85rem}footer{max-width:1380px;margin:auto;border-top:1px solid var(--line);padding:24px 32px}[hidden]{display:none!important}@media(prefers-color-scheme:dark){body:not(.light){--paper:#172728;--ink:#e9e7d9;--muted:#a8bcb5;--line:#48625b;--accent:#9fd7b8;--wash:#223b36;--mark:#e99c85}}@media(max-width:1050px){article{padding:24px}header{padding:24px}main{grid-template-columns:270px minmax(0,1fr)}}@media(max-width:760px){main{display:block}#questions{max-height:260px}aside{border-right:0;border-bottom:1px solid var(--line)}article{margin:0}}
 </style></head><body>
-<header><p class="eyebrow">MiniTickets field notebook · 55 scenarios</p><nav aria-label="Learning tools"><a href="../README.md">Handbook</a><a href="infra-explorer.html">City explorer</a><a href="code-tours.html">Code tours</a><a href="interview-scenarios.md">Full written guide</a><button id="theme">Switch theme</button></nav><h1>Explain it. Then defend it.</h1><p>Trace a real decision from the question to the code. Proposed features say exactly where they would go.</p><div class="toolbar"><label><input type="checkbox" id="interview"> Interview mode</label><button id="previous">Previous</button><button id="next">Next</button><span id="progress" role="status"></span></div></header>
+<header><p class="eyebrow">MiniTickets field notebook · 55 scenarios</p><nav aria-label="Learning tools"><a href="index.html">Start here</a><a href="../README.md">Handbook</a><a href="infra-explorer.html">City explorer</a><a href="code-tours.html">Code tours</a><a href="interview-scenarios.md">Full written guide</a><button id="theme">Switch theme</button></nav><h1>Explain it. Then defend it.</h1><p>Trace a real decision from the question to the code. Proposed features say exactly where they would go.</p><div class="toolbar"><label><input type="checkbox" id="interview"> Interview mode</label><button id="previous">Previous</button><button id="next">Next</button><span id="progress" role="status"></span></div></header>
 <main><aside aria-label="Scenario index"><label>Search questions and code<input type="search" id="search"></label><label>Area<select id="area"><option value="">All areas</option></select></label><label>Status<select id="status"><option value="">All statuses</option><option>built</option><option>partly</option><option>explain-only</option></select></label><p id="count" role="status"></p><ol id="questions"></ol></aside><article id="scenario" aria-live="polite"></article></main>
 <footer>Works offline. Progress is stored only in this browser. Built means locally implemented; live AWS acceptance remains separate. <a href="../../20-deploy-day.md">Owner acceptance runbook</a>.</footer>
 <script>
@@ -56,7 +56,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/web/src/features/events/hooks/use-event-search.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+    "codeLink": "code-tours.html#search-races%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts%3A6"
   },
   {
     "id": "debounce-throttle",
@@ -87,7 +87,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/web/src/features/events/components/virtual-event-list.tsx"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fhooks%2Fuse-event-search.ts"
+    "codeLink": "code-tours.html#virtualization%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx%3A11"
   },
   {
     "id": "virtual-lists",
@@ -117,7 +117,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/web/src/features/events/components/virtual-event-list.tsx"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx"
+    "codeLink": "code-tours.html#virtualization%3Aapps%2Fweb%2Fsrc%2Ffeatures%2Fevents%2Fcomponents%2Fvirtual-event-list.tsx%3A11"
   },
   {
     "id": "rendering-models",
@@ -244,7 +244,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/services/telemetry.ts"
     ],
     "source": "https://web.dev/articles/vitals",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fsrc%2Ffeatures%2Ftelemetry%2Fhooks%2Fuse-web-vitals.ts"
+    "codeLink": "code-tours.html#web-vitals%3Aapps%2Fapi%2Fsrc%2Fservices%2Ftelemetry.ts%3A5"
   },
   {
     "id": "bundle-size",
@@ -336,7 +336,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/web/e2e/security.spec.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fweb%2Fe2e%2Fsecurity.spec.ts"
+    "codeLink": "code-tours.html#accessible-forms%3Aapps%2Fweb%2Fe2e%2Fsecurity.spec.ts%3A1"
   },
   {
     "id": "live-seats",
@@ -457,7 +457,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/queries/bookings.ts"
     ],
     "source": "https://www.postgresql.org/docs/current/transaction-iso.html",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "idempotency",
@@ -581,7 +581,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/queries/rate-limits.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Frate-limits.ts"
+    "codeLink": "code-tours.html#rate-limiting%3Aapps%2Fapi%2Fsrc%2Fqueries%2Frate-limits.ts%3A8"
   },
   {
     "id": "api-n-plus-one",
@@ -613,7 +613,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/server.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "postgres-cache",
@@ -674,7 +674,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/drizzle/0008_lethal_amazoness.sql"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fqueries%2Fevent-search.ts"
+    "codeLink": "code-tours.html#keyset-pagination%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fevent-search.ts%3A7"
   },
   {
     "id": "migrations",
@@ -765,7 +765,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/services/single-flight.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fsingle-flight.ts"
+    "codeLink": "code-tours.html#cache-stampede%3Aapps%2Fapi%2Fsrc%2Fservices%2Fsingle-flight.ts%3A16"
   },
   {
     "id": "cache-invalidation",
@@ -856,7 +856,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/services/event-filters.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fevent-filters.ts"
+    "codeLink": "code-tours.html#cache-filter-keys%3Aapps%2Fapi%2Fsrc%2Fservices%2Fevent-filters.ts%3A17"
   },
   {
     "id": "outbox",
@@ -886,7 +886,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/queries/bookings.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#outbox%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A82"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fapi%2Fsrc%2Fqueries%2Fbookings.ts%3A47"
   },
   {
     "id": "fanout",
@@ -917,7 +917,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/queues/jobs.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fjobs%2Fbooking-events.ts"
+    "codeLink": "code-tours.html#sns%3Aapps%2Fapi%2Fsrc%2Fqueues%2Fjobs.ts%3A13"
   },
   {
     "id": "consumer-idempotency",
@@ -925,7 +925,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
     "area": "Async",
     "status": "built",
     "tour": "booking",
-    "answer": "It can skip known completed message ids, but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.",
+    "answer": "It can skip known completed business keys (booking.confirmed:\u003cbookingId>), but a crash after SES accepts and before marking complete can still send twice on retry. Marking complete before sending risks loss. Ticket issuance converges more strongly using a canonical booking/seat id, a creating reservation, a deterministic S3 key and a final ready state.",
     "how": "`apps/worker/src/handlers/booking-confirmed.ts` and `processed-jobs.ts` mark successful mail after send. `handlers/tickets.ts` reserves a canonical ticket and resumes partial work; `tickets/store.ts` uses conditional writes. `pnpm demo:tickets` checks duplicates and crash-resume behavior.",
     "flow": [
       "Receive at least once",
@@ -947,7 +947,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/worker/src/handlers/booking-confirmed.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Fhandlers%2Fbooking-confirmed.ts"
+    "codeLink": "code-tours.html#idempotency%3Aapps%2Fworker%2Fsrc%2Fhandlers%2Fbooking-confirmed.ts%3A36"
   },
   {
     "id": "dlq-failure",
@@ -1038,7 +1038,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/services/booking-inventory.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fbooking-inventory.ts"
+    "codeLink": "code-tours.html#inventory-gate%3Aapps%2Fapi%2Fsrc%2Fservices%2Fbooking-inventory.ts%3A10"
   },
   {
     "id": "waiting-room",
@@ -1160,7 +1160,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "infra/src/publish-policy.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=infra%2Fsrc%2Fcicd.ts"
+    "codeLink": "code-tours.html#cd-oidc%3Ainfra%2Fsrc%2Fcicd.ts%3A60"
   },
   {
     "id": "network-boundaries",
@@ -1284,7 +1284,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/services/posters.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fservices%2Fposters.ts"
+    "codeLink": "code-tours.html#presigned-urls%3Aapps%2Fapi%2Fsrc%2Fservices%2Fposters.ts%3A11"
   },
   {
     "id": "reminders",
@@ -1344,7 +1344,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/worker/src/tickets/token.ts"
     ],
     "source": "https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+    "codeLink": "code-tours.html#ticket-signing%3Aapps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts%3A6"
   },
   {
     "id": "regions-cost",
@@ -1434,7 +1434,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "apps/api/src/http/security.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fapi%2Fsrc%2Fhttp%2Fsecurity.ts"
+    "codeLink": "code-tours.html#csrf%3Aapps%2Fapi%2Fsrc%2Fhttp%2Fsecurity.ts%3A5"
   },
   {
     "id": "csp-xss",
@@ -1495,7 +1495,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       "infra/src/tickets/iam.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=apps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts"
+    "codeLink": "code-tours.html#ticket-signing%3Aapps%2Fworker%2Fsrc%2Ftickets%2Ftoken.ts%3A6"
   },
   {
     "id": "delivery-rollback",
@@ -1558,7 +1558,7 @@ for(const id of ['search','area','status'])$(id).addEventListener(id==='search'?
       ".github/workflows/cd.yml"
     ],
     "source": "",
-    "codeLink": "code-tours.html?q=scripts%2Fdeploy-guard.sh"
+    "codeLink": "code-tours.html#release-guard%3Ainfra%2Fsrc%2Frelease.ts%3A35"
   },
   {
     "id": "observability",

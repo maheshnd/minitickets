@@ -10,6 +10,7 @@ const sns = new SNSClient({
   maxAttempts: 1,
   requestHandler: { connectionTimeout: 1000, requestTimeout: 2000, throwOnRequestTimeout: true },
 });
+// @concept: sns
 export const jobsEnabled = env.BOOKING_EVENTS_TOPIC_ARN !== undefined;
 
 // 2. SNS acceptance is independent of consumer completion. On failure the outbox row

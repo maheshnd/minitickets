@@ -2,128 +2,78 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Performance & Caching · Status: ✅ built · Step doc: [19 CloudFront](../../19-infra-cloudfront.md) (sections 3.2-3.4)
+Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-CloudFront keeps copies of the built JS and CSS files at the edge for up to a year, and never caches
-pages or API answers, because those depend on who is asking.
+Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces. Optional CloudFront events minimum/default TTL is zero; static hashed assets retain caching. CDN is inactive in committed dev shape.
 
 ## 2. Real-life comparison
 
-A newsstand keeps printed newspapers on the shelf (same for everyone). It never keeps copies of
-someone's bank statement to hand to the next customer.
+Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
 
 ## 3. Picture it
 
 ```mermaid
-flowchart TB
-    req["Request path"] --> q1{"/_next/static/* ?"}
-    q1 -->|"yes"| s["CachingOptimized<br/>cached, GET/HEAD"]
-    q1 -->|"no"| q2{"/trpc/* ?"}
-    q2 -->|"yes"| t["CachingDisabled + AllViewer<br/>all methods, cookie passed"]
-    q2 -->|"no"| d["default: CachingDisabled + AllViewer<br/>GET/HEAD"]
+flowchart LR
+    n0["User cookie"] --> n1
+    n1["Dynamic private HTML"] --> n2
+    n2["Browser only"] --> n3
+    n3["No shared CDN page"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/entry/cdn.ts` · `orderedCacheBehaviors`, `defaultCacheBehavior`: the three behaviors.
+- Anchor: `infra/src/entry/cdn.ts` — `module configuration`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. Managed policies are looked up by name: `Managed-CachingOptimized`, `Managed-CachingDisabled`,
-   `Managed-AllViewer`.
-2. `/_next/static/*` → CachingOptimized: the cache key is the path only (plus the normalised
-   `Accept-Encoding`), TTL between 1 second and 1 year, honouring the file's `Cache-Control`. Next.js
-   sends `max-age=31536000, immutable` for these hashed files.
-3. `/trpc/*` → CachingDisabled + AllViewer: every request goes to the ALB with all headers, cookies
-   and query strings; all 7 methods allowed (POST for mutations).
-4. Default (pages) → CachingDisabled + AllViewer, GET and HEAD only: pages show who is logged in.
-5. Order: ordered behaviors top to bottom, first match wins; the default catches the rest.
-
-**Why `/trpc/*` must never be cached:** the answer depends on the `sid` cookie. If the cache key did
-not contain the cookie, one user's `account.profile` would be served to the next user
-([docs/19](../../19-infra-cloudfront.md), section 3.4).
+`apps/web/src/proxy.ts` and `apps/web/next.config.ts` guard HTML caching. `apps/web/src/features/events/server/cached-events.ts` only stores public catalogue data. `infra/src/entry/cdn.ts` has zero minimum/default TTL on the events policy. CloudFront is inactive: `cdnEnabled=false`. Run `pnpm demo:security`.
 
 ## 5. See it yourself
 
-```bash
-cd infra && APP=$(pulumi stack output appUrl)
-FILE=$(curl -s "$APP/" | grep -o '/_next/static/[^"]*\.js' | head -1)
-curl -s -o /dev/null -D - "$APP$FILE" | grep -i '^x-cache'   # Miss, then run again: Hit
-curl -s -o /dev/null -D - "$APP/" | grep -i '^x-cache'        # always Miss
-```
+Run `pnpm demo:security` and inspect the asserted outcome described above.
 
-**Break it on purpose (thought experiment, never deploy):** give `/trpc/*` CachingOptimized. Alice's
-profile response is cached by path; Mallory's request for the same path gets Alice's email.
+Failure thought experiment: Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [CloudFront](cloudfront.md); Next.js content-hashed file names.
-- **Gives →** fast static loads; [compression](compression.md) for the cached files; a safe API path
-  for the session cookie.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#private-page-cache) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
 
 ## 7. Our settings and WHY
 
-| Behavior | Cache | Why |
-| -------- | ----- | --- |
-| `/_next/static/*` | up to 1 year | Content hash in the name: a name never changes content. |
-| `/trpc/*` | never | Per-user answers. |
-| pages | never | Header shows the logged-in user. |
+Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces. Optional CloudFront events minimum/default TTL is zero; static hashed assets retain caching. CDN is inactive in committed dev shape. A cross-user cache leak exposes private data, and cached nonce HTML breaks CSP assumptions.
 
 ## 8. Trade-offs
 
-- **Pros:** static files come from the nearest edge and cost our tasks nothing; zero risk of
-  cross-user leaks on the api.
-- **Cons:** every page view still goes to Virginia; the landing page could be cached but isn't.
+Per-user edge keys are difficult to audit and multiply cache entries. No-store simplifies privacy at server cost. Static JS/images can still be cached.
 
 ## 9. Alternatives and when to choose them
 
-- **Cache public pages** with a short TTL and no cookie in the key: when pages stop depending on the
-  session (render user parts on the client).
-- **Cache some public api answers** with the right cache key: when there are public, shared queries.
-- **Invalidations:** for files whose names do not change (we don't need them).
+10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Per-user data cached: a data leak, noticed only by users. Prevent by design (CachingDisabled).
-- AllViewer missing: the cookie is not forwarded; nobody is ever logged in.
-- Static files not cached: `x-cache: Miss` every time; slower loads.
-
-## 11. Reach / Allowed / Password
-
-Not a connection. Note the **Password** angle: the cookie must be forwarded (`AllViewer`) and must
-never be part of a shared cache.
-
-## 12. Cost
-
-Free tier covers 1 TB and 10 million requests a month; every hit saves origin work.
+Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We cache the static files at the CDN and never cache personal data.
-- **Senior:** Three behaviors: content-hashed `/_next/static/*` with CachingOptimized, honouring
-  Next's one-year immutable header; `/trpc/*` and pages with CachingDisabled and AllViewer so the
-  cookie reaches the origin. `x-cache` shows Hit/Miss.
-- **Lead:** Cache keys are a security boundary. I'd only widen caching after making responses
-  explicitly public, and I'd monitor hit ratio to decide whether rendering changes are worth it.
+- **Simple:** Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces.
+- **Senior:** Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
+- **Lead:** 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *How do you deploy new JS without invalidating?* New content gets a new hashed name; old names stay
-  valid.
-- *Why not cache with the cookie in the key?* No two users share a session, so there is nothing to gain.
+Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
+
+Which CloudFront setting can override no-store? **A positive minimum TTL.**
 
 ## 15. Say it in 30 seconds
 
-"Only hashed static files are cached, for up to a year, because their names change with their
-content. Pages and `/trpc/*` use CachingDisabled with AllViewer, so the cookie reaches the origin and
-one user's answer can never be served to another."
+Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
 
 ## Where it appears in the story
 
-- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)
+- [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)

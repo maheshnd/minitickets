@@ -2,6 +2,7 @@ import type { SearchEventsInput } from "@minitickets/shared";
 import * as queries from "../queries/event-search";
 import { canonicalFilters } from "./event-filters";
 
+// @concept: keyset-pagination
 export async function searchEvents(input: SearchEventsInput, now = new Date()) {
   // 1. Keep the upcoming cutoff stable throughout a traversal; this is not a DB snapshot.
   const asOf = input.cursor?.asOf ?? now.toISOString();

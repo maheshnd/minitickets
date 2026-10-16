@@ -5,6 +5,7 @@ import { redis } from "../redis/client";
 import { redisOperation } from "./redis-operation";
 
 // 1. TIME gives every API task the same clock. Refill and consume happen in one atomic script.
+// @concept: rate-limiting
 export const TAKE_TOKEN = `
 local time = redis.call('TIME')
 local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)

@@ -7,6 +7,7 @@ import * as events from "../queries/events";
 import * as bookings from "../queries/bookings";
 import type { Log } from "./events";
 
+// @concept: inventory-gate
 export async function createGatedBooking(userId: string, input: BookTicketInput, log: Log, correlationId: string) {
   const { eventId, quantity, idempotencyKey } = input;
   const intent = createHash("sha256").update(`${userId}:${idempotencyKey}`).digest("hex");

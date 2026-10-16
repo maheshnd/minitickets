@@ -3,6 +3,7 @@ import * as inventory from "../queries/inventory";
 import { findById } from "../queries/events";
 import type { Log } from "./events";
 
+// @concept: inventory-gate
 export async function reconcileEvent(eventId: string) {
   // 1. Snapshot Redis BEFORE reading SQL. CAS refuses to overwrite a newer reservation/refund.
   const view = await inventory.snapshot(eventId);

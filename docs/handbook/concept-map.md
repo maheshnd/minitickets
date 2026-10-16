@@ -1,317 +1,226 @@
-# Concept map (the hub)
+# Concept map
 
 History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 
-Every concept an interview can touch, grouped by area. For each one: is it in our code, where,
-and which card explains it.
-
-```mermaid
-flowchart LR
-    map["concept-map.md<br/>(this file)"] --> card["concepts/slug.md<br/>one card per concept"]
-    card --> code["the code<br/>@concept: slug anchor"]
-    code -.->|"pnpm docs:check<br/>keeps them in sync"| card
-    map --> story["infra-story / app-story<br/>(the guided tour)"]
-```
-
-## How to read the table
-
-**Status**
-
-| Mark | Meaning |
-| ---- | ------- |
-| ✅ built | It is in our code. The card points at the exact file and symbol. |
-| 🟡 partial | Some of it is in our code. The card says what is missing for production. |
-| 📋 planned | Not in our app yet, but the step docs say we will build it. |
-| 📖 explain-only | Not in our app and not planned. We can explain it, and say where it would go. |
-
-**Where in our code** names a file and a symbol (a function, a variable or a setting). Never a line
-number, because line numbers move. Paths are short: `api/` means `apps/api/src/`, `web/` means
-`apps/web/src/`, `infra/` means `infra/src/` (unless the path starts with `infra/index.ts` or
-`infra/Pulumi`).
-
-**Card** is the card's name (its "slug"). The card will live at `concepts/<slug>.md`. A card
-becomes a link here when it is written. `P2`, `P3`, `P5` say in which phase of the
-[handbook spec](HANDBOOK_SPEC.md) it gets written:
-
-- **P2** = ✅ and 🟡 AWS / infra concepts (with `infra-story.md`)
-- **P3** = ✅ and 🟡 app concepts (with `app-story.md`)
-- **P5** = 📋 planned and 📖 explain-only concepts
-
-`pnpm docs:check` fails if a card exists but this map does not link to it.
-
-## Frontend
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| App Router: file-based routing, `app/` is routing only | ✅ | `web/app/page.tsx` → `HomePage`; `web/app/login/page.tsx` → `LoginPage`; `web/app/dashboard/page.tsx` → `DashboardPage` | [`app-router`](concepts/app-router.md) |
-| Server Components vs Client Components | ✅ | `web/app/layout.tsx` → `RootLayout` (server); `web/providers/query-provider.tsx` → `QueryProvider` (`"use client"`) | [`server-client-components`](concepts/server-client-components.md) |
-| Route guard in the Next.js proxy (UX only, not security) | ✅ | `web/proxy.ts` → `proxy`, `config.matcher` | [`route-guard-proxy`](concepts/route-guard-proxy.md) |
-| TanStack Query: the server-state cache | ✅ | `web/providers/query-provider.tsx` → `QueryProvider`; `web/features/auth/hooks/use-me.ts` → `useMe`; `web/features/events/hooks/use-events.ts` → `useEvents` | [`tanstack-query`](concepts/tanstack-query.md) |
-| Cache invalidation after a mutation | ✅ | `web/features/auth/hooks/use-login.ts` → `useLogin` (`invalidateQueries`); `use-logout.ts` → `useLogout` (`queryClient.clear`) | [`query-invalidation`](concepts/query-invalidation.md) |
-| tRPC client and request batching | ✅ | `web/lib/trpc/client.ts` → `makeTrpcClient` (`httpBatchLink`, `credentials: "include"`) | [`trpc-client`](concepts/trpc-client.md) |
-| Feature folders: components use hooks, never tRPC | ✅ | `web/features/account/hooks/use-profile.ts` → `useProfile`; `web/features/account/components/profile-card.tsx` → `ProfileCard` | [`feature-folders`](concepts/feature-folders.md) |
-| Client state vs server state | ✅ | `web/features/auth/components/signup-form.tsx` → `useState` (form state); `useSignup` (server state) | [`state-management`](concepts/state-management.md) |
-| Forms: shared-schema validation, accessible errors, focus | ✅ | `web/features/auth/components/signup-form.tsx` → `validate`, `focusField`; `web/components/ui/input.tsx` → `Input` | [`accessible-forms`](concepts/accessible-forms.md) |
-| Showing API errors in the UI (field errors, 401 redirect, error boundary) | ✅ | `signup-form.tsx` → `handleSubmit` (`onError`); `web/features/account/hooks/use-profile.ts` → `useProfile`; `web/app/events/error.tsx` → `EventsError` | [`ui-error-handling`](concepts/ui-error-handling.md) |
-| Tailwind CSS (utility classes) | ✅ | `apps/web/postcss.config.mjs`; `web/app/globals.css` | [`tailwind`](concepts/tailwind.md) |
-| Client-side vs server-side rendering (both measured) | 🟡 | `web/app/events/page.tsx` → `EventsPage`; `web/features/events/server/prefetch-events.ts` → `prefetchEvents`; `web/features/events/hooks/use-events.ts` → `useEvents`. CSR ✅, SSR ✅ locally, SSR on AWS 🟡 | [`csr-vs-ssr`](concepts/csr-vs-ssr.md) |
-| Streaming with `<Suspense>` | ✅ | `web/app/events/page.tsx` → `EventsPage` (`<Suspense>`); `web/features/events/components/event-list-skeleton.tsx` → `EventListSkeleton` | [`streaming-suspense`](concepts/streaming-suspense.md) |
-| Hydration and handing server data to the browser (dehydrate, `HydrationBoundary`) | ✅ | `web/lib/trpc/server.ts` → `getQueryClient`; `web/app/events/page.tsx` → `EventListWithServerData`; `web/features/events/components/event-date.tsx` → `EventDate` | [`hydration`](concepts/hydration.md) |
-| Server-to-server calls: web server → api (`API_INTERNAL_URL`) | 🟡 | `web/lib/server-env.ts` → `getServerEnv`; `web/lib/trpc/server.ts` → `getServerTrpc`. Not on AWS yet | [`server-to-server-calls`](concepts/server-to-server-calls.md) |
-| Rendering strategies: SSG, ISR (SSR and streaming: see above) | 📖 | Explain-only | `rendering-strategies` · P5 |
-| Optimistic updates | 📖 | Explain-only | `optimistic-updates` · P5 |
-| Web performance: Core Web Vitals, bundle size, code splitting | 📖 | Explain-only | `web-vitals` · P5 |
+The hub links every card to its implementation or proposed location. ✅ means built in the repository, 🟡 partial, 📖 explain-only, 📋 planned. AWS acceptance is a separate operational check. Start with the [learning path](guides/index.html), [source tours](guides/code-tours.html) or [scenarios](guides/scenarios.html).
 
 ## API
 
 | Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Fastify app: "build" apart from "listen" | ✅ | `api/app.ts` → `buildApp`; `api/server.ts` (`app.listen`) | [`fastify-app`](concepts/fastify-app.md) |
-| RPC vs REST (why tRPC) | ✅ | `api/trpc/router.ts` → `appRouter` | [`rpc-vs-rest`](concepts/rpc-vs-rest.md) |
-| End-to-end types: web imports only `type AppRouter` | ✅ | `api/trpc/router.ts` → `AppRouter`; `web/lib/trpc/client.ts` (`import type`) | [`end-to-end-types`](concepts/end-to-end-types.md) |
-| tRPC context, built once per request | ✅ | `api/trpc/context.ts` → `createContext`, `Context` | [`trpc-context`](concepts/trpc-context.md) |
-| tRPC middleware chain | ✅ | `api/trpc/init.ts` → `errorMapper`, `publicProcedure`, `protectedProcedure` | [`trpc-middleware`](concepts/trpc-middleware.md) |
-| Layered architecture: procedures → services → queries | ✅ | `api/procedures/auth.ts` → `authRouter`; `api/services/auth.ts` → `login`; `api/queries/users.ts` → `findByEmail` | [`layered-api`](concepts/layered-api.md) |
-| Central error handling: business error → HTTP status | ✅ | `api/errors.ts` → `AppError`; `api/trpc/init.ts` → `codeByKind`, `errorFormatter`; `api/app.ts` → `setErrorHandler` | [`error-handling`](concepts/error-handling.md) |
-| Validation at boundaries: input and output schemas | ✅ | `api/procedures/auth.ts` → `.input(SignupInput)`, `.output(PublicUserSchema)`; `packages/shared/src/schemas/auth.ts` | [`validation-at-boundaries`](concepts/validation-at-boundaries.md) |
-| Config validation: fail fast at startup | ✅ | `api/config/env.ts` → `EnvSchema`; `api/config/database.ts` → `DatabaseEnvSchema`; `web/lib/server-env.ts` → `getServerEnv` (at request time) | [`config-validation`](concepts/config-validation.md) |
-| HTTP methods and status codes | ✅ | `api/trpc/init.ts` → `codeByKind`; `api/app.ts` → `/ready` (503) | [`http-status-codes`](concepts/http-status-codes.md) |
-| Idempotency | 🟡 | `api/services/auth.ts` → `logout` (idempotent). Signup has no idempotency key. | [`idempotency`](concepts/idempotency.md) |
-| Stateless API servers | ✅ | `api/queries/sessions.ts` (sessions live in Redis, not in process memory) | [`stateless-servers`](concepts/stateless-servers.md) |
-| CORS | ✅ | `api/app.ts` → `app.register(cors, …)` (`origin: env.WEB_ORIGIN`, `credentials: true`) | [`cors`](concepts/cors.md) |
-| Reverse proxies and `X-Forwarded-For` (`trustProxy`) | ✅ | `api/config/trust-proxy.ts` → `trustProxyHops`; `api/app.ts` → `trustProxy` | [`trust-proxy`](concepts/trust-proxy.md) |
-| HTTP/1.1 vs HTTP/2 vs HTTP/3 | 🟡 | `infra/entry/cdn.ts` → `httpVersion: "http2and3"` (browser to edge only) | [`http-versions`](concepts/http-versions.md) |
-| GraphQL (over- and under-fetching) | 📖 | Explain-only | `graphql` · P5 |
-| gRPC | 📖 | Explain-only | `grpc` · P5 |
-| WebSockets, Server-Sent Events, long polling | 📖 | Explain-only | `realtime-transports` · P5 |
-| API gateway | 📖 | Explain-only | `api-gateway` · P5 |
-| API versioning | 📖 | Explain-only | `api-versioning` · P5 |
-| Pagination (offset vs cursor) | 📖 | Explain-only (`listUpcoming` has `limit 50`, no offset; keyset is explained in [`indexing`](concepts/indexing.md)) | `pagination` · P5 |
-
-## Data
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Postgres schema with Drizzle ORM (UUID keys) | ✅ | `api/db/schema/users.ts` → `users`; `api/db/schema/events.ts` → `events`; `api/db/client.ts` → `db` | [`drizzle-schema`](concepts/drizzle-schema.md) |
-| SQL migrations: generate, apply, one-off runner | ✅ | `apps/api/drizzle/0000_first_northstar.sql`; `api/db/migrate.ts`; `scripts/run-migrations.sh` | [`migrations`](concepts/migrations.md) |
-| CHECK constraints (the database refuses bad data) | ✅ | `api/db/schema/events.ts` → `events` (`check(...)` x3) | [`db-check-constraints`](concepts/db-check-constraints.md) |
-| Seed data (safe to run twice) | ✅ | `api/db/seed.ts` → `rows`, `onConflictDoNothing()` | [`seed-data`](concepts/seed-data.md) |
-| Connection pooling | ✅ | `api/db/client.ts` → `pool` (`max: 10`) | [`connection-pooling`](concepts/connection-pooling.md) |
-| Unique constraint vs check-then-insert (race condition) | ✅ | `api/services/auth.ts` → `signup`; `api/queries/users.ts` → `create`, `isUniqueViolation` | [`unique-constraint-race`](concepts/unique-constraint-race.md) |
-| Indexes (B-tree) | ✅ | `api/db/schema/events.ts` → `events` (`index("events_starts_at_idx")`); `api/queries/events.ts` → `listUpcoming`; `api/db/schema/users.ts` → `email … .unique()`. Composite, partial and keyset pagination: 📖 / 📋, in the card | [`indexing`](concepts/indexing.md) |
-| EXPLAIN and EXPLAIN ANALYZE (reading query plans) | 📖 | Explain-only (run by hand in `psql`; the card has a runbook for `listUpcoming`) | [`explain-analyze`](concepts/explain-analyze.md) |
-| SQL vs NoSQL | ✅ | `api/db/schema/users.ts` → `users` (SQL); `api/queries/sessions.ts` → `keyFor` (key-value) | [`sql-vs-nosql`](concepts/sql-vs-nosql.md) |
-| Transactions and ACID | 📖 | Explain-only (every write today is one statement) | `acid-transactions` · P5 |
-| Isolation levels | 📖 | Explain-only | `isolation-levels` · P5 |
-| Locking: pessimistic vs optimistic | 📖 | Explain-only | `locking` · P5 |
-| N+1 queries | 📖 | Explain-only | `n-plus-one` · P5 |
-| Normalization vs denormalization | 📖 | Explain-only | `normalization` · P5 |
-| Replication: primary and replicas | 📖 | Explain-only | `replication` · P5 |
-| Sharding vs partitioning | 📖 | Explain-only | `sharding-partitioning` · P5 |
-| Safe migrations: expand and contract | 📖 | Explain-only | `expand-contract-migrations` · P5 |
-| CAP theorem and BASE | 📖 | Explain-only | `cap-theorem` · P5 |
-
-## Auth & Security
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Password hashing with argon2id | ✅ | `api/services/auth.ts` → `signup` (`hash`), `login` (`verify`) | [`password-hashing`](concepts/password-hashing.md) |
-| User enumeration: equal timing, one error message | 🟡 | `api/services/auth.ts` → `DUMMY_HASH`, `login`. Signup still says "Email already registered". | [`user-enumeration`](concepts/user-enumeration.md) |
-| Server-side sessions in Redis vs JWT (and logout) | ✅ | `api/queries/sessions.ts` → `create`, `get`, `remove`, `keyFor`; `api/services/auth.ts` → `logout` | [`sessions-vs-jwt`](concepts/sessions-vs-jwt.md) |
-| Session cookie flags: HttpOnly, SameSite, Secure | ✅ | `api/procedures/auth.ts` → `cookieOptions` | [`session-cookie`](concepts/session-cookie.md) |
-| Authentication vs authorization | 🟡 | `api/trpc/init.ts` → `isAuthed`; `api/procedures/account.ts` → `profile` (only your own data; no roles) | [`authn-vs-authz`](concepts/authn-vs-authz.md) |
-| Protected procedures: the real auth check | ✅ | `api/trpc/init.ts` → `isAuthed`, `protectedProcedure` | [`protected-procedure`](concepts/protected-procedure.md) |
-| CSRF | 🟡 | `api/procedures/auth.ts` → `cookieOptions.sameSite`. Origin check: planned (Step 13, see [docs/19](../19-infra-cloudfront.md)). | [`csrf`](concepts/csrf.md) |
-| XSS | 🟡 | `api/procedures/auth.ts` → `cookieOptions.httpOnly`; React escapes output. No Content-Security-Policy. | [`xss`](concepts/xss.md) |
-| SQL injection: parameterized queries | ✅ | `api/queries/users.ts` → `findByEmail` (`eq(users.email, email)`) | [`sql-injection`](concepts/sql-injection.md) |
-| Open redirect protection | ✅ | `web/features/auth/lib/safe-next.ts` → `getSafeNext` | [`open-redirect`](concepts/open-redirect.md) |
-| Rate limiting: token bucket, leaky bucket, fixed / sliding window | 📋 | Not in our app yet (planned). `trustProxy` already gives the real visitor IP to key on. | `rate-limiting` · P5 |
-| Secrets management: never in code, images or state | ✅ | `infra/data/secrets.ts` → `createSecrets`; `infra/compute/task.ts` → `secrets`; `.dockerignore` | [`secrets-management`](concepts/secrets-management.md) |
-| Encryption in transit (TLS) | ✅ | `api/config/database.ts` → `ssl: { rejectUnauthorized: true }`; `apps/api/Dockerfile` → `NODE_EXTRA_CA_CERTS`; `infra/data/cache.ts` → `transitEncryptionEnabled` | [`tls-in-transit`](concepts/tls-in-transit.md) |
-| Encryption at rest | ✅ | `infra/data/postgres.ts` → `storageEncrypted`; `infra/data/cache.ts` → `atRestEncryptionEnabled` | [`encryption-at-rest`](concepts/encryption-at-rest.md) |
-| Log redaction: no passwords in logs | ✅ | `api/app.ts` → `logger.redact` | [`log-redaction`](concepts/log-redaction.md) |
-| Least privilege | ✅ | `infra/compute/iam.ts` → `executionSecrets`; `infra/security.ts`; `.github/workflows/ci.yml` → `permissions` | [`least-privilege`](concepts/least-privilege.md) |
-| Symmetric vs asymmetric encryption | 📖 | Explain-only | `symmetric-asymmetric` · P5 |
-| OAuth 2.0: authorization code + PKCE | 📖 | Explain-only | `oauth2-pkce` · P5 |
-| OpenID Connect (OIDC) | 📖 | Explain-only | `oidc` · P5 |
-| RBAC and ABAC | 📖 | Explain-only | `rbac-abac` · P5 |
-| Multi-factor authentication (MFA) | 📖 | Explain-only | `mfa` · P5 |
-
-## Performance & Caching
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| CDN caching: hashed static files cached, per-user answers never | ✅ | `infra/entry/cdn.ts` → `orderedCacheBehaviors` (`/_next/static/*` cached; `/trpc/*` not), `defaultCacheBehavior` | [`cdn-caching`](concepts/cdn-caching.md) |
-| Compression at the edge (gzip / Brotli) | 🟡 | `infra/entry/cdn.ts` → `compress: true`. Works only on `/_next/static/*`: `CachingDisabled` (pages, `/trpc/*`) has compression off. | [`compression`](concepts/compression.md) |
-| TTL (time to live) | ✅ | `api/queries/sessions.ts` → `SESSION_TTL_SECONDS`; `api/procedures/auth.ts` → `maxAge`; `api/services/events.ts` → `BASE_TTL_SECONDS` + jitter (events cache) | [`ttl`](concepts/ttl.md) |
-| Cache-aside (Redis in front of Postgres) | ✅ | `api/services/events.ts` → `listUpcomingEvents`; `api/queries/events-cache.ts` → `getUpcomingFromCache`, `setUpcomingInCache` | [`cache-aside`](concepts/cache-aside.md) |
-| Cache key versioning | ✅ | `api/queries/events-cache.ts` → `UPCOMING_KEY` (`events:upcoming:v1`) | [`cache-key-versioning`](concepts/cache-key-versioning.md) |
-| Read-through, write-through, write-behind | 📖 | Explain-only | `cache-write-strategies` · P5 |
-| Eviction policies (LRU and others) | 📖 | Explain-only | `cache-eviction` · P5 |
-| Server-side cache invalidation | 📋 | Planned: the next step after cache-aside. Today the list is up to ~33 s stale (booking will check the database, not the cache) | `cache-invalidation` · P5 |
-| Cache stampede / thundering herd | 📋 | Planned (after invalidation). Not handled yet: the 0-3 s TTL jitter only spreads expiry of many keys | `cache-stampede` · P5 |
-| Load testing and profiling | 📖 | Explain-only | `load-testing` · P5 |
-
-## Async & Events
-
-Since S1a-S1c (series 2, P1) the booking confirmation email runs as a background job: api -> SQS
-queue -> worker Lambda. The rows below are updated in full in the D3 catch-up (see PENDING.md); the
-📋 stub cards already point at the code.
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Message queues (e.g. SQS), idempotent consumers | 📋 | `infra/src/jobs/queues.ts` → `createJobQueues`; `apps/worker/src/handlers/booking-confirmed.ts` (stub card) | [`sqs`](concepts/sqs.md) |
-| Background jobs and workers | 📖 | Explain-only | `background-jobs` · P5 |
-| Event-driven architecture | 📖 | Explain-only | `event-driven` · P5 |
-| RabbitMQ vs Kafka | 📖 | Explain-only | `rabbitmq-vs-kafka` · P5 |
-| Dead-letter queue (DLQ) | 📋 | `infra/src/jobs/queues.ts` → `minitickets-dev-jobs-dlq`, maxReceiveCount 3 (stub card) | [`dead-letter-queue`](concepts/dead-letter-queue.md) |
-| Event sourcing | 📖 | Explain-only | `event-sourcing` · P5 |
-| CQRS | 📖 | Explain-only | `cqrs` · P5 |
-| Saga pattern | 📖 | Explain-only | `saga` · P5 |
-| Transactional outbox | 📋 | P3 built: `queries/bookings.ts` → `createBookingTx`; `services/outbox.ts` → `startOutboxRelay` (stub card) | [`outbox`](concepts/outbox.md) |
-| Eventual consistency | 📖 | Explain-only | `eventual-consistency` · P5 |
-
-## Reliability
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Graceful shutdown (and PID 1 signals) | ✅ | `api/server.ts` → `shutdown`; `apps/api/Dockerfile` → `CMD` (exec form); `infra/entry/target-groups.ts` → `deregistrationDelay`. Planned: a short wait after SIGTERM before closing. | [`graceful-shutdown`](concepts/graceful-shutdown.md) |
-| Health checks: liveness vs readiness | ✅ | `api/app.ts` → `/health`, `/ready`; `infra/compute/task.ts` → `healthCheck`; `infra/entry/target-groups.ts` → `healthCheck` | [`health-checks`](concepts/health-checks.md) |
-| Retry policy: retry only what is safe | ✅ | `web/providers/query-provider.tsx` → `shouldRetry`, `mutations: { retry: 0 }` | [`retry-policy`](concepts/retry-policy.md) |
-| Fail fast and timeouts when a dependency is down | 🟡 | `api/redis/client.ts` → `maxRetriesPerRequest`, `enableOfflineQueue`; `api/queries/events-cache.ts` → `withTimeout` (100 ms); `api/db/client.ts` → `pool.on("error")`. Postgres has no connection or statement timeout (corrected in Phase 3). | [`fail-fast`](concepts/fail-fast.md) |
-| Graceful degradation (keep working when a helper fails) | ✅ | `api/services/events.ts` → `listUpcomingEvents` (`try`/`catch` around the cache); `api/queries/events-cache.ts` → `CACHE_TIMEOUT_MS` | [`graceful-degradation`](concepts/graceful-degradation.md) |
-| Circuit breaker | 🟡 | `infra/compute/service.ts` → `deploymentCircuitBreaker` (deploys only; no circuit breaker in app code) | [`circuit-breaker`](concepts/circuit-breaker.md) |
-| Zero-downtime deploys: rolling update + draining | 🟡 | `infra/compute/service.ts` → `createApiService` (ECS rolling defaults); `infra/entry/target-groups.ts` → `deregistrationDelay` | [`zero-downtime-deploys`](concepts/zero-downtime-deploys.md) |
-| Vertical vs horizontal scaling | 🟡 | `infra/compute/service.ts` → `desiredCount: 1`; the api is stateless, so it can scale out | [`scaling`](concepts/scaling.md) |
-| Load balancing algorithms: round robin, least connections, IP hash | 🟡 | `infra/entry/target-groups.ts` (we keep the ALB default) | [`load-balancing-algorithms`](concepts/load-balancing-algorithms.md) |
-| High availability across availability zones | 🟡 | `infra/network.ts` → `azNames` (2 AZs); `infra/data/postgres.ts` → `multiAz: false`; `infra/compute/service.ts` → `desiredCount: 1` | [`high-availability`](concepts/high-availability.md) |
-| Monolith vs microservices | ✅ | `api/trpc/router.ts` → `appRouter` (one api, split by feature inside) | [`monolith-vs-microservices`](concepts/monolith-vs-microservices.md) |
-| Backpressure and bulkheads | 📖 | Explain-only | `backpressure` · P5 |
-
-## DevOps & CI/CD
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Monorepo with pnpm workspaces, shared package | ✅ | `pnpm-workspace.yaml`; `packages/shared/src/index.ts` | [`monorepo`](concepts/monorepo.md) |
-| CI pipeline: quality, e2e and docker jobs | ✅ | `.github/workflows/ci.yml` → jobs `quality`, `e2e`, `docker` | [`ci-pipeline`](concepts/ci-pipeline.md) |
-| Docker multi-stage builds (and Next.js standalone) | ✅ | `apps/api/Dockerfile` (stages `base` … `runtime`); `apps/web/Dockerfile`; `apps/web/next.config.ts` → `output: "standalone"` | [`docker-multi-stage`](concepts/docker-multi-stage.md) |
-| Docker layer caching | ✅ | `apps/api/Dockerfile` (package files copied before source, cache mount); `ci.yml` → `cache-from: type=gha` | [`docker-layer-caching`](concepts/docker-layer-caching.md) |
-| Container hardening: non-root, slim, production-only deps | ✅ | `apps/api/Dockerfile` → `USER node`, `pnpm … --prod deploy` | [`container-hardening`](concepts/container-hardening.md) |
-| Config from the environment (12-factor), build time vs run time | ✅ | `api/config/env.ts`; `apps/web/Dockerfile` → `ARG NEXT_PUBLIC_API_URL`; `infra/compute/task.ts` → `environment` | [`twelve-factor-config`](concepts/twelve-factor-config.md) |
-| Infrastructure as Code with Pulumi | ✅ | `infra/index.ts`; `infra/network.ts` → `createNetwork` | [`infrastructure-as-code`](concepts/infrastructure-as-code.md) |
-| Immutable image tags (git SHA) | ✅ | `scripts/push-images.sh` → `TAG`; `infra/registry.ts` → `imageTagMutability: "IMMUTABLE"` | [`immutable-image-tags`](concepts/immutable-image-tags.md) |
-| Cost on/off switches | ✅ | `infra/index.ts` → `dataEnabled`, `computeEnabled`, `entryEnabled` | [`cost-switches`](concepts/cost-switches.md) |
-| Budget alerts | ✅ | `infra/budget.ts` → `createBudget` | [`budget-alerts`](concepts/budget-alerts.md) |
-| Image vulnerability scanning | 🟡 | `infra/registry.ts` → `scanOnPush: true` (results are not read automatically) | [`image-scanning`](concepts/image-scanning.md) |
-| Continuous deployment (CD) and branch protection | 📋 | Not in our app yet (planned, see [docs/10](../10-ci.md)) | `continuous-deployment` · P5 |
-| Blue/green and canary deploys | 📖 | Explain-only | `blue-green-canary` · P5 |
-| Feature flags | 📖 | Explain-only | `feature-flags` · P5 |
-
-## AWS Network
-
-| Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Regions and availability zones | ✅ | `infra/Pulumi.dev.yaml` → `aws:region`; `infra/network.ts` → `azNames` | [`regions-and-azs`](concepts/regions-and-azs.md) |
-| VPC and CIDR blocks | ✅ | `infra/network.ts` → `vpc` (`10.0.0.0/16`) | [`vpc`](concepts/vpc.md) |
-| Public vs private subnets | ✅ | `infra/network.ts` → `publicSubnets`, `privateSubnets` | [`subnets`](concepts/subnets.md) |
-| Route tables and the internet gateway | ✅ | `infra/network.ts` → `publicRouteTable`, `privateRouteTable`, `internetGateway` | [`route-tables`](concepts/route-tables.md) |
-| Security groups: stateful, group references | ✅ | `infra/security.ts` → `createSecurityGroups` | [`security-groups`](concepts/security-groups.md) |
-| Application Load Balancer, listener, default 403 | ✅ | `infra/entry/alb.ts` → `createAlb`; `infra/entry/listener.ts` → `createListener` | [`alb`](concepts/alb.md) |
-| Same-origin path routing: `/trpc/*` → api | ✅ | `infra/entry/listener.ts` → `trpcRule`, `webRule`; `web/lib/trpc/client.ts` → `API_URL` | [`same-origin-routing`](concepts/same-origin-routing.md) |
-| Target groups and ALB health checks | ✅ | `infra/entry/target-groups.ts` → `createTargetGroups` | [`target-groups`](concepts/target-groups.md) |
-| CloudFront: CDN and HTTPS | ✅ | `infra/entry/cdn.ts` → `createCdn` | [`cloudfront`](concepts/cloudfront.md) |
-| TLS termination: where HTTPS ends | ✅ | `infra/entry/cdn.ts` → `originProtocolPolicy: "http-only"`; `infra/entry/listener.ts` (HTTP :80) | [`tls-termination`](concepts/tls-termination.md) |
-| Origin protection: prefix list + secret header | ✅ | `infra/security.ts` → `cloudFrontPrefixList`; `infra/entry/origin-secret.ts` → `createOriginSecret`; `infra/entry/listener.ts` → `hasSecretHeader` | [`origin-protection`](concepts/origin-protection.md) |
-| NAT gateway (chosen NOT to build) | 📖 | `infra/network.ts` → comment at `privateRouteTable`; `infra/compute/service.ts` → `assignPublicIp: true` | `nat-gateway` · P5 |
-| VPC endpoints | 📖 | Explain-only | `vpc-endpoints` · P5 |
-| Network ACLs | 📖 | Explain-only (we keep the default network ACL) | `network-acls` · P5 |
-| DNS, Route 53, custom domains | 📖 | Explain-only (we use the `*.cloudfront.net` name) | `dns-route53` · P5 |
-| ACM certificates | 📖 | Explain-only | `acm-certificates` · P5 |
-| WAF and Shield | 📖 | Explain-only | `waf-shield` · P5 |
-| ALB vs NLB (layer 7 vs layer 4) | 📖 | Explain-only | `alb-vs-nlb` · P5 |
+| --- | --- | --- | --- |
+| Config validation: fail fast at startup | ✅ built | `apps/api/src/config/env.ts`, `apps/api/src/config/database.ts` | [config-validation](concepts/config-validation.md) |
+| CORS | ✅ built | `apps/api/src/app.ts`, `apps/web/src/lib/trpc/client.ts` | [cors](concepts/cors.md) |
+| End-to-end types: web imports only `type AppRouter` | ✅ built | `apps/api/src/trpc/router.ts`, `apps/web/src/lib/trpc/client.ts` | [end-to-end-types](concepts/end-to-end-types.md) |
+| Central error handling: business error → HTTP status | ✅ built | `apps/api/src/errors.ts`, `apps/api/src/trpc/init.ts` | [error-handling](concepts/error-handling.md) |
+| Fastify app: "build" apart from "listen" | ✅ built | `apps/api/src/app.ts`, `apps/api/src/server.ts` | [fastify-app](concepts/fastify-app.md) |
+| HTTP methods and status codes | ✅ built | `apps/api/src/trpc/init.ts`, `apps/api/src/app.ts` | [http-status-codes](concepts/http-status-codes.md) |
+| HTTP/1.1 vs HTTP/2 vs HTTP/3 | 🟡 partial (browser to edge only) | `infra/src/entry/cdn.ts` | [http-versions](concepts/http-versions.md) |
+| Idempotency | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/migrate.ts`, `apps/api/src/db/seed.ts` | [idempotency](concepts/idempotency.md) |
+| Layered architecture: procedures → services → queries | ✅ built | `apps/api/src/procedures/auth.ts`, `apps/api/src/services/auth.ts` | [layered-api](concepts/layered-api.md) |
+| Rate limiting | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/rate-limits.ts`, `apps/api/src/services/rate-limits.ts` | [rate-limiting](concepts/rate-limiting.md) |
+| RPC vs REST (why tRPC) | ✅ built | `apps/api/src/trpc/router.ts` | [rpc-vs-rest](concepts/rpc-vs-rest.md) |
+| Stateless API servers | ✅ built | `apps/api/src/queries/sessions.ts` | [stateless-servers](concepts/stateless-servers.md) |
+| tRPC context, built once per request | ✅ built in repository; live acceptance is separate | `apps/api/src/trpc/context.ts` | [trpc-context](concepts/trpc-context.md) |
+| tRPC middleware chain | ✅ built | `apps/api/src/trpc/init.ts` | [trpc-middleware](concepts/trpc-middleware.md) |
+| Reverse proxies and `X-Forwarded-For` (`trustProxy`) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/app.ts`, `apps/api/src/config/trust-proxy.test.ts` | [trust-proxy](concepts/trust-proxy.md) |
+| Validation at boundaries: input and output schemas | ✅ built | `apps/api/src/procedures/auth.ts`, `apps/api/src/procedures/account.ts` | [validation-at-boundaries](concepts/validation-at-boundaries.md) |
 
 ## AWS Compute
 
 | Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| ECR: the image registry | ✅ | `infra/registry.ts` → `createRegistry` | [`ecr`](concepts/ecr.md) |
-| ECS cluster and capacity providers | ✅ | `infra/compute/cluster.ts` → `createCluster` | [`ecs-cluster`](concepts/ecs-cluster.md) |
-| Task definition: recipe, revisions, `awsvpc` | ✅ | `infra/compute/task.ts` → `createApiTask`; `infra/compute/web-task.ts` → `createWebTask` | [`task-definition`](concepts/task-definition.md) |
-| ECS service: desired count, replacement | ✅ | `infra/compute/service.ts` → `createApiService`; `infra/compute/web-service.ts` → `createWebService` | [`ecs-service`](concepts/ecs-service.md) |
-| Fargate: containers without managing servers | ✅ | `infra/compute/task.ts` → `requiresCompatibilities: ["FARGATE"]` | [`fargate`](concepts/fargate.md) |
-| Fargate Spot | ✅ | `infra/compute/service.ts` → `capacityProviderStrategies`; `scripts/run-migrations.sh` → `--launch-type FARGATE` (not Spot) | [`fargate-spot`](concepts/fargate-spot.md) |
-| Execution role vs task role | ✅ | `infra/compute/iam.ts` → `createIamRoles`; `infra/compute/web-iam.ts` → `createWebIamRole` | [`execution-vs-task-role`](concepts/execution-vs-task-role.md) |
-| ECS Exec: a shell inside a running task | ✅ | `infra/compute/iam.ts` → `taskExec`; `infra/compute/service.ts` → `enableExecuteCommand` | [`ecs-exec`](concepts/ecs-exec.md) |
-| Lambda: the worker, fed by an SQS event source mapping | 📋 | `infra/src/jobs/worker-lambda.ts` → `createWorkerLambda`, `queue-trigger.ts` (stub card) | [`aws-lambda`](concepts/aws-lambda.md) |
-| SES: booking emails, DKIM, the sandbox | 📋 | `infra/src/jobs/email.ts` → `createEmail`; `apps/worker/src/ses-mailer.ts` (stub card) | [`ses-email`](concepts/ses-email.md) |
-| ECS Service Connect / Cloud Map: web task → api task | 📋 | Not built. Planned for SSR on AWS (see [docs/22](../22-events-ssr.md), section 7) | [`service-connect`](concepts/service-connect.md) |
-| ARM64 (Graviton) images and tasks | ✅ | `infra/compute/task.ts` → `runtimePlatform`; `scripts/push-images.sh` → `--platform linux/arm64`; `infra/data/postgres.ts`, `infra/data/cache.ts` → `t4g` classes | [`arm64-graviton`](concepts/arm64-graviton.md) |
-| Auto scaling | 📖 | Explain-only | `autoscaling` · P5 |
-| EC2 vs Fargate vs EKS vs Lambda | 📖 | Explain-only (we only built Fargate) | `compute-options` · P5 |
+| --- | --- | --- | --- |
+| ARM64 (Graviton) images and tasks | ✅ built | `scripts/push-images.sh`, `infra/src/compute/task.ts` | [arm64-graviton](concepts/arm64-graviton.md) |
+| AWS Lambda (serverless functions) | ✅ built in repository; live AWS acceptance is separate | `apps/worker/Dockerfile`, `apps/worker/src/lambda.ts` | [aws-lambda](concepts/aws-lambda.md) |
+| ECR: the image registry | ✅ built in repository; live acceptance is separate | `infra/src/registry.ts` | [ecr](concepts/ecr.md) |
+| ECS cluster and capacity providers | ✅ built | `infra/src/compute/cluster.ts` | [ecs-cluster](concepts/ecs-cluster.md) |
+| ECS Exec: a shell inside a running task | ✅ built | `infra/src/compute/iam.ts`, `infra/src/compute/service.ts` | [ecs-exec](concepts/ecs-exec.md) |
+| ECS service: desired count, replacement | ✅ built | `infra/src/compute/service.ts`, `infra/src/compute/web-service.ts` | [ecs-service](concepts/ecs-service.md) |
+| Execution role vs task role | ✅ built in repository; live acceptance is separate | `infra/src/compute/iam.ts`, `infra/src/compute/web-iam.ts` | [execution-vs-task-role](concepts/execution-vs-task-role.md) |
+| Fargate Spot | ✅ built | `infra/src/compute/cluster.ts`, `infra/src/compute/service.ts` | [fargate-spot](concepts/fargate-spot.md) |
+| Fargate: containers without managing servers | ✅ built | `infra/src/compute/task.ts`, `infra/src/compute/web-task.ts` | [fargate](concepts/fargate.md) |
+| ECS Service Connect and Cloud Map (service discovery) | ✅ built in repository; live AWS acceptance is separate | Explain-only / observational; see card | [service-connect](concepts/service-connect.md) |
+| Amazon SES (sending email) | ✅ built in repository; live AWS acceptance is separate | `apps/worker/src/ses-mailer.ts`, `infra/src/jobs/email.ts` | [ses-email](concepts/ses-email.md) |
+| Amazon SQS (message queue) | ✅ built in repository; live AWS acceptance is separate | `infra/src/jobs/queues.ts` | [sqs](concepts/sqs.md) |
+| Task definition: recipe, revisions, `awsvpc` | ✅ built in repository; live acceptance is separate | `infra/src/compute/task.ts`, `infra/src/compute/web-task.ts` | [task-definition](concepts/task-definition.md) |
 
 ## AWS Data
 
 | Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| RDS Postgres: private, single-AZ, subnet group | ✅ | `infra/data/postgres.ts` → `createPostgres` | [`rds-postgres`](concepts/rds-postgres.md) |
-| RDS-managed master password (and the rotation limit) | ✅ | `infra/data/postgres.ts` → `manageMasterUserPassword`, `masterSecretArn` | [`rds-managed-password`](concepts/rds-managed-password.md) |
-| ElastiCache Valkey: TLS + auth token | ✅ | `infra/data/cache.ts` → `createCache` | [`elasticache-valkey`](concepts/elasticache-valkey.md) |
-| Secrets Manager | ✅ | `infra/data/secrets.ts` → `createSecrets` | [`secrets-manager`](concepts/secrets-manager.md) |
-| DynamoDB: the worker's processed-jobs table (on demand, TTL) | 📋 | `infra/src/jobs/processed-jobs-table.ts` → `createProcessedJobsTable` (stub card) | [`dynamodb`](concepts/dynamodb.md) |
-| KMS keys (AWS-managed) | 🟡 | `infra/data/postgres.ts` → `storageEncrypted`; `infra/compute/iam.ts` → comment at `executionSecrets` | [`kms`](concepts/kms.md) |
-| Backups, snapshots, disaster recovery | 🟡 | `infra/data/postgres.ts` → `backupRetentionPeriod: 1`, `skipFinalSnapshot: true`; `infra/data/cache.ts` → `snapshotRetentionLimit: 0` | [`backups-dr`](concepts/backups-dr.md) |
-| Multi-AZ and read replicas | 📖 | `infra/data/postgres.ts` → `multiAz: false` (chosen off) | `multi-az-replicas` · P5 |
-| RDS Proxy | 📖 | Explain-only | `rds-proxy` · P5 |
-| IAM database authentication | 📖 | Explain-only | `iam-db-auth` · P5 |
-| S3 | 📖 | Explain-only | `s3` · P5 |
-| DynamoDB | 📖 | Explain-only | `dynamodb` · P5 |
+| --- | --- | --- | --- |
+| Backups, snapshots, disaster recovery | 🟡 partial (dev settings) | `infra/src/data/postgres.ts`, `infra/src/data/cache.ts` | [backups-dr](concepts/backups-dr.md) |
+| Amazon DynamoDB (key-value database) | ✅ built in repository; live AWS acceptance is separate | `infra/src/jobs/processed-jobs-table.ts` | [dynamodb](concepts/dynamodb.md) |
+| ElastiCache Valkey: TLS + auth token | ✅ built | `infra/src/data/cache.ts` | [elasticache-valkey](concepts/elasticache-valkey.md) |
+| KMS keys (AWS-managed) | 🟡 partial (AWS-managed keys only) | `infra/src/data/postgres.ts`, `infra/src/compute/iam.ts` | [kms](concepts/kms.md) |
+| RDS-managed master password (and the rotation limit) | ✅ built (with a known limitation) | `infra/src/data/postgres.ts`, `infra/src/compute/task.ts` | [rds-managed-password](concepts/rds-managed-password.md) |
+| RDS Postgres: private, single-AZ, subnet group | ✅ built | `infra/src/data/postgres.ts` | [rds-postgres](concepts/rds-postgres.md) |
+| Secrets Manager | ✅ built in repository; live acceptance is separate | `infra/src/data/secrets.ts` | [secrets-manager](concepts/secrets-manager.md) |
+
+## AWS Events
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Sns | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queues/jobs.ts`, `infra/src/jobs/booking-events.ts` | [sns](concepts/sns.md) |
+
+## AWS Network
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Application Load Balancer, listener, default 403 | ✅ built | `infra/src/entry/alb.ts`, `infra/src/entry/listener.ts` | [alb](concepts/alb.md) |
+| CloudFront: CDN and HTTPS | ✅ built in repository; live AWS acceptance is separate | `infra/src/entry/cdn.ts` | [cloudfront](concepts/cloudfront.md) |
+| Origin protection: prefix list + secret header | ✅ built in repository; live AWS acceptance is separate | `infra/src/entry/cdn.ts`, `infra/src/entry/listener.ts` | [origin-protection](concepts/origin-protection.md) |
+| Regions and availability zones | ✅ built | `infra/src/network.ts` | [regions-and-azs](concepts/regions-and-azs.md) |
+| Route tables and the internet gateway | ✅ built | `infra/src/network.ts` | [route-tables](concepts/route-tables.md) |
+| Same-origin path routing: `/trpc/*` → api | ✅ built | `apps/web/src/lib/trpc/client.ts`, `infra/src/entry/listener.ts` | [same-origin-routing](concepts/same-origin-routing.md) |
+| Security groups: stateful, group references | ✅ built | `infra/src/security.ts` | [security-groups](concepts/security-groups.md) |
+| Public vs private subnets | ✅ built | `infra/src/network.ts` | [subnets](concepts/subnets.md) |
+| Target groups and ALB health checks | ✅ built | `infra/src/entry/target-groups.ts` | [target-groups](concepts/target-groups.md) |
+| TLS termination: where HTTPS ends | ✅ built in repository; live AWS acceptance is separate | `infra/src/entry/cdn.ts`, `infra/src/entry/listener.ts` | [tls-termination](concepts/tls-termination.md) |
+| VPC and CIDR blocks | ✅ built | `infra/src/network.ts` | [vpc](concepts/vpc.md) |
+
+## Async
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Transactional outbox | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/schema/outbox.ts`, `apps/api/src/queries/bookings.ts` | [outbox](concepts/outbox.md) |
+| Reminders | 📖 explain-only | Explain-only / observational; see card | [reminders](concepts/reminders.md) |
+
+## Auth & Security
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Authentication vs authorization | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/procedures/account.ts`, `apps/api/src/trpc/init.ts` | [authn-vs-authz](concepts/authn-vs-authz.md) |
+| Csp | ✅ built in repository; live AWS acceptance is separate | `apps/web/src/lib/security-policy.ts`, `apps/web/src/proxy.ts` | [csp](concepts/csp.md) |
+| CSRF (cross-site request forgery) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/http/security.ts`, `apps/api/src/procedures/auth.ts` | [csrf](concepts/csrf.md) |
+| Door checkin | 📖 explain-only | Explain-only / observational; see card | [door-checkin](concepts/door-checkin.md) |
+| Encryption at rest | ✅ built | `infra/src/data/postgres.ts`, `infra/src/data/cache.ts` | [encryption-at-rest](concepts/encryption-at-rest.md) |
+| Least privilege | ✅ built in repository; live acceptance is separate | `infra/src/compute/iam.ts`, `infra/src/compute/web-iam.ts` | [least-privilege](concepts/least-privilege.md) |
+| Log redaction: no passwords in logs | ✅ built | `apps/api/src/app.ts` | [log-redaction](concepts/log-redaction.md) |
+| Open redirect protection | ✅ built | `apps/web/src/features/auth/lib/safe-next.ts`, `apps/web/src/features/auth/lib/safe-next.test.ts` | [open-redirect](concepts/open-redirect.md) |
+| Password hashing with argon2id | ✅ built | `apps/api/src/services/auth.ts` | [password-hashing](concepts/password-hashing.md) |
+| Presigned urls | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/assets.ts`, `apps/api/src/queries/posters.ts` | [presigned-urls](concepts/presigned-urls.md) |
+| Protected procedures: the real auth check | ✅ built | `apps/api/src/trpc/init.ts`, `apps/api/src/procedures/account.ts` | [protected-procedure](concepts/protected-procedure.md) |
+| Rbac | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/services/users.ts`, `apps/api/src/trpc/init.ts` | [rbac](concepts/rbac.md) |
+| Secrets management: never in code, images or state | ✅ built in repository; live acceptance is separate | `infra/src/data/cache.ts`, `infra/src/compute/task.ts` | [secrets-management](concepts/secrets-management.md) |
+| Session cookie flags: HttpOnly, SameSite, Secure | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/procedures/auth.ts`, `apps/web/e2e/login.spec.ts` | [session-cookie](concepts/session-cookie.md) |
+| Session revocation | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/sessions.ts`, `apps/api/src/services/users.ts` | [session-revocation](concepts/session-revocation.md) |
+| Server-side sessions in Redis vs JWT (and logout) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/sessions.ts`, `apps/api/src/services/auth.ts` | [sessions-vs-jwt](concepts/sessions-vs-jwt.md) |
+| SQL injection: parameterized queries | ✅ built | `apps/api/src/queries/users.ts` | [sql-injection](concepts/sql-injection.md) |
+| Ticket signing | 🟡 partial | `apps/worker/src/handlers/tickets.ts`, `apps/worker/src/tickets/token.ts` | [ticket-signing](concepts/ticket-signing.md) |
+| Encryption in transit (TLS) | ✅ built (one unencrypted hop in dev) | `apps/api/src/config/database.ts`, `apps/api/Dockerfile` | [tls-in-transit](concepts/tls-in-transit.md) |
+| User enumeration: equal timing, one error message | 🟡 partial (login is protected; signup still says "Email already registered") | `apps/api/src/services/auth.ts`, `packages/shared/src/schemas/auth.ts` | [user-enumeration](concepts/user-enumeration.md) |
+| XSS (cross-site scripting) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/procedures/auth.ts`, `apps/web/src/features/account/components/profile-card.tsx` | [xss](concepts/xss.md) |
+
+## Data
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Connection pooling | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/client.ts` | [connection-pooling](concepts/connection-pooling.md) |
+| Database CHECK constraints | ✅ built | `apps/api/src/db/schema/events.ts` | [db-check-constraints](concepts/db-check-constraints.md) |
+| Postgres schema with Drizzle ORM (UUID keys) | ✅ built | `apps/api/src/db/schema/users.ts`, `apps/api/src/db/client.ts` | [drizzle-schema](concepts/drizzle-schema.md) |
+| EXPLAIN and EXPLAIN ANALYZE | ✅ built in repository; live acceptance is separate | Explain-only / observational; see card | [explain-analyze](concepts/explain-analyze.md) |
+| Indexes (B-tree) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/schema/events.ts`, `apps/api/src/db/schema/users.ts` | [indexing](concepts/indexing.md) |
+| Inventory gate | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/inventory.ts`, `apps/api/src/services/booking-inventory.ts` | [inventory-gate](concepts/inventory-gate.md) |
+| Keyset pagination | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/event-search.ts`, `apps/api/src/services/event-search.ts` | [keyset-pagination](concepts/keyset-pagination.md) |
+| SQL migrations: generate, apply, one-off runner | ✅ built | `apps/api/drizzle.config.ts`, `apps/api/src/db/migrate.ts` | [migrations](concepts/migrations.md) |
+| Postgres page cache | 🟡 partial | Explain-only / observational; see card | [postgres-page-cache](concepts/postgres-page-cache.md) |
+| Seed data | ✅ built | `apps/api/src/db/seed.ts` | [seed-data](concepts/seed-data.md) |
+| SQL vs NoSQL | ✅ built | `apps/api/src/db/schema/users.ts`, `apps/api/src/queries/sessions.ts` | [sql-vs-nosql](concepts/sql-vs-nosql.md) |
+| Unique constraint vs check-then-insert (race condition) | ✅ built | `apps/api/src/services/auth.ts`, `apps/api/src/queries/users.ts` | [unique-constraint-race](concepts/unique-constraint-race.md) |
+
+## DevOps & CI/CD
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Budget alerts | ✅ built | `infra/src/budget.ts` | [budget-alerts](concepts/budget-alerts.md) |
+| Cd oidc | ✅ built in repository; live AWS acceptance is separate | `infra/src/cicd.ts` | [cd-oidc](concepts/cd-oidc.md) |
+| CI pipeline: quality, e2e and docker jobs | ✅ built in repository; live AWS acceptance is separate | `.github/workflows/ci.yml` | [ci-pipeline](concepts/ci-pipeline.md) |
+| Container hardening: non-root, slim, production-only deps | ✅ built | `apps/api/Dockerfile`, `apps/web/Dockerfile` | [container-hardening](concepts/container-hardening.md) |
+| Cost on/off switches | ✅ built in repository; live acceptance is separate | `infra/index.ts` | [cost-switches](concepts/cost-switches.md) |
+| Docker layer caching | ✅ built | `apps/api/Dockerfile`, `apps/web/Dockerfile` | [docker-layer-caching](concepts/docker-layer-caching.md) |
+| Docker multi-stage builds (and Next.js standalone) | ✅ built | `apps/api/Dockerfile`, `apps/web/Dockerfile` | [docker-multi-stage](concepts/docker-multi-stage.md) |
+| Image vulnerability scanning | ✅ built in repository; live AWS acceptance is separate | `.github/workflows/ci.yml`, `infra/src/registry.ts` | [image-scanning](concepts/image-scanning.md) |
+| Immutable image tags (git SHA) | ✅ built in repository; live acceptance is separate | `scripts/push-images.sh`, `infra/src/registry.ts` | [immutable-image-tags](concepts/immutable-image-tags.md) |
+| Infrastructure as Code with Pulumi | ✅ built | `infra/index.ts` | [infrastructure-as-code](concepts/infrastructure-as-code.md) |
+| Monorepo with pnpm workspaces, shared package | ✅ built | `pnpm-workspace.yaml`, `packages/shared/src/index.ts` | [monorepo](concepts/monorepo.md) |
+| Release guard | ✅ built in repository; live AWS acceptance is separate | `infra/src/release.ts`, `scripts/deploy-guard.sh` | [release-guard](concepts/release-guard.md) |
+| Config from the environment (12-factor), build time vs run time | ✅ built in repository; live acceptance is separate | `apps/api/src/config/env.ts`, `apps/web/Dockerfile` | [twelve-factor-config](concepts/twelve-factor-config.md) |
+
+## Frontend
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Forms: shared-schema validation, accessible errors, focus | ✅ built in repository; live AWS acceptance is separate | `apps/web/e2e/security.spec.ts`, `apps/web/src/components/ui/input.tsx` | [accessible-forms](concepts/accessible-forms.md) |
+| App Router: file-based routing | ✅ built | `apps/web/src/app/page.tsx`, `apps/web/src/app/dashboard/page.tsx` | [app-router](concepts/app-router.md) |
+| Client-side vs server-side rendering | ✅ built in repository; live AWS acceptance is separate | `apps/web/e2e/events.spec.ts`, `apps/web/src/app/events/page.tsx` | [csr-vs-ssr](concepts/csr-vs-ssr.md) |
+| Feature folders: components use hooks, never tRPC | ✅ built | `apps/web/src/features/account/hooks/use-profile.ts`, `apps/web/src/features/auth/hooks/use-signup.ts` | [feature-folders](concepts/feature-folders.md) |
+| Hydration (and handing the server's data to the browser) | ✅ built | `apps/web/src/lib/trpc/server.ts`, `apps/web/src/features/events/server/prefetch-events.ts` | [hydration](concepts/hydration.md) |
+| Live seats | 📖 explain-only | Explain-only / observational; see card | [live-seats](concepts/live-seats.md) |
+| Cache invalidation after a mutation | ✅ built in repository; live acceptance is separate | `apps/web/src/features/auth/hooks/use-login.ts`, `apps/web/src/features/auth/hooks/use-logout.ts` | [query-invalidation](concepts/query-invalidation.md) |
+| Route guard in the Next.js proxy (UX only, not security) | ✅ built | `apps/web/src/proxy.ts`, `apps/web/e2e/dashboard.spec.ts` | [route-guard-proxy](concepts/route-guard-proxy.md) |
+| Search races | ✅ built in repository; live AWS acceptance is separate | `apps/web/src/features/events/hooks/use-event-search.ts` | [search-races](concepts/search-races.md) |
+| Server Components vs Client Components | ✅ built | `apps/web/src/app/layout.tsx`, `apps/web/src/providers/query-provider.tsx` | [server-client-components](concepts/server-client-components.md) |
+| Server-to-server calls (web server → API) | ✅ built in repository; live AWS acceptance is separate | `.github/workflows/ci.yml`, `apps/web/src/lib/server-env.ts` | [server-to-server-calls](concepts/server-to-server-calls.md) |
+| Client state vs server state | ✅ built | `apps/web/src/features/auth/components/signup-form.tsx` | [state-management](concepts/state-management.md) |
+| Streaming with Suspense | ✅ built | `apps/web/src/app/events/page.tsx`, `apps/web/src/features/events/components/event-list-skeleton.tsx` | [streaming-suspense](concepts/streaming-suspense.md) |
+| Tailwind CSS (utility classes) | ✅ built | `apps/web/postcss.config.mjs`, `apps/web/src/components/ui/container.tsx` | [tailwind](concepts/tailwind.md) |
+| TanStack Query: the server-state cache | ✅ built in repository; live acceptance is separate | `apps/web/src/providers/query-provider.tsx`, `apps/web/src/features/auth/hooks/use-me.ts` | [tanstack-query](concepts/tanstack-query.md) |
+| tRPC client and request batching | ✅ built | `apps/web/src/lib/trpc/client.ts` | [trpc-client](concepts/trpc-client.md) |
+| Showing API errors in the UI (field errors, 401 redirect) | ✅ built | `apps/web/src/features/auth/components/signup-form.tsx`, `apps/web/src/features/auth/components/login-form.tsx` | [ui-error-handling](concepts/ui-error-handling.md) |
+| Virtualization | ✅ built in repository; live AWS acceptance is separate | `apps/web/src/features/events/components/virtual-event-list.tsx` | [virtualization](concepts/virtualization.md) |
+| Web vitals | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/services/telemetry.ts`, `apps/web/src/features/telemetry/hooks/use-web-vitals.ts` | [web-vitals](concepts/web-vitals.md) |
 
 ## Observability
 
 | Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Structured JSON logs (Fastify's logger, pino) | ✅ | `api/app.ts` → `Fastify({ logger })`, `onError`; since P2 also `worker/src/log.ts` → `createLog`, `web/src/lib/server-log.ts` (same JSON shape) | [`structured-logging`](concepts/structured-logging.md) |
-| Request IDs and correlation IDs | 🟡 | `api/http/correlation-id.ts` → `correlationIdFor` (P2: UUID per request, `x-correlation-id` header, carried in the queue message to the worker, `worker/src/correlation.ts`) | [`correlation-ids`](concepts/correlation-ids.md) |
-| CloudWatch Logs: log groups, streams, retention | ✅ | `infra/compute/logs.ts` → `createLogs`; `infra/compute/task.ts` → `logConfiguration` | [`cloudwatch-logs`](concepts/cloudwatch-logs.md) |
-| Metrics | 🟡 | `infra/compute/cluster.ts` → `containerInsights: "disabled"` (only basic AWS metrics); P2 dashboard `infra/src/observability/dashboard-body.ts` → `dashboardBody` | [`metrics`](concepts/metrics.md) |
-| Alerting | 🟡 | `infra/budget.ts` → `createBudget` (cost); P2 health alarms `infra/src/observability/alarm-specs.ts` → `alarmSpecs` + SNS email `alert-topic.ts` | [`alerting`](concepts/alerting.md) |
-| Distributed tracing | 📖 | Explain-only | `distributed-tracing` · P5 |
-| OpenTelemetry | 📖 | Explain-only | `opentelemetry` · P5 |
-| SLIs, SLOs and error budgets | 📖 | Explain-only | `slos` · P5 |
-| Audit logs (CloudTrail) | 📖 | Explain-only | `cloudtrail` · P5 |
+| --- | --- | --- | --- |
+| Alerting | ✅ built in repository; live AWS acceptance is separate | `infra/src/budget.ts`, `infra/src/observability/alarm-specs.ts` | [alerting](concepts/alerting.md) |
+| CloudWatch Logs: log groups, streams, retention | ✅ built in repository; live AWS acceptance is separate | `infra/src/compute/logs.ts`, `infra/src/compute/task.ts` | [cloudwatch-logs](concepts/cloudwatch-logs.md) |
+| Request IDs and correlation IDs | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/app.ts`, `apps/api/src/http/correlation-id.ts` | [correlation-ids](concepts/correlation-ids.md) |
+| Metrics | ✅ built in repository; live AWS acceptance is separate | `infra/src/compute/cluster.ts`, `infra/src/observability/dashboard-body.ts` | [metrics](concepts/metrics.md) |
+| Slo error budget | 📖 explain-only | Explain-only / observational; see card | [slo-error-budget](concepts/slo-error-budget.md) |
+| Structured JSON logs (Fastify's logger, pino) | ✅ built | `apps/api/src/app.ts`, `apps/worker/src/log.ts` | [structured-logging](concepts/structured-logging.md) |
+| Tracing | 📖 explain-only | Explain-only / observational; see card | [tracing](concepts/tracing.md) |
+
+## Performance & Caching
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Cache-aside | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/events-cache.ts`, `apps/api/src/services/events.ts` | [cache-aside](concepts/cache-aside.md) |
+| Cache filter keys | 🟡 partial | `apps/api/src/services/event-filters.ts` | [cache-filter-keys](concepts/cache-filter-keys.md) |
+| Cache invalidation | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/events-cache.ts`, `apps/api/src/services/events.ts` | [cache-invalidation](concepts/cache-invalidation.md) |
+| Cache key versioning | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/events-cache.ts` | [cache-key-versioning](concepts/cache-key-versioning.md) |
+| Cache stampede | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/queries/events-cache.ts`, `apps/api/src/services/single-flight.ts` | [cache-stampede](concepts/cache-stampede.md) |
+| CDN caching: hashed static files cached, per-user answers never | ✅ built in repository; live AWS acceptance is separate | `infra/src/entry/cdn.ts` | [cdn-caching](concepts/cdn-caching.md) |
+| Compression at the edge (gzip / Brotli) | 🟡 partial (static files only) | `infra/src/entry/cdn.ts` | [compression](concepts/compression.md) |
+| Next data cache | ✅ built in repository; live AWS acceptance is separate | `apps/web/src/features/events/server/cached-events.ts` | [next-data-cache](concepts/next-data-cache.md) |
+| Stale while revalidate | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/services/events.ts` | [stale-while-revalidate](concepts/stale-while-revalidate.md) |
+| TTL (time to live) | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/procedures/auth.ts`, `apps/api/src/queries/events-cache.ts` | [ttl](concepts/ttl.md) |
+
+## Reliability
+
+| Concept | Status | Where in our code | Card |
+| --- | --- | --- | --- |
+| Autoscaling | 📖 explain-only | Explain-only / observational; see card | [autoscaling](concepts/autoscaling.md) |
+| Circuit breaker | 🟡 partial (deployments only) | `infra/src/compute/service.ts`, `infra/src/compute/web-service.ts` | [circuit-breaker](concepts/circuit-breaker.md) |
+| Dead-letter queue (DLQ) | ✅ built in repository; live AWS acceptance is separate | `infra/src/jobs/queues.ts` | [dead-letter-queue](concepts/dead-letter-queue.md) |
+| Fail fast and timeouts when a dependency is down | ✅ built in repository; live AWS acceptance is separate | `apps/api/src/db/client.ts`, `apps/api/src/queries/events-cache.ts` | [fail-fast](concepts/fail-fast.md) |
+| Graceful degradation | ✅ built in repository; live acceptance is separate | `apps/api/src/services/events.ts`, `apps/api/src/queries/events-cache.ts` | [graceful-degradation](concepts/graceful-degradation.md) |
+| Graceful shutdown (and PID 1 signals) | ✅ built in repository; live AWS acceptance is separate | `apps/api/Dockerfile`, `apps/api/src/server.ts` | [graceful-shutdown](concepts/graceful-shutdown.md) |
+| Health checks: liveness vs readiness | ✅ built | `apps/api/src/app.ts`, `apps/api/src/queries/health.ts` | [health-checks](concepts/health-checks.md) |
+| High availability across availability zones | 🟡 partial (multi-AZ shape, single copies) | `infra/src/network.ts`, `infra/src/compute/service.ts` | [high-availability](concepts/high-availability.md) |
+| Load balancing algorithms: round robin, least connections, IP hash | 🟡 partial (ALB default) | `infra/src/entry/target-groups.ts` | [load-balancing-algorithms](concepts/load-balancing-algorithms.md) |
+| Monolith vs microservices | ✅ built (a modular monolith) | `apps/api/src/trpc/router.ts` | [monolith-vs-microservices](concepts/monolith-vs-microservices.md) |
+| Retry policy: retry only what is safe | ✅ built in repository; live AWS acceptance is separate | `apps/web/src/providers/query-provider.tsx`, `apps/worker/src/retry-later.ts` | [retry-policy](concepts/retry-policy.md) |
+| Vertical vs horizontal scaling | 🟡 partial (ready to scale out, runs 1 task) | `infra/src/compute/service.ts` | [scaling](concepts/scaling.md) |
+| Zero-downtime deploys: rolling update + draining | 🟡 partial | `infra/src/compute/service.ts`, `infra/src/compute/web-service.ts` | [zero-downtime-deploys](concepts/zero-downtime-deploys.md) |
 
 ## Testing
 
 | Concept | Status | Where in our code | Card |
-| ------- | ------ | ----------------- | ---- |
-| Unit tests (Vitest, next to the code) | ✅ | `vitest.config.mts`; `packages/shared/src/schemas/auth.test.ts`; `web/features/auth/lib/safe-next.test.ts` | [`unit-tests`](concepts/unit-tests.md) |
-| In-process API tests (no real network) | ✅ | `api/trpc/init.test.ts` → `createCallerFactory`; `api/config/trust-proxy.test.ts` → `app.inject` | [`in-process-api-tests`](concepts/in-process-api-tests.md) |
-| End-to-end tests with Playwright (and test data isolation) | ✅ | `apps/web/e2e/login.spec.ts` → `runId`; `apps/web/playwright.config.ts` → `webServer` | [`e2e-tests`](concepts/e2e-tests.md) |
-| Static checks: strict TypeScript + lint | ✅ | `tsconfig.base.json` → `strict`; `eslint.config.mjs` | [`static-checks`](concepts/static-checks.md) |
-| Testing pyramid | 🟡 | Unit + e2e. Few integration tests against a real database. | [`testing-pyramid`](concepts/testing-pyramid.md) |
-| Mocks vs real dependencies | 📖 | Explain-only | `mocking` · P5 |
-| Contract testing | 📖 | Explain-only | `contract-testing` · P5 |
-
-## Topics added beyond reference-topics.md
-
-[reference-topics.md](reference-topics.md) is the owner's checklist. These rows were added because
-senior backend and cloud interviews often ask about them:
-
-- **API:** API versioning, pagination, stateless servers, `trustProxy`.
-- **Data:** connection pooling, migrations, unique constraint vs check-then-insert.
-- **Auth & Security:** open redirect, XSS, MFA, log redaction, least privilege, secrets
-  management, encryption at rest and in transit, user enumeration.
-- **Async:** transactional outbox, background jobs.
-- **Reliability:** health checks, retry policy, fail fast, zero-downtime deploys, high
-  availability, backpressure.
-- **DevOps:** Docker builds and hardening, immutable tags, IaC, cost switches, CD, blue/green,
-  feature flags, image scanning.
-- **AWS:** every row in the three AWS areas.
-- **Observability:** CloudWatch Logs, alerting, SLOs, audit logs.
-- **Testing:** the whole area.
-
-## How this connects
-
-- **Uses:** the code (every ✅ row was checked against it) and the step docs in [docs/](..).
-- **Gives:** the list of cards to write in Phases 2, 3 and 5. [README.md](README.md) uses it for
-  the reading paths. `pnpm docs:check` reads it.
+| --- | --- | --- | --- |
+| End-to-end tests with Playwright (and test data isolation) | ✅ built in repository; live acceptance is separate | `apps/web/playwright.config.ts`, `apps/web/e2e/login.spec.ts` | [e2e-tests](concepts/e2e-tests.md) |
+| In-process API tests (no real network) | ✅ built | `apps/api/src/trpc/init.test.ts`, `apps/api/src/config/trust-proxy.test.ts` | [in-process-api-tests](concepts/in-process-api-tests.md) |
+| Lighthouse ci | 📖 explain-only | Explain-only / observational; see card | [lighthouse-ci](concepts/lighthouse-ci.md) |
+| Static checks: strict TypeScript + lint | ✅ built | `eslint.config.mjs`, `.github/workflows/ci.yml` | [static-checks](concepts/static-checks.md) |
+| Testing pyramid | ✅ built in repository; live acceptance is separate | `vitest.config.mts`, `apps/web/playwright.config.ts` | [testing-pyramid](concepts/testing-pyramid.md) |
+| Unit tests (Vitest, next to the code) | ✅ built | `vitest.config.mts`, `packages/shared/src/schemas/auth.test.ts` | [unit-tests](concepts/unit-tests.md) |

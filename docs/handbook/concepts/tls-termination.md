@@ -2,131 +2,87 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: AWS Network · Status: ✅ built (dev compromise) · Step doc: [19 CloudFront](../../19-infra-cloudfront.md) (section 3.5)
+Area: AWS Network · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**TLS termination** is the place where an encrypted connection ends and the request is read in plain
-form; for our browsers that is the CloudFront edge.
+Current public TLS terminates at the ACM-backed ALB for minitickets.theversehub.in. Optional CloudFront mode terminates at the edge and uses the existing HTTP origin design; CloudFront-to-ALB HTTPS is explain-only.
 
 ## 2. Real-life comparison
 
-A sealed envelope carried to a post office counter. The clerk opens it there and sends the letter
-on inside the building in an internal (unsealed) folder. The seal protected it on the street, not
-in the building.
+Road signs find the right building, guards allow the right door and staff badges allow specific service actions.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    b["Browser"] -->|"HTTPS (TLS)"| cf["CloudFront edge<br/>TLS ends here"]
-    cf -->|"plain HTTP :80"| alb["ALB listener :80"]
-    alb -->|"plain HTTP"| t["task :3000 / :4000"]
-    t -->|"TLS again"| db[("RDS / Valkey")]
+    n0["Browser HTTPS ALB"] --> n1
+    n1["Target SG and task ENI"] --> n2
+    n2["API private route"] --> n3
+    n3["DB SG and credentials"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/entry/cdn.ts` · `originProtocolPolicy: "http-only"`: CloudFront → ALB is plain HTTP.
-- Anchor: `infra/src/entry/listener.ts` · `listener`: the ALB listens on HTTP :80 only.
+- Anchor: `infra/src/entry/cdn.ts` — `module configuration`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/entry/listener.ts` — `listener`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. `cdn.ts` → `viewerCertificate: { cloudfrontDefaultCertificate: true }`: browsers get TLS with
-   the `*.cloudfront.net` certificate.
-2. `cdn.ts` → `viewerProtocolPolicy: "redirect-to-https"`: plain `http://` is redirected.
-3. `cdn.ts` → origin `customOriginConfig.originProtocolPolicy: "http-only"`, `httpPort: 80`.
-   (`originSslProtocols: ["TLSv1.2"]` is required by the API but unused with http-only.)
-4. `listener.ts` → `port: 80, protocol: "HTTP"`. There is no 443 listener.
-5. Because the ALB's own listener is HTTP, it sets `X-Forwarded-Proto: http`. That causes the
-   harmless extra redirect on `/dashboard` described in [docs/19](../../19-infra-cloudfront.md),
-   section 3.10.
+`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
 
 ## 5. See it yourself
 
-```bash
-cd infra && APP=$(pulumi stack output appUrl)
-curl -sv "$APP/" -o /dev/null 2>&1 | grep -E 'SSL connection|subject:|issuer:'
-```
+Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
 
-Shows the TLS version and the `*.cloudfront.net` certificate. In the CloudFront console, the
-origin shows "HTTP only".
-
-**Break it on purpose (scratch branch):** set `originProtocolPolicy: "https-only"`. Nothing listens
-on 443 at the ALB, so every request gets CloudFront's 502.
+Failure thought experiment: Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [CloudFront](cloudfront.md), the [ALB](alb.md).
-- **Gives →** the `Secure` cookie works (the browser only judges its own HTTPS connection);
-  [tls-in-transit](tls-in-transit.md) covers the other hops.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#network-boundaries) and [explorer tour](../guides/infra-explorer.html?tour=database-reach).
 
 ## 7. Our settings and WHY
 
-| Hop | Encrypted? | Why |
-| --- | ---------- | --- |
-| Browser → edge | yes | Free default certificate. |
-| Edge → ALB | **no** | HTTPS here needs a certificate for a domain we own; the ALB's name belongs to AWS. Runs on AWS's network, but is not encrypted. |
-| ALB → task | no | Inside our VPC. |
-| api → RDS, api → Valkey | yes | Required by RDS (`force_ssl`) and by the cache (`transitEncryptionEnabled`). |
+Current public TLS terminates at the ACM-backed ALB for minitickets.theversehub.in. Optional CloudFront mode terminates at the edge and uses the existing HTTP origin design; CloudFront-to-ALB HTTPS is explain-only. A valid password cannot repair a missing route or blocked SG.
 
 ## 8. Trade-offs
 
-- **Pros:** HTTPS for users with no domain and no certificate work; the ALB does no TLS work.
-- **Cons:** the edge-to-ALB hop carries cookies and the origin secret unencrypted;
-  `X-Forwarded-Proto` says `http`, which confuses redirects.
+Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.
 
 ## 9. Alternatives and when to choose them
 
-- **HTTPS to the origin** (custom domain + ACM certificate on the ALB, `https-only`): production.
-- **End-to-end TLS to the task** (the ALB re-encrypts to the container): strict compliance
-  (for example some PCI setups).
-- **TLS at the ALB only, no CDN:** a single-region app with a custom domain.
+10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- `https-only` with no 443 listener: 502 everywhere.
-- Visiting the ALB directly over HTTP: times out (security group), and even if it did not, the
-  `Secure` cookie would be dropped.
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
 
 ## 11. Reach / Allowed / Password
 
-**Password** for the browser hop: the certificate proves CloudFront's identity to the browser. The
-edge → ALB hop has no TLS, so the ALB only gets the shared-secret header as proof.
+Prove the network path separately from the scoped IAM action and the runtime credential. [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached) shows trust, permissions and attachment. No AWS endpoint needs an inbound SG simply because a non-VPC Lambda calls it.
 
 ## 12. Cost
 
-The default CloudFront certificate is free; ACM public certificates are free too.
+Existing resource/usage costs are detailed in the corresponding infra guide chapter. No new resources were deployed by this documentation change. Historical phase costs are illustrative snapshots, not a current quote; inspect billing and current regional pricing before a capacity decision.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** HTTPS ends at CloudFront; behind it traffic is plain HTTP.
-- **Senior:** Browsers do TLS with CloudFront's `*.cloudfront.net` certificate. CloudFront reaches
-  the ALB with `http-only` on port 80 because we have no domain to certify the ALB with. Inside, the
-  api uses TLS again to RDS and Valkey. The side effect is `X-Forwarded-Proto: http`.
-- **Lead:** Where TLS terminates is a risk decision. In dev I accept an unencrypted hop on AWS's
-  network; for production I'd terminate at the edge and re-encrypt to the ALB with an ACM
-  certificate, and evaluate end-to-end TLS if compliance requires it.
+- **Simple:** Current public TLS terminates at the ACM-backed ALB for minitickets.theversehub.in.
+- **Senior:** First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
+- **Lead:** 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why does the Secure cookie work if the hop to the ALB is HTTP?* The browser only sees its own
-  connection to CloudFront, which is HTTPS.
-- *What would you need for HTTPS to the ALB?* A domain, an ACM certificate in the ALB's region, a
-  443 listener and `https-only` on the origin.
+Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+
+Which control is stateful? **Security group.**
 
 ## 15. Say it in 30 seconds
 
-"TLS ends at the CloudFront edge with the free `*.cloudfront.net` certificate. From the edge to the
-ALB it's plain HTTP on port 80, a dev compromise because we own no domain. The api then uses TLS
-again to RDS and Valkey."
+First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built as a dev compromise. **To make it production-grade:** custom domain, ACM certificate on the
-ALB, HTTPS listener, `https-only` origin.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
 
 ## Where it appears in the story
 
-- [Infra story: 1. CloudFront](../infra-story.md#1-cloudfront)
-- [Big picture: 4. Components](../00-big-picture.md#4-components)
+- [infra-story: 4b. Private service discovery and asynchronous workers](../infra-story.md#4b-private-service-discovery-and-asynchronous-workers)

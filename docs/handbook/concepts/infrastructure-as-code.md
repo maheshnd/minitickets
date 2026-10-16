@@ -38,7 +38,7 @@ How the code is organised, step by step:
    dependency, so Pulumi creates things in the right order.
 3. Switches (`dataEnabled`, `computeEnabled`, `entryEnabled`) decide which layers exist
    ([cost-switches](cost-switches.md)).
-4. Config lives in `Pulumi.dev.yaml` (`aws:region`, `aws:profile`, the switches, the image tags; the
+4. The deployed image tag lives in SSM `/minitickets/dev/image-tag`, written only by CD; `/minitickets/dev/deployed-commit` guards old infrastructure runs. Config lives in `Pulumi.dev.yaml` (`aws:region` and environment switches; the
    alert email encrypted).
 5. Stack outputs (step 25-29) give scripts the values they need (`apiRepoUrl`, `clusterName`, …).
 6. Ordering tricks where Pulumi can't see a dependency: return a value only after another resource
@@ -90,7 +90,7 @@ pulumi stack output
 
 ## 11. Reach / Allowed / Password
 
-**Allowed:** Pulumi acts with the owner's AWS credentials (`aws:profile`). It never prints them.
+**Allowed:** local read-only previews use `AWS_PROFILE=ticketlite`; approved CD uses its scoped OIDC role. No `aws:profile` belongs in committed config.
 
 ## 12. Cost
 

@@ -14,6 +14,7 @@ import type { ListEventsInput } from "@minitickets/shared";
 //   from / to: the START of a UTC day (00:00:00.000Z). `to` means "up to the END of that day".
 export type EventFilters = { venue?: string; from?: Date; to?: Date };
 
+// @concept: cache-filter-keys
 export function canonicalFilters(input: ListEventsInput | undefined): EventFilters {
   const filters: EventFilters = {};
 

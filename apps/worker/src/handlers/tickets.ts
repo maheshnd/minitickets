@@ -8,6 +8,7 @@ export type TicketDeps = {
   writePng: (key: string, token: string) => Promise<void>;
 };
 
+// @concept: ticket-signing
 export async function handleTickets(input: unknown, deps: TicketDeps): Promise<{ created: number; skipped: number }> {
   // 1. Stable ids are derived from the booking, NEVER the queue/message id. Publishing the
   //    same booking again therefore cannot mint more seats. Bound quantity before doing work.

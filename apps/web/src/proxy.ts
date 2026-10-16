@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { securityPolicy } from "./lib/security-policy";
 
 // @concept: route-guard-proxy
+// @concept: csp
 export function proxy(request: NextRequest) {
   // 1. Replace caller-provided nonce/CSP headers; Next reads this request CSP to nonce its scripts.
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");

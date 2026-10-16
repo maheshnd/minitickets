@@ -2,113 +2,79 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Reliability · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md)
+Area: Reliability · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-In the browser, failed **queries** are retried up to 2 more times unless the error is a 4xx, and
-**mutations are never retried**, because retrying a write can do it twice.
+General mutations do not auto-retry. Booking explicitly retries network/5xx at most twice with the same intent; worker and outbox policies differ, and jitter remains explain-only.
 
 ## 2. Real-life comparison
 
-If a phone call drops, you call back to ask a question again (a read). You don't automatically
-re-send a bank transfer because the confirmation didn't arrive: you check first.
+A durable work tray keeps the task after the customer leaves; a completed stamp identifies a repeat.
 
 ## 3. Picture it
 
 ```mermaid
-flowchart TB
-    f["request failed"] --> m{"mutation?"}
-    m -->|"yes"| stop["no retry (retry: 0)"]
-    m -->|"no, a query"| s{"HTTP 4xx?"}
-    s -->|"yes"| stop2["no retry: same request<br/>can't succeed"]
-    s -->|"no: 5xx or network"| r["retry: wait 1 s, then 2 s<br/>(3 attempts total)"]
+flowchart LR
+    n0["Temporary failure"] --> n1
+    n1["Same operation identity"] --> n2
+    n2["Bounded backoff"] --> n3
+    n3["Success or inspect backlog"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `apps/web/src/providers/query-provider.tsx` · `shouldRetry`, `defaultOptions: { queries: { retry: shouldRetry }, mutations: { retry: 0 } }`.
-- Anchor: `apps/worker/src/retry-later.ts` · `delayFailedMessages`: background jobs retry with exponential backoff (10 s, 40 s, 120 s) via `ChangeMessageVisibility`, then the dead-letter queue (S1c).
+- Anchor: `apps/web/src/providers/query-provider.tsx` — `shouldRetry`; follow the numbered comments at this boundary.
+- Anchor: `apps/worker/src/retry-later.ts` — `delayFailedMessages`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. `shouldRetry(failureCount, error)` reads `error.data.httpStatus`.
-2. 400-499 → `false`: bad input, no session, duplicate email won't change by retrying.
-3. Otherwise (5xx, network error with no status) → `failureCount < 2`.
-4. Delays come from TanStack's default: `Math.min(1000 * 2 ** failureCount, 30000)`. With our rule
-   that is 1 s, then 2 s, then give up: 3 attempts in total. (Verified in the installed
-   `@tanstack/query-core` 5.104.1 `retryer.js`; TanStack's own default would be 3 retries.)
-5. Mutations: `retry: 0`. The comment explains the case: signup succeeds, the response is lost, a
-   retry hits the unique email and shows "Email already registered" for the user's own new account.
+`apps/web/src/features/bookings/lib/booking-retry.ts`, `apps/worker/src/backoff.ts` and `apps/api/src/services/outbox.ts` implement separate policies. Run `pnpm demo:outbox`. Outbox retries cap at 60 s without a maximum attempt count; worker failures use 10/40/120 s and a DLQ after 3 receives.
 
 ## 5. See it yourself
 
-DevTools → Network → set throttling to **Offline**, then focus the window (it refetches `auth.me`):
-you see the failed attempt and two retries about 1 s and 2 s apart. Set it back to **No throttling**.
+Run `pnpm demo:outbox` and inspect the asserted outcome described above.
 
-`useProfile` without a cookie: one request, a 401, no retries.
-
-**Break it on purpose:** set `mutations: { retry: 3 }` and make signup's response slow and flaky
-(e.g. drop the connection in a proxy): a successful signup can end with a 409 error shown to the
-user.
+Failure thought experiment: What if the response is lost after send? A retry may duplicate delivery; the consumer must be idempotent. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [tanstack-query](tanstack-query.md), [http-status-codes](http-status-codes.md).
-- **Gives →** resilience to blips (Spot task replaced, deploy); safety for non-idempotent writes
-  ([idempotency](idempotency.md)).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#retry-backoff) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
 
 ## 7. Our settings and WHY
 
-| Kind | Retries | Why |
-| ---- | ------- | --- |
-| Query, 4xx | 0 | Can't succeed; also avoids hammering on 401. |
-| Query, 5xx/network | 2 (1 s, 2 s) | Short blips (task replacement) recover. |
-| Mutation | 0 | Not idempotent; no idempotency keys yet. |
+General mutations do not auto-retry. Booking explicitly retries network/5xx at most twice with the same intent; worker and outbox policies differ, and jitter remains explain-only. Immediate retries turn a partial failure into more load.
 
 ## 8. Trade-offs
 
-- **Pros:** reads survive short outages; writes never duplicate.
-- **Cons:** a lost signup response leaves the user unsure; retries add load during a real outage
-  (only 2 per query).
+Do not retry validation/authorization failures. Layered retries multiply attempts; choose one responsible layer. Proposed jitter belongs in retryInMs/backoff with bounded randomized tests.
 
 ## 9. Alternatives and when to choose them
 
-- **Idempotency keys + mutation retries:** safe automatic retries for writes.
-- **Jittered backoff:** spreads retries from many clients (TanStack's default has no jitter).
-- **Retry budgets** server-side: cap total retries in a fleet.
+10x: retry budgets and attempt metrics. 100x: per-destination admission and circuit breakers with durable backlog.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Retrying 4xx: 401 loops and wasted requests; visible in the Network tab.
-- Retrying mutations: duplicate side effects; would show as 409s after success.
+What if the response is lost after send? A retry may duplicate delivery; the consumer must be idempotent.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** We try reading again if the network hiccups, but never send a change twice by
-  ourselves.
-- **Senior:** `shouldRetry` skips 4xx and allows 2 retries for 5xx and network errors with
-  exponential backoff (1 s, 2 s); mutations have `retry: 0` because signup isn't idempotent: a
-  retried successful signup would return 409.
-- **Lead:** Retries need three things: only retry what's retryable, only retry what's idempotent,
-  and cap them with backoff and jitter. To retry writes, add idempotency keys first.
+- **Simple:** General mutations do not auto-retry.
+- **Senior:** Retry only failures likely to be temporary, bound attempts/time and retain operation identity. Exponential backoff reduces pressure; jitter prevents synchronized clients. MiniTickets retries ambiguous booking network failures with the same key, caps worker retries into a DLQ and keeps outbox retries durable. Jitter is a proposed improvement, not a claim about current fixed schedules.
+- **Lead:** 10x: retry budgets and attempt metrics. 100x: per-destination admission and circuit breakers with durable backlog.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not retry 429?* It's 4xx; with rate limiting we'd honour `Retry-After` instead.
-- *What's a retry storm?* Many clients retrying at once, multiplying load on a struggling service.
+What if the response is lost after send? A retry may duplicate delivery; the consumer must be idempotent.
+
+Which error should normally not be retried? **Invalid input.**
 
 ## 15. Say it in 30 seconds
 
-"Queries retry twice with 1 and 2 second backoff, but never on 4xx because those can't succeed.
-Mutations never retry, because a write isn't idempotent: a retried signup that actually succeeded
-would come back as 'Email already registered'."
+Retry only failures likely to be temporary, bound attempts/time and retain operation identity. Exponential backoff reduces pressure; jitter prevents synchronized clients. MiniTickets retries ambiguous booking network failures with the same key, caps worker retries into a DLQ and keeps outbox retries durable. Jitter is a proposed improvement, not a claim about current fixed schedules.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: retry budgets and attempt metrics. 100x: per-destination admission and circuit breakers with durable backlog.
 
 ## Where it appears in the story
 
-- [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
-- [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)
+- [app-story: 9c. Side path: outbox, fan-out and recoverable work](../app-story.md#9c-side-path-outbox-fan-out-and-recoverable-work)

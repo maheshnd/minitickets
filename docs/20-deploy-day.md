@@ -22,21 +22,15 @@ Steps marked **Path A** or **Path B** apply only to that path; everything else i
 
 ```mermaid
 flowchart LR
-    b["0b. Path B only:<br/>certificate ISSUED<br/>(days before)"] -.-> p
-    p["0. Prepare"] --> i["1. Push images,<br/>set tags"]
-    i --> d["2. Data on"]
-    d --> c["3. Compute +<br/>entry on"]
-    c --> m["4. Migrate"]
-    m --> v["5. Verify"]
-    v --> t["6. Console tour"]
-    t --> off["7. Everything off"]
+    shape["Commit environment shape"] --> ci["CI quality / image gates"]
+    ci --> publish["OIDC publish three SHA images once"]
+    publish --> approve["Approve newest dev run"]
+    approve --> guard["Guard / phase A / migrate"]
+    guard --> roll["Phase B / image and health checks"]
+    roll --> accept["Owner DNS and feature acceptance"]
 ```
 
-Real-life comparison: opening a shop for the day. Check you have your keys (prepare). Bring the goods (images). Switch on the fridges first, because they take longest to cool (data). Open the doors and the till (compute + entry). Stock the shelves (migrate). Test the till with one purchase (verify). Walk around once (console tour). Close everything at night, so you do not pay for an empty shop (off).
-
-**Time and money.** Plan about **2 hours** for the first run: ~15 min for data, ~20 min for compute + entry, ~25 min to turn everything off, the rest for checking. Everything on costs about **8 cents an hour** ([Step 11g](19-infra-cloudfront.md), section 3.12).
-
-**How to read this page.** Each command is followed by **Expect:**, what you should see. Names like `d1a2b3c4` and `1a2b3c4` are made-up examples; yours differ. If what you see is different, stop and go to [section 3.9, Troubleshooting](#39-troubleshooting).
+Current committed shape is data/compute/entry enabled, CDN disabled, own-domain ALB HTTPS. Resource counts, create times and regional prices in historical feature records are observations, not a current preview or quote. Only the owner runs AWS-changing commands in bootstrap/recovery sections below; agents use read-only diagnostics.
 
 ## 3. The steps
 
@@ -100,7 +94,7 @@ session-manager-plugin --version
 git status --porcelain
 ```
 
-**Expect:** **no output** (a clean working tree). `pnpm images:push` refuses to run otherwise, because the image tag is the git SHA ([Step 11d](16-infra-ecr.md)).
+**Expect:** **no output** (a clean working tree). only committed reviewed source can be shipped by CD; the published image tag identifies that source ([Step 11d](16-infra-ecr.md)).
 
 ```bash
 cd infra
@@ -120,238 +114,35 @@ cd ..
 
 **Why we need it.** A wrong profile would create everything in the wrong account. A missing plugin is easy to install now, and annoying to discover with the meter running.
 
-### 3.0b Path B only: the certificate (days before deploy day)
+### 3.0b Path B only: certificate and DNS
 
-**What it is.** A free TLS certificate from ACM for your domain. Amazon issues it only after it sees a DNS record that proves you control the domain. Your DNS is **not** in Route 53, so you add that record by hand at your DNS provider. The certificate is **not** behind any switch: you create it once, and it stays (and renews itself) while the record stays.
+ACM certificate `minitickets.theversehub.in` is defined outside the entry switch; entry waits for DNS validation. If it is not already bootstrapped, the owner follows the current infrastructure bootstrap process and reviews the preview before applying. Do not apply a whole unpublished feature graph just to create a certificate.
 
-```mermaid
-sequenceDiagram
-    participant P as pulumi up
-    participant ACM as ACM
-    participant You as You, at the DNS provider
-    P->>ACM: request certificate (DNS validation)
-    ACM-->>P: validation record (name, value)
-    You->>You: add CNAME record
-    ACM->>ACM: looks it up (minutes to hours)
-    Note over ACM: status ISSUED, renews itself later
-```
+Read `certificateValidationRecord` from Pulumi outputs, then create exactly that CNAME at Cloudflare with proxy off/DNS only. Keep it for automatic renewal. Never copy an illustrative validation token from documentation. ACM console → Certificates → domain → Status must be ISSUED before entry can finish. Read-only CLI: `aws acm list-certificates --region us-east-1`. Change CDN mode only while entry is off.
 
-```bash
-cd infra
-pulumi config set cdnEnabled false
-pulumi config set domainName minitickets.theversehub.in
-pulumi preview
-```
+### 3.1 Publish images once through CD
 
-**Expect:** with all three switches off: `+ 1 to create` (the certificate) and `- 1 to delete`: the alb security group's "HTTP from CloudFront only" rule. It has no job without CloudFront; the ALB's own doors for Path B (80 and 443 from `allowedCidrs`) are only opened while the ALB exists. Nothing else.
+Owner: commit/push reviewed source/config to main. CI must pass, then the publish job in `.github/workflows/cd.yml` builds api/web/worker ARM64 images using one SHA tag. It skips immutable tags that already exist. Review the run summary: three tags and digests. No laptop image push or per-image tag config is part of normal deployment. A pre-ticket worker image is not a valid rollback target.
 
-Optional, for dev: let only your own IP reach the ALB (the default is the whole internet):
+The deployed tag belongs in SSM `/minitickets/dev/image-tag`, written only by CD. Publish role trust is main's immutable repository subject; deploy uses the approved dev-environment subject. Bootstrap missing permissions/resources before the job that uses them (3.10–3.14).
 
-```bash
-curl -s https://checkip.amazonaws.com            # your public IP, e.g. 203.0.113.7
-pulumi config set --path 'allowedCidrs[0]' 203.0.113.7/32
-```
+### 3.2 Commit the environment shape
 
-Your home IP can change; if the site suddenly times out for you, check this first (3.9).
+Owner: edit the committed `infra/Pulumi.dev.yaml` switches to the intended shape, review and commit/push them. Data must exist before compute; compute before entry. Normal on uses data/compute/entry true with cdnEnabled=false and the existing domain. Do not add aws:profile or apiImageTag/webImageTag/workerImageTag/migrationImageTag. To preview locally use AWS_PROFILE=ticketlite and plain `pulumi preview`; `--config` writes the config file and is not a harmless override.
 
-```bash
-pulumi up
-pulumi stack output certificateValidationRecord
-```
+Approve only the newest CD deploy run after checking its exact SHA. Reusing a waiting old run risks applying an obsolete infrastructure graph; the newest guard refuses that (3.11).
 
-**Expect:** `Resources: + 1 created, - 1 deleted` within a minute (nothing waits for the certificate), then something like:
+### 3.3 Approved two-phase deploy, then public DNS
 
-```json
-{
-  "name": "_3f9a1c2b4d5e6f7a8b9c0d1e2f3a4b5c.minitickets.theversehub.in.",
-  "type": "CNAME",
-  "value": "_7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d.xlfgrmvvlj.acm-validations.aws."
-}
-```
+CD phase A creates/updates the infrastructure and dedicated migration task with the new API image while existing services keep the current release. First deployment initializes a usable release tag before creating compute. CD runs migration, then phase B promotes the release tag, protects deployed ECR tags and rolls API/web and both Lambdas. It checks task-definition/image identities as well as stability, trigger state and HTTP smoke results. A circuit-breaker rollback can be stable while running the old image, so stability alone is insufficient.
 
-**Add the record at your DNS provider**, in the zone `theversehub.in`:
+Service Connect api/web aliases and SG ingress 14000/13000 must exist; CD handles the API rollout after initial web discovery. Inspect ECS → Services → Service Connect if SSR/revalidation fails.
 
-| Field | What to type |
-| --- | --- |
-| Type | `CNAME` |
-| Name / Host | the `name` **without** the zone and the final dot: `_3f9a…4b5c.minitickets`. (Most providers add `.theversehub.in` themselves; typing the full name gives `…theversehub.in.theversehub.in`, which never validates.) |
-| Value / Target | the `value`, exactly. Keep the final dot if the provider accepts it; some want it removed. |
-| TTL | anything (e.g. 300 or "auto") |
-| Proxy (Cloudflare only) | **off** ("DNS only", grey cloud) |
+Path B: read the ALB DNS name from the newest successful deploy summary/`appDnsRecord`, then owner sets Cloudflare CNAME minitickets to that ALB, DNS only. Keep ACM validation CNAME separate. ALB names can change after teardown. The CD smoke uses domain-preserving connection to the ALB so it can check TLS before public DNS catches up. If allowedCidrs excludes the runner, smoke cannot reach it. Path A remains inactive pending account verification.
 
-**Never delete this record.** ACM uses it again to renew the certificate (about every 13 months) by itself.
+### 3.4 Check the dedicated migration result
 
-Check that the record is public, then wait for ACM:
-
-```bash
-dig +short CNAME _3f9a1c2b4d5e6f7a8b9c0d1e2f3a4b5c.minitickets.theversehub.in   # your real name
-aws acm describe-certificate --certificate-arn "$(pulumi stack output certificateArn)" \
-  --query 'Certificate.{status:Status,validation:DomainValidationOptions[0].ValidationStatus}'
-cd ..
-```
-
-**Expect:** `dig` prints the `value`. Then first `PENDING_VALIDATION`, and after a few minutes (sometimes up to an hour or two) `"status": "ISSUED", "validation": "SUCCESS"`. To wait in the terminal: `aws acm wait certificate-validated --certificate-arn "$(pulumi stack output certificateArn)"` (it gives up after about 40 minutes; just run it again). If it says `FAILED` or stays pending for many hours, see 3.9.
-
-**Why days before.** On deploy day `pulumi up` creates the HTTPS listener only after the certificate is ISSUED (it waits at most 10 minutes, then fails). An ISSUED certificate makes that wait instant.
-
-### 3.1 Push both images, set the tags, commit
-
-**What it is.** Build the api and web images for ARM64, push them to ECR, and tell Pulumi which tag to run.
-
-```mermaid
-flowchart LR
-    code["Commit 1a2b3c4"] -->|"pnpm images:push"| ecr["ECR<br/>api:1a2b3c4<br/>web:1a2b3c4"]
-    code -->|"pulumi config set"| cfg["Pulumi.dev.yaml<br/>apiImageTag, webImageTag"]
-    cfg -->|"git commit"| repo["Repo"]
-```
-
-```bash
-pnpm images:push
-```
-
-**Expect** (after a few minutes of build output):
-
-```text
-Pushed (tag = git SHA):
-  minitickets-dev-api  tag=1a2b3c4  digest=sha256:...
-  minitickets-dev-web  tag=1a2b3c4  digest=sha256:...
-```
-
-If it fails with `tag ... already exists`: this commit is already pushed (the repositories are **immutable**). Skip the push and just set the tags below.
-
-```bash
-TAG=$(git rev-parse --short HEAD)
-cd infra
-pulumi config set apiImageTag "$TAG"
-pulumi config set webImageTag "$TAG"
-git add Pulumi.dev.yaml
-git commit -m "deploy: images $TAG"
-```
-
-**Expect:** no output from `pulumi config set`, then `[main 9f8e7d6] deploy: images 1a2b3c4` and `1 file changed`.
-
-**Why commit.** The repo should always say **which code** runs on AWS. The tag is the SHA of the code commit; the new commit only changes `Pulumi.dev.yaml`, so the tag still points at the right code.
-
-You stay in `infra/` for the next steps.
-
-### 3.2 Data on
-
-**What it is.** RDS Postgres, Valkey and the redis-url secret ([Step 11c](14-infra-data.md)). They are the slowest to create, so they go first, alone.
-
-```bash
-pulumi config set dataEnabled true
-pulumi preview
-```
-
-**Expect:** `+ 7 to create`, `34 unchanged`. Nothing else. (Path A with a `domainName` set: `35 unchanged`, the certificate is one more.)
-
-```bash
-pulumi up
-```
-
-**Expect:** after **10-15 minutes**, `Resources: + 7 created` (plus the 2 rule changes the first time), and outputs like `dbEndpoint: "minitickets-dev-db.xxxx.us-east-1.rds.amazonaws.com"`.
-
-### 3.3 Compute + entry on, wait for both services
-
-**What it is.** The cluster, roles, both task definitions and services ([Step 11e](17-infra-ecs-api.md), [Step 11f](18-infra-alb-web.md)), the ALB, Service Connect between web and api (Step 11h), and in front of the ALB either CloudFront ([Step 11g](19-infra-cloudfront.md), Path A) or the HTTPS listener with your certificate (Step 11i, Path B).
-
-**Path A** (CloudFront):
-
-```mermaid
-sequenceDiagram
-    participant P as pulumi up
-    participant CF as CloudFront
-    participant API as api task def + service
-    participant WEB as web service
-    P->>WEB: ALB, listener, rules, web service
-    P->>CF: create distribution
-    Note over CF: 5-15 min: copied to every edge
-    CF-->>P: Deployed, appUrl known
-    P->>API: task def with WEB_ORIGIN = appUrl, then service
-```
-
-```bash
-pulumi config set computeEnabled true
-pulumi config set entryEnabled true
-pulumi preview
-```
-
-**Expect:** `+ 31 to create`, `41 unchanged`. Nothing to update, replace or delete. Read the list:
-
-- **Path A:** it contains `aws:cloudfront:Distribution`, a `CachePolicy`, the origin-verify password, the `-http` listener and two rules.
-- **Path B:** **no** CloudFront resources and no origin-verify password. Instead: `CertificateValidation` (only a wait), the `-https` listener, the `-http-redirect` listener, one rule (`-https-trpc-rule`) and two alb security group rules (`-alb-in-443-0`, `-alb-in-80-0`; two more for each extra `allowedCidrs` entry).
-
-```bash
-pulumi up
-```
-
-**Expect:** Path A: after **15-25 minutes** (CloudFront takes most of it, and the api waits for its address). Path B: after about **10 minutes** (no CloudFront). Then `Resources: + 31 created` and outputs including:
-
-```text
-appUrl        : "https://d1a2b3c4.cloudfront.net"        # Path B: "https://minitickets.theversehub.in"
-albDnsName    : "minitickets-dev-123456789.us-east-1.elb.amazonaws.com"
-apiServiceName: "minitickets-dev-api"
-webServiceName: "minitickets-dev-web"
-appDnsRecord  : null                                      # Path B: { name, type: "CNAME", value: <albDnsName> }
-```
-
-**Path B: point your domain at the ALB.** Every new ALB gets a **new** DNS name, so do this on **every** deploy day:
-
-```bash
-pulumi stack output appDnsRecord
-```
-
-At your DNS provider, in the zone `theversehub.in`, create (or edit) **one** record:
-
-| Field | What to type |
-| --- | --- |
-| Type | `CNAME` |
-| Name / Host | `minitickets` |
-| Value / Target | the `value` above, e.g. `minitickets-dev-123456789.us-east-1.elb.amazonaws.com` |
-| TTL | short, e.g. `60` or `300`: next deploy day the value changes again |
-| Proxy (Cloudflare only) | **off** ("DNS only"): the ALB must see the browser's TLS connection for its certificate |
-
-```bash
-dig +short minitickets.theversehub.in
-```
-
-**Expect** (after a minute or a few): the ALB name, then two or more IP addresses. Until then the browser says "can't find server": wait, and try again.
-
-```bash
-aws ecs wait services-stable --cluster minitickets-dev --services minitickets-dev-api minitickets-dev-web
-echo "exit: $?"
-```
-
-**Expect:** a quiet wait of 1-5 minutes, then `exit: 0`. If it fails after 10 minutes with `Max attempts exceeded`, a task keeps failing: go to [3.9](#39-troubleshooting).
-
-**Both paths: restart the api once** (Step 11h). Pulumi creates the api service before the web service, so the first api tasks started before the Service Connect name `web` existed and cannot call the web app's revalidate hook yet. A fresh deployment starts tasks that know both names:
-
-```bash
-aws ecs update-service --cluster minitickets-dev --service minitickets-dev-api --force-new-deployment \
-  --query 'service.deployments[0].status' --output text
-aws ecs wait services-stable --cluster minitickets-dev --services minitickets-dev-api
-echo "exit: $?"
-```
-
-**Expect:** `PRIMARY`, then after 2-5 minutes `exit: 0`. Skip this and a new event shows up on `/events` only after about 30 s instead of at once (check 3.5 j).
-
-### 3.4 Migrate
-
-**What it is.** Create the tables in RDS by running the migration as a one-off task ([Step 11e](17-infra-ecs-api.md)).
-
-```bash
-cd .. && pnpm infra:migrate && cd infra
-```
-
-**Expect:** within 2 minutes:
-
-```text
-Stopped reason: Essential container in task exited
-Exit code:      0
-Migrations applied.
-```
-
-The log lines above it include `migrations applied` (printed by the migration runner). "Essential container in task exited" is normal here: the task did its job and stopped.
+The normal CD flow runs `minitickets-dev-migrate` using the new published API image before rollout. Inspect the migration step: stopped task exit code 0 and `migrations applied`, with log stream `migrate/migrate/<task-id>`. Nonzero stops deployment; do not manually roll the API to work around it. `pnpm infra:migrate` is an owner recovery command using that dedicated definition, not a mandatory second migration after a successful CD run. Rollbacks must be compatible with applied schema.
 
 ### 3.5 Verify
 
@@ -481,10 +272,10 @@ done
 **j. Both paths: SSR `/events` and "admin creates an event" (Step 11h).** The web **server** fetches the events from the api over Service Connect, so the HTML itself already contains them:
 
 ```bash
-curl -s "$APP/events" | grep -o '<li class="rounded-lg' | wc -l
+curl -s "$APP/events" | grep -c 'Symphony Under the Stars'
 ```
 
-**Expect:** a number above 0: one event card per upcoming event, in the HTML the server sent. A brand-new database has no events yet; then do the admin part below first and run this again. No events and the web logs say `fetch failed` / `API_INTERNAL_URL`: Service Connect is broken (3.9).
+**Expect:** a number above 0: matching server-rendered event title, in the HTML the server sent. A brand-new database has no events yet; then do the admin part below first and run this again. No events and the web logs say `fetch failed` / `API_INTERNAL_URL`: Service Connect is broken (3.9).
 
 Making an admin needs the database, and there is no UI for roles. Sign up in the browser first (a), then make that account admin from inside the api task (ECS Exec, like g):
 
@@ -496,15 +287,28 @@ aws ecs execute-command --cluster minitickets-dev --task "$TASK" --container api
 Inside (replace the email with the one you signed up with):
 
 ```bash
-node -e 'const {Client}=require("pg");const c=new Client({host:process.env.DB_HOST,port:Number(process.env.DB_PORT),database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,ssl:{rejectUnauthorized:true}});c.connect().then(()=>c.query("update users set role = $1 where email = $2 returning email, role",["admin",process.argv[1]])).then(r=>{console.log(r.rows);return c.end()})' you@example.com
+node - you@example.com <<'JS'
+const { Client } = require("pg");
+const Redis = require("ioredis");
+const db = new Client({host:process.env.DB_HOST,port:Number(process.env.DB_PORT),database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,ssl:{rejectUnauthorized:true}});
+const redis = new Redis(process.env.REDIS_URL, {maxRetriesPerRequest:1});
+const revoke = async id => redis.eval("for _,h in ipairs(redis.call('ZRANGE',KEYS[1],0,-1)) do redis.call('DEL','session:'..h) end return redis.call('DEL',KEYS[1])",1,"user-sessions:"+id);
+(async()=>{try {
+  await db.connect();
+  const {rows} = await db.query("select id from users where email = $1",[process.argv[2]]);
+  if (!rows[0]) throw new Error("Sign up first, or check the email");
+  await revoke(rows[0].id); // Refuse the role change if Redis cannot revoke.
+  await db.query("update users set role = $1 where id = $2",["admin",rows[0].id]);
+  await revoke(rows[0].id); // Remove sessions created during the database update.
+  console.log("Admin role set; sign in again on every device");
+} finally { await db.end(); await redis.quit(); }})().catch(()=>{console.error("Role/revocation failed; inspect before retrying");process.exitCode=1;});
+JS
 exit
 ```
 
-**Expect:** `[ { email: 'you@example.com', role: 'admin' } ]`. `[]` = no user with that email (typo, or not signed up yet).
+**Expect:** `Admin role set; sign in again on every device`. This mirrors the local make-admin service ordering without printing secrets. It is not an atomic transaction across Redis/Postgres; a failure after the DB update needs inspection/revocation before proceeding. In-flight authorized requests cannot be recalled.
 
-In the browser: reload; the header now shows **New event** (the role is read on every admin request, so no new login is needed). Create an event there, then **at once** open `/events` in a new tab (or `curl -s "$APP/events" | grep -c '<your event title>'`).
-
-**Expect:** the new event is there immediately. It only appears after about 30 s? Then the revalidate hook did not reach web: you skipped the one-time api restart (3.3), or the api logs show `web cache revalidate failed` (a 401 in that line = the two tasks read different secrets).
+Sign in again, then create an event and open a new `/events` request. Current catalogue search reads Postgres directly, so it should appear immediately. Legacy events.list/explicit Next data-cache callers still use generation invalidation then signed revalidation; a 401 hook response means secrets differ. Open tabs retain their browser query policy until refetch.
 
 **k. Path B only: TLS, redirect, HSTS, and the hop count.**
 
@@ -572,41 +376,15 @@ flowchart LR
 
 **Why we need it.** The console is where you will debug real problems later. Knowing where each piece lives makes the troubleshooting section below much faster.
 
-### 3.7 Everything off
+### 3.7 Turn hourly resources off through CD
 
-**What it is.** Delete everything that costs money by the hour. Keep the network, security groups, budget and ECR.
+Owner: commit dataEnabled/computeEnabled/entryEnabled false together (or entry first, then compute, then data), push and approve the newest deploy. CD's compute-off branch applies the committed graph; no new migration/rollout is needed. Read the actual preview and deployment result instead of expecting historical fixed deletion counts. Certificate validation DNS stays. SSM release state remains for next time; image tags are never left in committed config.
 
-```bash
-pulumi config set entryEnabled false
-pulumi config set computeEnabled false
-pulumi config set dataEnabled false
-pulumi preview
-```
-
-**Expect:** `- 38 to delete`, `34 unchanged`. **Nothing** to create, update or replace. Read the list: only data, compute and entry resources (RDS, Valkey, the secrets, the cluster, roles, task definitions, services, Service Connect, ALB, target groups, listeners, rules, and in Path A the origin secret and the CloudFront distribution, in Path B the two alb security group rules and the certificate wait). **The certificate itself must NOT be in the list**: it stays for next time.
-
-```bash
-pulumi up
-```
-
-**Expect:** Path A: after **20-30 minutes**, `Resources: - 38 deleted`. CloudFront is the slow one: it must be **disabled** and the change must reach every edge before AWS lets Pulumi delete it ([Step 11g](19-infra-cloudfront.md), section 3.11). Path B is faster (no CloudFront): RDS is the slow one. Do not close the terminal while it runs.
-
-**Path B, at your DNS provider:** delete the `minitickets` CNAME (or leave it: it points at an ALB name that no longer exists and that nobody else can get, so it is merely dead; next deploy day you change its value anyway). **Keep** the certificate's `_…` validation record.
-
-```bash
-git add Pulumi.dev.yaml && git commit -m "deploy: everything off"
-```
-
-The image tags stay in the config. They are only read when a switch is on, and the next deploy day sets new ones.
-
-**Order matters.** Turn entry off **first** (or all three together, as above). The program refuses "compute off while entry is on" and "data off while compute is on", with a clear message.
-
-```mermaid
-flowchart LR
-    e["entry off"] --> c["compute off"] --> d["data off"]
-```
+Queues, ticket storage, signing/revalidation or configured standing secrets, ECR, network and budget may remain according to their own definitions; “off” does not mean zero storage/usage/secret cost. Review section 3.8 and actual billing/retention before deleting anything. Path B public CNAME becomes stale after ALB deletion; update it to the new ALB next time.
 
 ### 3.8 What "off" leaves behind
+
+P4 also leaves ticket storage and the signing secret; issued assets are retained, staging expires, and stored data/secrets can cost while compute is off. Review live billing/retention before deleting anything.
 
 | Still there          | Costs                                    |
 | -------------------- | ---------------------------------------- |
@@ -615,7 +393,7 @@ flowchart LR
 | Budget alert         | $0                                       |
 | ECR images           | cents per month (lifecycle policy keeps it small) |
 | ACM certificate (if `domainName` is set) | $0 (public ACM certificates are free) |
-| Jobs queue + DLQ, processed-jobs table, SES identities, worker ECR repo (S1c, section 3.10) | $0 while idle (billed per request / per email) |
+| Queues/DLQs, DynamoDB tables, SES, ECR and retained ticket S3 assets | Requests/email are usage-billed; stored DynamoDB records/ECR layers still incur storage costs |
 
 ### 3.9 Troubleshooting
 
@@ -1386,7 +1164,7 @@ See [00-architecture.md](00-architecture.md) for the whole picture.
 
 1. **Why push images tagged with the git SHA and not `latest`?** A SHA names exactly one commit, so you always know what runs and can roll back to a known version. `latest` moves, and immutable repositories do not allow overwriting it anyway.
 2. **Why create the data layer first, on its own?** It takes the longest (10-15 min) and everything else depends on it; doing it alone keeps failures easy to read.
-3. **How do you run database migrations on ECS?** As a one-off task from the same task definition, with the command overridden, before using the new version; only that one process migrates.
+3. **How do you run database migrations on ECS?** As a one-off task from the dedicated migration definition with the new API image, before using the new version; only that one process migrates.
 4. **A service never becomes stable. Where do you look first?** The stopped task's `stoppedReason` and exit code, then the service events, then target health and the container logs.
 5. **How do you prove the origin is protected?** Call the ALB directly from outside: it must time out (security group), while the CloudFront address works.
 6. **How do you check that CloudFront caches what it should?** Request the same static file twice and look at `x-cache`: `Miss` then `Hit`. Pages and API calls must always be `Miss`.

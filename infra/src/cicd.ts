@@ -57,6 +57,7 @@ export interface CicdOutputs {
   deployRoleArn: pulumi.Output<string>;
 }
 
+// @concept: cd-oidc
 export function createCicd(inputs: CicdInputs): CicdOutputs {
   // 2. The OIDC provider: tells IAM "tokens signed by GitHub's issuer may be used here".
   //    WHAT: registers GitHub as an identity provider in our AWS account (one per account,

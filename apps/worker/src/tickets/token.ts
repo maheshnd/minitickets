@@ -3,6 +3,7 @@ import { TicketClaims } from "@minitickets/shared";
 import { z } from "zod";
 
 // 1. At least 256 bits, stored as 64 hex characters in Secrets Manager. Never log it.
+// @concept: ticket-signing
 export const TicketSigningSecret = z.string().regex(/^[0-9a-f]{64}$/);
 
 export function signTicket(claims: TicketClaims, secret: string): string {

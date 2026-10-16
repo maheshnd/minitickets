@@ -31,7 +31,7 @@ Back to the office building from [Step 11a](12-infra-network.md). Until now the 
 | `infra/src/compute/iam.ts`      | Execution role and task role                                        |
 | `infra/src/compute/task.ts`     | Task definition: image, size, env vars, secrets, logs, health check |
 | `infra/src/compute/service.ts`  | Service: 1 task, Spot, public subnet, circuit breaker, ECS Exec     |
-| `infra/index.ts`                | The `computeEnabled` switch and `apiImageTag`; wires the five files |
+| `infra/index.ts`                | The compute switch and release-derived image; wires layer files |
 | `scripts/run-migrations.sh`     | `pnpm infra:migrate`: runs the migrations as a one-off task         |
 | `apps/api/src/config/database.ts` | `DATABASE_URL` (local) **or** `DB_*` pieces with SSL (AWS)        |
 | `apps/api/Dockerfile`           | Adds the RDS certificate bundle and `NODE_EXTRA_CA_CERTS`           |
@@ -133,7 +133,7 @@ flowchart LR
 **Why two.** They separate "getting the task ready" from "running our code":
 
 - The **execution role** is used by ECS itself, **before** our code starts: pull the image, read the secrets, create the log stream.
-- The **task role** is what **our code** (and anything running inside the container) can do with AWS. Ours can only open an ECS Exec channel. It cannot read secrets, touch S3, or anything else.
+- The **task role** is what **our code** (and anything running inside the container) can do with AWS. The current role opens ECS Exec, publishes only booking SNS, queries owner tickets and signs constrained S3 operations. The execution role separately retrieves startup secrets; see the IAM badge table in the infra guide.
 
 So if someone broke into our api process, they would hold the task role, not the execution role. They would find the passwords in the env vars of that one process, but they could not use AWS to read any other secret.
 
@@ -304,21 +304,18 @@ No inbound port is opened. The agent inside the task (added by Fargate) calls **
 - `initProcessEnabled: true` in the task definition (a tiny init process that cleans up the shells you open),
 - the **Session Manager plugin** on your laptop (`brew install --cask session-manager-plugin`). It is not installed yet.
 
-### 3.13 Migrations as a one-off task
+### 3.13 Migrations as a dedicated one-off task
 
-**What it is.** `pnpm infra:migrate` starts **one task** from the same task definition, but replaces its command with `node dist/migrate.js`. It waits for the task to stop, prints the exit code and the last log lines, and exits with that code.
+`infra/src/compute/migration-task.ts` defines a dedicated Fargate task using the API image and database settings, with `node dist/migrate.js` as its command. It is not borrowed from a running API service definition. CD phase A points migration to the new SHA while existing services keep their current release; migration must exit 0 before phase B rolls the apps.
 
 ```mermaid
 flowchart LR
-    script["pnpm infra:migrate"] -->|"run-task, command override"| task["One-off task<br/>FARGATE, same image,<br/>same secrets, same network"]
-    task -->|"apply SQL files"| rds[("RDS")]
-    task -->|"exit 0"| script
-    script --> out["prints exit code<br/>and last log lines"]
+    publish["Published API SHA"] --> migration["Dedicated migration task definition"]
+    migration --> db["Apply compatible SQL once"]
+    db --> roll["Roll API / web / workers"]
 ```
 
-**Why a one-off task, not part of the api.** Same reason as in Docker Compose ([Step 11](11-docker.md)): with several api tasks starting together, they would all try to migrate at once. A separate job runs once and then stops. Using the **same task definition** means the migration uses exactly the code and SQL files of the deployed image, with the same database settings and network access.
-
-**Order on deploy day.** The migration task needs the cluster and the task definition, which are part of the compute layer. So compute must be on first. The api starts fine without tables (it only listens, and `/health` and `/ready` need no tables). Then we migrate, and only then do signups work. For a first deploy in dev that gap is harmless. In production, a pipeline runs the migration with the new revision **before** updating the service, and every migration is written so the old code still works with the new tables.
+Do not run migration in every API startup. Expand/contract keeps overlapping old/new tasks compatible. The owner runbook, not a second manual deployment recipe here, defines recovery and app rollback.
 
 ### 3.14 Logs
 
@@ -333,22 +330,9 @@ flowchart LR
 
 **Why 7 days.** Without a retention setting, CloudWatch keeps logs **forever** and bills for the storage. Dev logs older than a week are never read.
 
-### 3.15 The compute switch
+### 3.15 The compute switch and image release
 
-```mermaid
-flowchart TB
-    c{"computeEnabled?"}
-    c -->|"false (default)"| none["No compute resources"]
-    c -->|"true"| d{"dataEnabled?"}
-    d -->|"false"| err["Stop with a clear error:<br/>the api needs the database"]
-    d -->|"true"| tag{"apiImageTag set?"}
-    tag -->|"no"| err2["Stop: missing apiImageTag"]
-    tag -->|"yes"| on["10 compute resources created"]
-```
-
-- `computeEnabled` (default `false`) creates or deletes the 10 compute resources: log group, cluster, capacity providers, 2 roles, 3 policy pieces, task definition, service.
-- `apiImageTag` has **no default**. It must be a git SHA you pushed with `pnpm images:push`. A default like `latest` would hide **which** code runs.
-- Network, security groups, budget, registry and (if on) the data layer are not touched.
+Committed `infra/Pulumi.dev.yaml` defines whether data/compute/entry/CDN exist. The current committed dev switches are data/compute/entry on, CDN off. Deployed image tag is SSM `/minitickets/dev/image-tag`, written only by CD; code refuses compute with no usable release tag. Emergency API/web/worker/migration overrides are never committed. More current services/roles exist than this step's historical initial resource count.
 
 ### 3.16 Cost per hour
 
@@ -456,86 +440,9 @@ flowchart TB
 
 See [00-architecture.md](00-architecture.md) for the whole picture.
 
-## 7. Deploy day: commands in order
+## 7. Deploy day through approved CD
 
-You run all of these. Set the AWS profile once per terminal:
-
-```bash
-cd infra
-export AWS_PROFILE=ticketlite AWS_REGION=us-east-1
-```
-
-**1. Push new images and set the tag** (the api image changed in this step)
-
-```bash
-cd ..                      # repo root; the working tree must be clean
-pnpm images:push           # builds arm64 images, tag = short git SHA
-cd infra
-pulumi config set apiImageTag "$(git rev-parse --short HEAD)"
-```
-
-`pulumi config set` edits `Pulumi.dev.yaml`. Commit that change (or keep it uncommitted until the end of the day), because `pnpm images:push` refuses to run with uncommitted changes.
-
-**2. Turn on data, wait**
-
-```bash
-pulumi config set dataEnabled true
-pulumi preview             # expect: 7 to create
-pulumi up                  # 10-15 minutes
-```
-
-**3. Turn on compute, wait for the service to be stable**
-
-```bash
-pulumi config set computeEnabled true
-pulumi preview             # expect: 10 to create
-pulumi up
-aws ecs wait services-stable --cluster minitickets-dev --services minitickets-dev-api
-```
-
-The wait returns when one task is RUNNING and the deployment is done (usually 1-3 minutes). If it fails, look at the stopped reason and the logs (step 5).
-
-**4. Run the migrations, expect exit code 0**
-
-```bash
-cd .. && pnpm infra:migrate && cd infra
-```
-
-Expect `Exit code: 0` and `migrations applied` in the log lines.
-
-**5. Verify**
-
-```bash
-# a. Service: 1 running, deployment completed
-aws ecs describe-services --cluster minitickets-dev --services minitickets-dev-api \
-  --query 'services[0].{status:status,running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}'
-
-# b. Task: RUNNING and HEALTHY, on Spot, ECS Exec agent running
-TASK=$(aws ecs list-tasks --cluster minitickets-dev --service-name minitickets-dev-api --query 'taskArns[0]' --output text)
-aws ecs describe-tasks --cluster minitickets-dev --tasks "$TASK" \
-  --query 'tasks[0].{status:lastStatus,health:healthStatus,capacity:capacityProviderName,exec:containers[0].managedAgents[0].lastStatus}'
-
-# c. Logs: expect a "Server listening at http://...:4000" line and no "Invalid ..." errors
-aws logs tail /minitickets/dev/api --since 30m
-
-# d. ECS Exec (needs: brew install --cask session-manager-plugin), then call /ready from inside
-aws ecs execute-command --cluster minitickets-dev --task "$TASK" --container api --interactive --command "sh"
-#    inside the container shell:
-node -e "fetch('http://localhost:4000/ready').then(async (r) => console.log(r.status, await r.text()))"
-#    expect: 200 {"status":"ready"}   (Postgres and Valkey both answered)
-exit
-```
-
-**6. Turn off compute and data, confirm only those are deleted**
-
-```bash
-pulumi config set computeEnabled false
-pulumi config set dataEnabled false
-pulumi preview             # expect: 17 to delete, 32 unchanged. Nothing else!
-pulumi up
-```
-
-Turn compute off **first** (or both together, as above). Turning only data off while compute is on is refused by the program.
+Use [the current runbook](20-deploy-day.md), sections 3.0–3.7, then the relevant phase acceptance sections. Publish builds api/web/worker once per SHA after CI. The approved deploy job checks stale infrastructure, provisions phase A, runs the dedicated migration and rolls phase B. Never put image tags or a laptop AWS profile in committed Pulumi YAML. Local previews use `export AWS_PROFILE=ticketlite` and `pulumi preview`; the owner/CD performs changes.
 
 ## 8. Interview questions
 
@@ -546,7 +453,7 @@ Turn compute off **first** (or both together, as above). Turning only data off w
 5. **When is Fargate Spot a good choice?** For work that can be interrupted with 2 minutes' warning: dev, batch jobs, extra capacity on top of on-demand. Not as the only capacity for user-facing production.
 6. **Why not set `rejectUnauthorized: false` for RDS?** It keeps encryption but drops identity checking, so a man-in-the-middle could impersonate the database and capture credentials. Trust the RDS CA instead.
 7. **What does the deployment circuit breaker do?** It stops a deployment whose new tasks keep failing and rolls back to the last working revision.
-8. **How do you run database migrations on ECS?** As a one-off task from the same task definition with a command override, before (or separately from) the service rollout, so only one process migrates.
+8. **How do you run database migrations on ECS?** As a one-off task from the dedicated migration definition using the same published API image, before (or separately from) the service rollout, so only one process migrates.
 
 ## 9. Check yourself
 

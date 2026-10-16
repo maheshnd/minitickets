@@ -4,6 +4,7 @@ import { db } from "../db/client";
 import { events } from "../db/schema/events";
 
 // 1. Escape LIKE metacharacters: the search text means literal text, not a wildcard program.
+// @concept: keyset-pagination
 export function searchPattern(q: string) {
   return `%${q.replace(/[\\%_]/g, "\\$&")}%`;
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 // 1. Browsers must present the exact web origin for every state-changing request. CORS alone
 //    does not stop simple cross-site POSTs; absent Origin is refused too (CLI clients set it).
+// @concept: csrf
 export function mutationAllowed(origin: string | undefined, site: string | undefined, webOrigin: string) {
   return origin === new URL(webOrigin).origin && site !== "cross-site";
 }

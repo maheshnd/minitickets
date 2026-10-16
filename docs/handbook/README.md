@@ -2,10 +2,12 @@
 
 History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 
+Start with the [offline learning path](guides/index.html).
+
 **In one line:** a living handbook that explains every concept in MiniTickets (app + AWS), tied to
 the exact code that implements it, so interview answers come from things we built.
 
-The step docs (`docs/01` … `docs/20`) tell the story **in the order we built it**. This handbook
+The step docs (`docs/01` … `docs/47`) tell the story **in the order we built it**. This handbook
 tells it **by concept**: what it is, where it lives in the code, how to show it working, its
 trade-offs, and how to explain it at three levels (simple, senior, lead).
 
@@ -226,11 +228,9 @@ npx -y @mermaid-js/mermaid-cli -i docs/handbook/<file>.md -o /tmp/out.md
 
 ## The living handbook rule
 
-For every future feature or infra step, in the **same commit**: add `@concept` anchors to the new
-code, add or update the cards (status 📋 → 🟡 → ✅), update the concept map, the story chapter
-and [00-big-picture.md](00-big-picture.md), add an ADR if a design decision was made, add new
-words to the [glossary](glossary.md), and make sure `pnpm docs:check` passes. The same rule is in
-the repo's `CLAUDE.md`.
+Feature steps write code/tests and append one measured entry to PENDING; handbook catch-up is a separate owner-requested batch. Catch-up adds anchors/cards, updates stories/concept map/big picture, records decisions and vocabulary, validates diagrams/docs, then clears PENDING. The normal infrastructure exception updates the city guide/explorer in the same step; the ticketing/serverless series explicitly paused that exception until D0–D3. Series 2 also authorized per-phase local commits and build-time anchors. Follow the current CLAUDE.md/AGENTS.md and phase prompt for the applicable workflow.
+
+D3 consumed 25 entries into docs 25–47, 151 cards and linked ADRs/scenarios. [Coverage](generated/catchup-coverage.json) preserves the mapping and historical evidence hashes. Live acceptance and known advisory findings remain in the runbook; an empty PENDING means documentation caught up, not that every AWS check passed.
 
 ## How this connects
 
@@ -240,3 +240,7 @@ the repo's `CLAUDE.md`.
 - [Generated code tours](guides/code-tours.html): searchable source bookmarks, rebuilt with `pnpm docs:build`.
 
 - [Interview scenarios](guides/interview-scenarios.md) and [offline interview practice](guides/scenarios.html): 55 source-linked decisions, area/status filters and saved quizzes.
+
+- [Start here](guides/index.html): the ordered path with saved checks and links to every guide.
+
+- [Interview drills](interview-drills.md) and [system design rounds](system-design.md): question bank and ten design exercises.

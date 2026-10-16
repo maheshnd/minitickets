@@ -2,119 +2,82 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Observability · Status: ✅ built · Step doc: [17 ECS api](../../17-infra-ecs-api.md) (section 3.14)
+Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-**CloudWatch Logs** stores everything our containers print: one **log group** per app
-(`/minitickets/dev/api`, `/minitickets/dev/web`), one **log stream** per task, kept for 7 days.
+Structured JSON logs from API/web/workers carry validated correlation where meaningful. Four symptom alarms, SNS email, dashboard and saved queries are defined; no automatic distributed traces are built.
 
 ## 2. Real-life comparison
 
-A logbook per department, with one chapter per shift. Pages older than a week are shredded.
+A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    c["container stdout<br/>Fastify JSON lines"] --> d["awslogs driver<br/>(execution role)"]
-    d --> g["log group /minitickets/dev/api"]
-    g --> s["stream api/api/task-id"]
-    g -->|"after 7 days"| gone["deleted"]
+    n0["Booking correlation id"] --> n1
+    n1["API and worker JSON"] --> n2
+    n2["Logs Insights"] --> n3
+    n3["Queue/DLQ alarm"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `infra/src/compute/logs.ts` · `createLogs`: the log group with `retentionInDays: 7`.
-- Anchor: `infra/src/compute/task.ts` · `logConfiguration`: the api's awslogs driver.
-- Anchor: `infra/src/compute/web-task.ts` · `logConfiguration`: the web app's awslogs driver.
-- Anchor: `infra/src/jobs/worker-lambda.ts` · `loggingConfig: { logGroup }`: the worker Lambda writes to `/minitickets/dev/worker` (7 days), not to the default `/aws/lambda/...` group that would keep logs forever (S1c).
-- Anchor: `infra/src/observability/log-queries.ts` · `createLogQueries`: saved Logs Insights queries `minitickets-dev/follow-one-request`, `/errors`, `/worker-durations` over the api + worker groups (P2).
+- Anchor: `infra/src/compute/logs.ts` — `createLogs`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/compute/task.ts` — `module configuration`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/compute/web-task.ts` — `module configuration`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/jobs/worker-lambda.ts` — `module configuration`; follow the numbered comments at this boundary.
+- Anchor: `infra/src/observability/log-queries.ts` — `prefix`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. `createLogs("api")` (compute switch) and `createLogs("web")` (entry switch) create the groups; the
-   driver does not create them itself.
-2. `retentionInDays: 7`: without it, logs are kept forever and billed.
-3. `logDriver: "awslogs"` with `awslogs-group`, `awslogs-region` (looked up) and
-   `awslogs-stream-prefix` (`api` / `web`): stream names are `<prefix>/<container>/<task id>`.
-4. The execution role's managed policy allows writing the lines.
-5. `scripts/run-migrations.sh` builds the stream name `api/api/$TASK_ID` to print a migration's output.
-6. The api writes structured JSON with request ids (Phase 3 `structured-logging` card).
+`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
 
 ## 5. See it yourself
 
-```bash
-aws logs tail /minitickets/dev/api --profile ticketlite --since 15m --follow
-aws logs describe-log-groups --profile ticketlite --log-group-name-prefix /minitickets/dev \
-  --query "logGroups[].[logGroupName,retentionInDays,storedBytes]"
-```
+Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
 
-In the console, **Logs Insights** can query the JSON fields, e.g. `filter res.statusCode >= 500`.
+Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** the [execution role](execution-vs-task-role.md); the task's path out to AWS endpoints.
-- **Gives →** the main debugging window (aws-foundations chapter 8); future metric filters and
-  [alerting](alerting.md).
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
 
 ## 7. Our settings and WHY
 
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| One group per app | api, web | Lines don't mix. |
-| Retention | 7 days | Dev logs older than a week are never read. Production: 30-90 days or as audits require. |
+Structured JSON logs from API/web/workers carry validated correlation where meaningful. Four symptom alarms, SNS email, dashboard and saved queries are defined; no automatic distributed traces are built. A user symptom spans asynchronous boundaries, not one process log.
 
 ## 8. Trade-offs
 
-- **Pros:** zero agents to run, survives crashes, queryable with Logs Insights.
-- **Cons:** ingestion is billed per GB (cheap for us, expensive at scale); no alerts on log content yet.
+Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
 
 ## 9. Alternatives and when to choose them
 
-- **FireLens + Fluent Bit sidecar:** route logs to other tools (OpenSearch, Datadog).
-- **Metric filters + alarms:** turn log patterns (5xx) into alerts.
-- **Longer retention / S3 export:** audits.
+10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-- Log group missing: the task fails to start with a logging error.
-- Execution role cannot write logs: no logs and a start failure.
-- No retention: the bill grows quietly.
-
-## 11. Reach / Allowed / Password
-
-**Reach:** the task's public IP to the CloudWatch Logs endpoint. **Allowed:** the execution role.
-
-## 12. Cost
-
-A few MB in dev: about $0 ([docs/17](../../17-infra-ecs-api.md), section 3.16).
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** Our containers' output goes to CloudWatch, kept for a week.
-- **Senior:** One log group per app with 7-day retention, created by Pulumi; the awslogs driver in each
-  task definition ships stdout with the execution role, one stream per task. The api logs JSON, so Logs
-  Insights can filter by field.
-- **Lead:** Logs are the cheapest signal to add and the most expensive to keep. I'd add metric filters
-  for errors, structured fields for correlation, sampling for noisy paths, and retention set by
-  compliance.
+- **Simple:** Structured JSON logs from API/web/workers carry validated correlation where meaningful.
+- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
+- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Group vs stream?* A group is one app's book; a stream is one task's chapter.
-- *How do you find one migration's output?* Stream `api/api/<task id>`.
+Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
+
+Which signal explains a specific failed booking? **Correlated structured logs.**
 
 ## 15. Say it in 30 seconds
 
-"Every container line goes to CloudWatch Logs through the awslogs driver: one group per app, one stream
-per task, 7-day retention so storage doesn't grow forever. The api's JSON logs can be queried with
-Logs Insights."
+Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
 
 ## Where it appears in the story
 
-- [Infra story: 9. CloudWatch Logs](../infra-story.md#9-cloudwatch-logs)
+- [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)

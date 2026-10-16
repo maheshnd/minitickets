@@ -2,100 +2,78 @@
 
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
-Area: Performance & Caching · Status: ✅ built (`events:upcoming:v1`) · Step doc: [24 events cache](../../24-events-cache.md)
+Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
 ## 1. In one line
 
-Put a **version** in the cache key (`events:upcoming:v1`) so a deploy that changes the shape of the
-cached data starts with a fresh key instead of reading data written by the old code.
+A version separates incompatible cached shapes. Current list keys are events:upcoming:v3:g<generation>:<hash>; generation handles writes, version handles schema, and canonical input handles filters.
 
 ## 2. Real-life comparison
 
-Forms with a revision number in the corner ("Form 7B, rev. 2"). When the form changes, you print
-rev. 3 and old rev. 2 forms in the drawer are simply never picked up by the new office procedure.
+A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
 
 ## 3. Picture it
 
 ```mermaid
 flowchart LR
-    old["old code (v1)<br/>writes events:upcoming:v1"] --> k1[("events:upcoming:v1<br/>old shape")]
-    new["new code (v2)<br/>reads events:upcoming:v2"] --> k2[("events:upcoming:v2<br/>empty = clean miss")]
-    k1 -.->|"never read again,<br/>expires by TTL"| gone["gone in 30 s"]
+    n0["Validated canonical input"] --> n1
+    n1["Complete public key"] --> n2
+    n2["Shared result"] --> n3
+    n3["TTL or eviction"]
 ```
 
 ## 4. Where in our code
 
-- Anchor: `apps/api/src/queries/events-cache.ts` · `UPCOMING_KEY`: the versioned key.
+- Anchor: `apps/api/src/queries/events-cache.ts` — `upcomingKey`; follow the numbered comments at this boundary.
 
-Step by step:
-
-1. The key is one constant, `"events:upcoming:v1"`.
-2. If you change the **shape** of a public event (add, rename or remove a field in
-   `packages/shared/src/schemas/events.ts`), change the constant to `v2` in the same commit.
-3. After the deploy the new code reads `v2`: a miss, then it fills it with the new shape.
-4. The `v1` key is never read again and Redis deletes it when its TTL ends (≤ 33 s).
-5. Second line of defence: the service validates every cached value with the Zod schema, so a value
-   in a wrong shape is a miss with a warning even if someone forgot to bump the version.
+`apps/api/src/services/event-filters.ts` normalizes filters; `queries/events-cache.ts` hashes complete inputs. `queries/sessions.ts` requires session-index membership and never caches private pages. Run `pnpm test` for canonical filter/key and session eviction cases. Dedicated Redis isolation is explain-only.
 
 ## 5. See it yourself
 
-```bash
-docker exec minitickets-redis-1 redis-cli --scan --pattern 'events:*'      # events:upcoming:v1
-```
+Run `pnpm test` and inspect the asserted outcome described above.
 
-**Break it on purpose:** `redis-cli SET events:upcoming:v1 '[{"title":"old"}]'` and call
-`events.list`: the Zod check rejects it, the log says `events cache value is invalid, treating as a miss`.
+Failure thought experiment: Is hashing a key encryption? No; do not put secrets into it assuming privacy. Do not change a live stack to demonstrate it.
 
 ## 6. How it connects
 
-- **Uses ←** [cache-aside](cache-aside.md), [ttl](ttl.md) (old keys disappear on their own).
-- **Gives →** safe deploys of shape changes; the same idea applies to sessions if their JSON ever changes.
+Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#hot-keys-privacy) and [explorer tour](../guides/infra-explorer.html?tour=search).
 
 ## 7. Our settings and WHY
 
-`v1`, bumped by hand. WHY: it is one line and obvious. During a rolling deploy old and new tasks run
-together; each reads its own version, so neither sees the other's shape.
+A version separates incompatible cached shapes. Current list keys are events:upcoming:v3:g<generation>:<hash>; generation handles writes, version handles schema, and canonical input handles filters. Missing a venue/date/user dimension can return wrong or private data.
 
 ## 8. Trade-offs
 
-- **Pros:** no flush needed; old and new versions can coexist; trivially simple.
-- **Cons:** a manual step someone can forget (the Zod check is the safety net); the first request after
-  the bump is a miss; it only helps for shape changes, not for stale *values*.
+Hashing bounds key size but does not fix omitted input. One cache used for sessions/results/quotas shares failure and eviction behavior.
 
 ## 9. Alternatives and when to choose them
 
-- **Flush the cache on deploy:** blunt; a cold cache for everything, and it does not help rolling deploys.
-- **Version inside the value** (`{ v: 1, data }`): the reader checks it; handy when keys are many.
-- **Hash of the schema in the key:** automatic, harder to read.
+10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
 
-## 10. What breaks, and how we'd notice
+## 10. What breaks and how we notice
 
-Forgetting to bump the version: new code finds old-shaped data; Zod rejects it; warnings in the log and
-one extra Postgres read. Without the Zod check, wrong-shaped data could reach users for ≤ 33 s.
+Is hashing a key encryption? No; do not put secrets into it assuming privacy.
 
 ## 13. Interview answers at 3 levels
 
-- **Simple:** The key has a version so new code never reads old-format data.
-- **Senior:** `events:upcoming:v1`; bump it when the cached shape changes. During a rolling deploy both
-  versions run side by side on different keys. The reader also validates with Zod as a safety net.
-- **Lead:** Cache entries outlive the code that wrote them. Treat a cached value like an API
-  contract: version it, validate on read, and let TTL clean up. For many keys, put the version in the
-  value or generate it from the schema.
+- **Simple:** A version separates incompatible cached shapes.
+- **Senior:** A cache key must include every input that changes the result. Canonicalize dates/venue so equivalent filters share a key; keep authenticated data out of public keys. A very hot event or generation key still concentrates load. Redis eviction is acceptable for reconstructible public data, but sessions should fail closed and quotas are only advisory under eviction.
+- **Lead:** 10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
 
-## 14. Follow-up questions interviewers ask
+## 14. Follow-up questions with answers
 
-- *Why not just flush Redis on deploy?* It also drops sessions in our case, and rolling deploys still overlap.
-- *Does versioning fix stale data?* No, that is TTL and invalidation.
+Is hashing a key encryption? No; do not put secrets into it assuming privacy.
+
+What must a result cache key include? **All result-changing inputs.**
 
 ## 15. Say it in 30 seconds
 
-"Our cache key is events:upcoming:v1. If a deploy changes the data shape we bump it to v2, so the new
-code starts with an empty key and old data just expires. A Zod check on read catches anything we forgot."
+A cache key must include every input that changes the result. Canonicalize dates/venue so equivalent filters share a key; keep authenticated data out of public keys. A very hot event or generation key still concentrates load. Redis eviction is acceptable for reconstructible public data, but sessions should fail closed and quotas are only advisory under eviction.
 
-## 16. Status
+## 16. Status and production work
 
-✅ built.
+Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
 
 ## Where it appears in the story
 
-- [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+- [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
