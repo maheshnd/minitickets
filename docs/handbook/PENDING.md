@@ -22,3 +22,13 @@ docs, cards, story chapters and a CHANGELOG entry, then clears this list (see CL
 - Lifecycle probes: occupied :3100 refused with exit 1 and its listener preserved; deliberate no-tests failure returned 1 and released both ports; SIGTERM returned 143, released both ports and removed the temporary copy. Owner PIDs remained 72128 (web) / 72114 (API).
 - Generated refresh: `pnpm docs:build` rebuilt 332 snippets from 152 files in `generated/code-tours.json` and the embedded data in `guides/{code-tours,infra-explorer}.html`; this resolves the stale-tour issue in the preceding entry. `pnpm docs:check` passed (151 cards / 141 slugs / 331 anchor places).
 - No infrastructure or dependencies changed; isolated demo datasets/worker pipelines were not provisioned for this runner.
+
+## Production e2e runner: shipped standalone server
+
+- `scripts/test-e2e-prod.ts` → production launch now runs the generated standalone `server.js` directly with Node, matching `apps/web/Dockerfile` rather than `next start`.
+- Standalone preserves the monorepo path (`apps/<temporary-app>/server.js`); copy `.next/static` and optional `public/` beside that server, as the runtime image does.
+- Runtime uses explicit `HOSTNAME=127.0.0.1` and `PORT=3100`; the API stays on :4100. Existing port preflight, temporary build isolation and recorded-PID cleanup are preserved.
+- Verification: `pnpm test:e2e:prod` passed 43 / skipped 7 (50 discovered), including production CSP, HSTS, browser hydration and static asset loading; only worker/demo-specific cases stayed skipped.
+- Other checks: `pnpm typecheck`, `pnpm lint` and `pnpm test` passed (57 files / 404 tests); baseline `pnpm docs:check` passed (151 cards / 141 slugs / 331 anchor places).
+- Deploy preflight: actionlint 1.7.12 passed; critical-threshold audit passed with 1 high / 1 moderate remaining. Fresh arm64 Docker builds passed, but Trivy 0.70.0 CRITICAL gates failed API/web (7 each), worker passed (0); their official Node amd64 base also failed (7), while full GitHub amd64 images remain unrun.
+- Cleanup: the runner stopped only its web PID 80403 and API PID 80402 and removed its temporary build. No infrastructure, dependencies or owner servers changed.

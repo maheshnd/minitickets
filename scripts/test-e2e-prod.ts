@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
+import { cp, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -108,17 +108,25 @@ try {
     E2E_PRODUCTION_BUILD: "1", E2E_BASE_URL: webUrl, E2E_LOCAL_API: "1" };
   const production = { ...env, NODE_ENV: "production" };
   await finished(start("Web build", ["node_modules/next/dist/bin/next", "build"], buildDir, production));
+  // 6. Match the Docker image: standalone keeps the monorepo layout and omits static/public files.
+  const standaloneDir = path.join(buildDir, ".next/standalone/apps", path.basename(buildDir));
+  await cp(path.join(buildDir, ".next/static"), path.join(standaloneDir, ".next/static"), { recursive: true });
+  const publicDir = path.join(buildDir, "public");
+  if (await stat(publicDir).then(() => true, error => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  })) await cp(publicDir, path.join(standaloneDir, "public"), { recursive: true });
   const api = start("API", ["--import", "tsx", "src/server.ts"], apiDir, { ...env, NODE_ENV: "development" });
   await ready(`${apiUrl}/ready`, api);
-  const web = start("Web", ["node_modules/next/dist/bin/next", "start", "--port", "3100", "--hostname", "127.0.0.1"], buildDir, production);
+  const web = start("Web", ["server.js"], standaloneDir, { ...production, HOSTNAME: "127.0.0.1", PORT: "3100" });
   await ready(`${webUrl}/events`, web);
-  // 6. No spec filter: run the full suite, preserving its explicit demo-only skips.
+  // 7. No spec filter: run the full suite, preserving its explicit demo-only skips.
   await finished(start("Playwright", ["node_modules/@playwright/test/cli.js", "test", "--workers=1", ...process.argv.slice(2)], webDir, env));
 } catch (error) {
   console.error(error instanceof Error ? error.message : "Production e2e run failed");
   process.exitCode ||= 1;
 } finally {
-  // 7. Success, failure and Ctrl+C all stop only our recorded PIDs. Never signal a process group.
+  // 8. Success, failure and Ctrl+C all stop only our recorded PIDs. Never signal a process group.
   for (const child of [...children].reverse()) await stop(child);
   if (buildDir) await rm(buildDir, { recursive: true, force: true });
   process.off("SIGINT", interrupt);
