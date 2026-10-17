@@ -3,78 +3,76 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Content Security Policy restricts what a page may execute. A fresh request nonce authorizes Next scripts; production has no unsafe-eval, while style attributes remain allowed for current React layouts.
+Content Security Policy, or CSP, tells the browser which content a page may load or execute. A nonce is a fresh random value marking scripts approved for that response.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A guard checks both the visitor and the particular action; a readable invitation is not permission to every room.
+If attacker-controlled text accidentally becomes executable HTML in MiniTickets, the browser should not simply run every script it sees. CSP adds another barrier alongside safe rendering.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Fresh request nonce"] --> n1
-    n1["Allowed scripts only"] --> n2
-    n2["Escaped React output"] --> n3
-    n3["CI advisory gates"]
+    request["MiniTickets HTML request"] -->|"generate fresh nonce"| proxy["Next.js proxy"]
+    proxy -->|"set matching request and response policy"| page["HTML and approved scripts"]
+    page -->|"only permitted scripts may execute"| browser["Browser policy enforcement"]
 ```
 
-## 4. Where in our code
+1. Generate a fresh nonce for the response.
+2. Give approved scripts that nonce and send the matching policy.
+3. Let the browser block execution outside the policy.
+
+## 4. How do we use it in MiniTickets?
+
+Our proxy overwrites caller-supplied policy and nonce headers. Production avoids unsafe-eval; Zod’s optional code-generation probe is disabled in the client. Nonce-bearing HTML is dynamic and private,no-store. Style attributes remain allowed for current layouts.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses a fresh nonce CSP to reduce the damage of script injection. Approved Next scripts receive the response nonce, and production does not allow eval. This supplements safe rendering rather than sanitizing input. It also changes caching: we cannot share nonce-bearing HTML as a reusable public page.”
+
+## 6. Important follow-up questions
+
+- **Does CSP sanitize HTML?** No. Safe rendering and input handling remain necessary.
+- **Why not reuse one nonce?** It would stop being a per-response approval value.
+- **What if a dependency tries eval?** Remove or disable that behavior instead of broadly weakening production policy.
+- **Does a clean scan prove safety?** No. Scanners find known issues; browser policy and application review solve other parts of the problem.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source anchors
 
 - Anchor: `apps/web/src/lib/security-policy.ts` — `securityPolicy`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/proxy.ts` — `proxy`; follow the numbered comments at this boundary.
 
-`apps/web/src/proxy.ts` generates/overwrites nonce headers; `lib/security-policy.ts` defines script policy; `lib/trpc/client.ts` disables Zod JIT to avoid eval probes. CI audits critical dependencies and scans three images with Trivy CRITICAL. `pnpm demo:security` asserts no CSP violations. Audit: 0 critical, one high braces and one moderate esbuild remain; image scan execution is unverified locally.
+### Policy and cache boundary
 
-## 5. See it yourself
+`apps/web/src/proxy.ts` → `proxy` generates a nonce from a random UUID and replaces caller-supplied x-nonce/CSP headers. Next receives the request policy to mark its scripts, and the response receives the same policy. The matcher covers HTML/RSC routes while excluding API/tRPC/static/image/favicon paths. Responses are private,no-store, so an old shared HTML response cannot reuse a security nonce.
 
-Run `pnpm demo:security` and inspect the asserted outcome described above.
+`apps/web/src/lib/security-policy.ts` → `securityPolicy` uses script-src self, the nonce and strict-dynamic. Production excludes unsafe-eval; development adds it for tooling. Production style elements require a nonce, while style-src-attr unsafe-inline remains for current React layouts. Connect/image rules include configured API and S3 destinations; object-src and frame-ancestors are none. This policy is not an HTML sanitizer.
 
-Failure thought experiment: Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy. Do not change a live stack to demonstrate it.
+`apps/web/src/lib/trpc/client.ts` disables optional Zod JIT/probing rather than weakening production eval policy. Browser-console violations point to a blocked source or a missing/mismatched nonce. Do not blindly add unsafe-eval or broad hosts to silence them. pnpm demo:security is prior local policy coverage, not a live CDN acceptance test, and was not rerun here.
 
-## 6. How it connects
+### Other security gates and growth
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#csp-xss) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
+Dependency audits and image scans cover known advisories, not all XSS or business errors. Earlier P10 evidence had high braces/moderate esbuild; later PENDING records the scoped loader override removing moderate esbuild, high braces remaining, and all six ARM64/AMD64 configured image gates passing. These are prior local results, not scans rerun here or proof of GitHub/live AWS execution. Keep explicit severity/exception policy, bounded CSP reporting, provenance and attack-surface reviews.
 
-## 7. Our settings and WHY
+### Preserved references
 
-Content Security Policy restricts what a page may execute. A fresh request nonce authorizes Next scripts; production has no unsafe-eval, while style attributes remain allowed for current React layouts. Defense in depth reduces damage from accidental injection and known dependency flaws.
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#csp-xss)
+- [explorer tour](../guides/infra-explorer.html?tour=security-layers)
 
-## 8. Trade-offs
-
-Nonce pages require dynamic/no-store HTML. Style attributes remain allowed for current UI. Scanners cannot prove safety and unfixed findings need tracked decisions.
-
-## 9. Alternatives and when to choose them
-
-10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
-
-## 10. What breaks and how we notice
-
-Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Content Security Policy restricts what a page may execute.
-- **Senior:** XSS executes unwanted code in a trusted page. Validate input, render escaped text and use a per-request nonce CSP to limit script execution. Production does not allow unsafe-eval. CI dependency and image scanners catch known advisories, not every vulnerability or malicious business rule. Gates need a clear severity policy and honest residual findings.
-- **Lead:** 10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
-
-## 14. Follow-up questions with answers
-
-Why not enable unsafe-eval to silence Zod? Disable the optional JIT/probe instead, preserving production policy.
-
-What must differ on each nonce HTML request? **The nonce.**
-
-## 15. Say it in 30 seconds
-
-XSS executes unwanted code in a trusted page. Validate input, render escaped text and use a per-request nonce CSP to limit script execution. Production does not allow unsafe-eval. CI dependency and image scanners catch known advisories, not every vulnerability or malicious business rule. Gates need a clear severity policy and honest residual findings.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: report CSP violations with bounded sampling. 100x: dependency provenance, policies and attack-surface reviews.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=csp#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [app-story: 4b. Mutation admission and browser security](../app-story.md#4b-mutation-admission-and-browser-security)
+
+</details>

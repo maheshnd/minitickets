@@ -3,31 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md), [09 dashboard](../../09-dashboard.md), [22 events SSR](../../22-events-ssr.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The UI reads the api's error by its **HTTP status** and **field errors**, and puts each one where the
-user can act on it: under a field, under the form, or as a redirect to login.
+UI error handling turns a failed operation into feedback the user can act on. A field mistake, expired session and unexpected page failure need different responses.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A good receptionist sorts problems: "this box on your form is wrong" (field), "we can't find your
-booking" (form-level), "your pass expired, please go to the front desk" (redirect), and never reads
-out the internal error log.
+A MiniTickets customer who mistypes an email should see the correction beside that field. A lost connection should produce a safe retry message instead of raw browser or server internals.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
-flowchart TB
-    err["tRPC error<br/>data.httpStatus, data.fieldErrors"] --> f{"what is it?"}
-    f -->|"400 + fieldErrors"| field["under each field"]
-    f -->|"409 signup"| email["under Email"]
-    f -->|"401 login"| form["under the form"]
-    f -->|"401 profile"| redir["→ /login?next=/dashboard"]
-    f -->|"anything else"| generic["'Something went wrong'"]
+flowchart LR
+api["MiniTickets API error"] -->|"fieldErrors or conflict"| form["Auth form field message"]
+    api -->|"profile query has 401"| hook["useProfile redirects to login"]
+    api -->|"unexpected or network failure"| general["Generic form alert"]
+    render["Events server render throws"] -->|"nearest error boundary"| boundary["events/error.tsx"]
 ```
 
-## 4. Where in our code
+1. Read structured status and field information.
+2. Place actionable errors near the control or operation they affect.
+3. Use a boundary for unexpected rendering failures and preserve a diagnosis reference.
+
+## 4. How do we use it in MiniTickets?
+
+Signup maps validation to fields and duplicate email to Email. Login shows invalid credentials as a form error. useProfile handles expired authentication. The events route has a client error boundary with retry and a server error digest when supplied.
+
+## 5. Interview-ready answer
+
+“MiniTickets maps errors by stable status and field data rather than parsing message text. Forms show correctable failures where users can fix them, while unexpected failures use generic feedback. Expired profile authentication redirects through the data hook. Render failures use an error boundary, with a digest connecting safe UI feedback to server diagnosis.”
+
+## 6. Important follow-up questions
+
+- **Why not display every raw error message?** Network and internal errors can be confusing or reveal details; use known safe messages.
+- **Why does the hook own the profile redirect?** Every component using that data receives the same expired-session behaviour.
+- **Does a render boundary catch every event-handler failure?** No. Form and async operation failures need their own explicit handling.
+- **What if the API changes 409 to another code?** The field mapping can break; keep the contract and relevant UI checks aligned.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current events/error.tsx is built, so old text calling boundaries future work is obsolete. Query-prefetch failure is logged and omitted from dehydrated success data; browser querying can then show its query error. An actual render exception reaches the route boundary. Status codes guide mapping; the optional digest is diagnostic, not authorization.
+
+### Implementation reference
 
 - Anchor: `apps/web/src/features/auth/components/signup-form.tsx` · `handleSubmit` → `onError`: 400 field errors, 409 under email, else generic.
 - Anchor: `apps/web/src/features/auth/components/login-form.tsx` · `handleSubmit` → `onError`: 400 field errors, 401 message under the form, else generic.
@@ -53,10 +77,10 @@ Step by step:
    server is not an error for the user (the browser fetches instead, step 5 applies). Anything that
    *throws* during the render (a missing `API_INTERNAL_URL`, a bug) is caught by `app/events/error.tsx`.
    In production Next.js hides the server error's message; the boundary shows our generic text and
-   `Error id: <digest>`, the id of the full error in the web server's log. Retry calls `retry()`,
+   `Error id: <digest>`, the id of the full error in the web server's log. Retry calls the boundary's reset callback,
    which asks the server to render the page again.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 Error shapes recorded against a local api:
 
@@ -77,64 +101,46 @@ under Email (e2e: `signup.spec.ts`). Log in with a wrong password: the message i
 would say "Something went wrong" (the api already hides internals), but a network failure would show
 a browser message like "Failed to fetch". The generic branch exists so users never see those.
 
-## 6. How it connects
-
-- **Uses ←** [error-handling](error-handling.md) (the shape), [http-status-codes](http-status-codes.md),
-  [accessible-forms](accessible-forms.md) (where messages go).
-- **Gives →** the end of the error path described in the [app story](../app-story.md).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 Map by status, not by message text: messages are for people and can change; status codes are the
 contract. Show the api's message only for statuses where it is safe and helpful (400, 401 login, 409).
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** users get actionable messages; no internals leak; consistent across forms.
 - **Cons:** each form repeats the mapping; new status codes need UI work.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **A shared `mapApiError` helper:** once there are more forms.
-- **Error boundaries** (`error.tsx` in the App Router): for unexpected render errors; not used yet.
+- **Error boundaries** (`error.tsx` in the App Router): for unexpected render errors; `app/events/error.tsx` is built.
 - **Toasts:** for errors not tied to a form.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - The api changes a status (e.g. 409 → 400): the duplicate-email message lands under the form
   instead of the field. The e2e test checks `#email-error`.
 - A 401 redirect loop if login itself returned 401 for a valid user: not possible today; login is a
   public procedure.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** Errors show up where you can fix them, and we never show scary technical messages.
-- **Senior:** All api errors share one shape with `httpStatus` and `fieldErrors`. Forms map 400
-  field errors to fields, 409 to the email field, login's 401 to a form alert, and everything else to
-  a generic message. A 401 on the profile query redirects to login, because the route guard only
-  checks that a cookie exists.
-- **Lead:** The error contract is part of the API design: a stable code and machine-readable field
-  errors let the UI stay dumb. I'd centralise the mapping and add error boundaries and client error
-  reporting once there are more screens.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why redirect on 401 in the hook, not the component?* The hook owns the data rules; every
   component that uses it gets the same behaviour.
 - *Why not show the server message for 500?* It is already generic, but the UI should not depend
   on that.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"Every api error has the same shape: status code and field errors. Forms put 400 field errors under
-fields, the duplicate email under Email, a failed login under the form, and everything else becomes
-'Something went wrong'. A 401 on the profile redirects to login, because the cookie can outlive the
-session."
+- [http-status-codes](http-status-codes.md)
+- [accessible-forms](accessible-forms.md)
+- [app story](../app-story.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ui-error-handling#chapter=0&piece=laptop-web).
 
 ## Where it appears in the story
 
 - [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)
+
+</details>

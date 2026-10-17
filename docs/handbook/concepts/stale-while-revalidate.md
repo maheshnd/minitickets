@@ -4,76 +4,72 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-SWR serves a bounded old result while refreshing. Our list soft age is 30–33 s, hard age 300 s, and failed refreshes never renew old data; search bypasses this list cache.
+## 1. What is it?
 
-## 2. Real-life comparison
+Stale-while-revalidate serves an older cached result while refreshing it in the background. The old result is allowed only within a deliberate age limit.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+## 2. Why do we need it?
 
-## 3. Picture it
+A MiniTickets visitor can see a recent catalogue immediately instead of waiting for every refresh. A brief database problem need not hide the whole list, provided its age remains bounded.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser query"] --> n1
-    n1["Next public data"] --> n2
-    n2["Redis envelope"] --> n3
-    n3["Postgres"]
+    A["MiniTickets listUpcomingEvents"] -->|"inspect saved age"| R["Redis list copy"]
+    R -->|"recent enough: return immediately"| B["Visitor catalogue"]
+    R -->|"old but within limit: return and refresh"| P["Background Postgres read"]
+    P -->|"success saves new data and timestamp"| R
 ```
 
-## 4. Where in our code
+1. Return a fresh copy immediately.
+2. Within the stale window, return the old copy and share one refresh.
+3. Stop using data past its hard limit; a failed refresh must not make it younger.
+
+## 4. How do we use it in MiniTickets?
+
+The legacy public list uses bounded stale serving and stale-if-error recovery. Current search bypasses that cache. Redis, Next data and browser queries have independent clocks, so a refreshed server copy does not force all open tabs to refetch.
+
+## 5. Interview-ready answer
+
+“MiniTickets trades a little public-list freshness for faster, more available browsing. It can return a bounded old value while refreshing, and retain a previous good value during a bounded error window. Failed refreshes never renew the old timestamp. This is suitable for browsing; buying seats and checking authorization must still use authoritative state.”
+
+## 6. Important follow-up questions
+
+- **How is stale-if-error different?** It permits a bounded previous good value when refresh fails, rather than hiding the failure indefinitely.
+- **Can stale data approve a booking?** No. The booking transaction decides availability.
+- **What is the dangerous timestamp bug?** Treating failed refresh as new data could extend staleness forever.
+- **Do multiple cache layers add risk?** Yes. Their separate clocks can compound age unless the total freshness budget is understood.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Freshness values and source
+
+`apps/api/src/services/events.ts` applies list windows and shares in-flight refreshes. Soft age is **30–33 seconds**; hard age is **300 seconds**. Failed refreshes never reset the saved age. Current `events.search` intentionally bypasses the legacy `events.list` cache.
+
+`apps/web/src/features/events/server/cached-events.ts` and `apps/web/src/features/events/hooks/use-events.ts` have separate data/query caching rules. P10 disables shared HTML caching while retaining explicit public-data caches. A successful admin write does not directly refresh every browser tab.
+
+### Verification and future work
+
+`pnpm test` includes fake-clock stale/error cases; this rewrite does not claim a new run or live AWS/CI acceptance. Never use stale copies for authorization or final seats. At greater scale expose age/hit telemetry, consolidate redundant layers if useful and define end-to-end freshness budgets rather than lengthening independent TTLs blindly.
+
+### Code anchors
 
 - Anchor: `apps/api/src/services/events.ts` — `listUpcomingEvents`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#swr-caches) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm test` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does a successful admin write refresh all open tabs? No; they refetch on their own query policy. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#swr-caches) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-SWR serves a bounded old result while refreshing. Our list soft age is 30–33 s, hard age 300 s, and failed refreshes never renew old data; search bypasses this list cache. Bounded stale public listings trade freshness for latency/availability.
-
-## 8. Trade-offs
-
-Never use stale data for authorization or seats. Long independent TTLs can compound staleness. A failing refresh must not reset old data to fresh.
-
-## 9. Alternatives and when to choose them
-
-10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 10. What breaks and how we notice
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** SWR serves a bounded old result while refreshing.
-- **Senior:** SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-- **Lead:** 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 14. Follow-up questions with answers
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-Can stale listings authorize booking? **No.**
-
-## 15. Say it in 30 seconds
-
-SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=stale-while-revalidate#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

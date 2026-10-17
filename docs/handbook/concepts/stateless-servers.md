@@ -4,105 +4,76 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [07 login](../../07-login-session.md)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-An api process is **stateless** when it keeps nothing a later request depends on; ours keeps
-sessions in Redis and data in Postgres, so any api task can serve any request.
+## 1. What is it?
 
-## 2. Real-life comparison
+A stateless application server does not keep authoritative user state that a later request needs in that same process. Requests can therefore move between copies.
 
-Bank tellers with a shared computer system: you can go to any teller, because your account is in
-the system, not in one teller's drawer.
+## 2. Why do we need it?
 
-## 3. Picture it
+After a MiniTickets deployment replaces the API, users should not lose login just because their previous server disappeared. Shared session storage allows the replacement to recognize their cookie.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    b["browser<br/>cookie sid"] --> alb["ALB"]
-    alb --> t1["api task A"]
-    alb --> t2["api task B (later)"]
-    t1 --> r[("Redis: sessions")]
-    t2 --> r
-    t1 --> pg[("Postgres")]
-    t2 --> pg
+    B["MiniTickets browser with sid"] -->|"send request"| L["ALB"]
+    L -->|"choose healthy API copy"| A["API task"]
+    A -->|"verify shared login authority"| R["Valkey session and index"]
+    A -->|"read and commit durable data"| P["Postgres"]
+    N["Replacement API task"] -->|"use same shared session authority"| R
+    N -->|"use same durable data"| P
 ```
 
-## 4. Where in our code
+1. Store login authority and durable records outside the API process.
+2. Resolve the request using those shared stores.
+3. Replace a process without depending on its lost memory.
+
+## 4. How do we use it in MiniTickets?
+
+MiniTickets stores sessions in Redis/Valkey and durable data in Postgres. It can retain nonauthoritative in-process work-sharing state; losing that optimization must not change ownership or login authority. Current dev stores are still single copies and need their own reliability planning.
+
+## 5. Interview-ready answer
+
+“MiniTickets keeps authority in shared stores so a request does not depend on the API copy that handled login. That supports replacement and additional tasks without sticky sessions. Stateless does not mean no memory or no state anywhere: temporary optimizations are allowed, while sessions and durable records remain external. The shared stores then become critical dependencies whose availability must be designed separately.”
+
+## 6. Important follow-up questions
+
+- **Are sticky sessions required?** No. Each healthy task can read the shared session authority.
+- **Can we use local caches?** For rebuildable, nonauthoritative data; not as the sole source of user authority.
+- **What if Redis loses session state?** Authentication fails closed and the user may need to log in again.
+- **Are WebSockets stateless?** The connection itself has state; multi-task fan-out would need an additional shared design.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current authority and implementation
+
+`apps/api/src/queries/sessions.ts` stores `session:<sha256(token)>`; the browser retains the raw cookie. Request context reads Redis and requires index membership. Users/bookings live in Postgres. No client affinity is configured. Process replacement alone does not delete persisted sessions, but eviction, expiry or unavailable Redis can prevent authentication.
+
+The old “no in-memory caches” / “nothing in memory” wording was too broad: list refresh promises and other temporary optimization state exist. Statelessness here concerns later requests’ authoritative correctness, not literal absence of memory. Losing a local optimization must be harmless.
+
+### Failure and scaling limits
+
+Redis failures propagate through authentication; missing authority denies access and `/ready` reports dependency failure. Do not promise a specific status for every path. An API outage can interrupt requests even if sessions survive. A restart demonstration must use an owner-approved isolated server; no owner process was restarted here.
+
+Single-node dev Valkey is a critical dependency. Production reliability may need replicas/failover and capacity planning. JWTs reduce lookup dependence but need a revocation design; sticky in-memory sessions are fragile under replacement. WebSocket connections would need shared fan-out for cross-task messages. This rewrite claims no live interruption/HA drill.
+
+### Code anchors
 
 - Anchor: `apps/api/src/queries/sessions.ts` · `create`, `get`, `remove`: sessions live in Redis, never in process memory.
 
-Step by step:
+### Related reading
 
-1. Login writes `session:<sha256(id)>` to Redis; the browser keeps the raw id in a cookie.
-2. Every request's context reads it back from Redis ([trpc-context](trpc-context.md)).
-3. No in-memory caches, no local files, no sticky sessions.
-4. So: a task can be replaced (deploy, Spot interruption) and the user stays logged in; we can run
-   more tasks behind the ALB without changing code ([scaling](scaling.md)).
+[trpc-context](trpc-context.md) · [scaling](scaling.md) · [elasticache-valkey](elasticache-valkey.md) · [sessions-vs-jwt](sessions-vs-jwt.md) · [fargate-spot](fargate-spot.md) · [zero-downtime-deploys](zero-downtime-deploys.md)
 
-## 5. See it yourself
-
-Locally: log in, then restart the api (`Ctrl+C` and `pnpm dev`). Reload the page: still logged in,
-because the session is in Redis, not in the process that died.
-
-**Break it on purpose:** keep sessions in a `Map` inside the api instead. Restart: everyone is
-logged out. With two tasks, half the requests would be "logged out".
-
-## 6. How it connects
-
-- **Uses ←** [elasticache-valkey](elasticache-valkey.md) on AWS, Redis locally;
-  [sessions-vs-jwt](sessions-vs-jwt.md).
-- **Gives →** [scaling](scaling.md) out, [fargate-spot](fargate-spot.md) interruptions without
-  logouts, [zero-downtime-deploys](zero-downtime-deploys.md).
-
-## 7. Our settings and WHY
-
-All state in Redis or Postgres. WHY: tasks are cattle (replaced at any time on Spot), and the ALB
-picks any healthy target.
-
-## 8. Trade-offs
-
-- **Pros:** horizontal scaling, safe replacement, no sticky sessions.
-- **Cons:** every authenticated request needs a Redis round-trip; Redis becomes a critical
-  dependency (single node in dev).
-
-## 9. Alternatives and when to choose them
-
-- **Sticky sessions with in-memory state:** simple for one server, fragile with more.
-- **Stateless tokens (JWT):** no store at all, but revocation is hard.
-- **In-process caches** for read-mostly data: fine if a miss is harmless.
-
-## 10. What breaks, and how we'd notice
-
-- Redis down: logins and authenticated calls fail fast with 500; `/ready` 503.
-- Someone adds an in-memory cache of user data: different answers per task. Hard to notice; code
-  review.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Any server can handle your request, because your login is stored centrally.
-- **Senior:** Sessions are in Redis keyed by the hash of the cookie id, users in Postgres; the api
-  process holds nothing between requests. That's why our tasks can run on Spot and be replaced, and
-  why we could scale out behind the ALB without sticky sessions.
-- **Lead:** Statelessness moves state into managed stores, which then need their own HA and
-  capacity planning: production needs a Valkey replica with failover, since every request depends
-  on it.
-
-## 14. Follow-up questions interviewers ask
-
-- *Do you need sticky sessions?* No: any task can read the session.
-- *What about WebSockets?* Connections are stateful; you'd need a shared pub/sub to fan out
-  messages.
-
-## 15. Say it in 30 seconds
-
-"Our api is stateless: sessions in Redis, users in Postgres, nothing in process memory. So any task
-can serve any request, a Spot interruption or deploy doesn't log anyone out, and scaling out is
-just more tasks behind the ALB."
-
-## 16. Status
-
-✅ built.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=stateless-servers#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 9. The query](../app-story.md#9-the-query)
+
+</details>

@@ -4,7 +4,7 @@ History: see [CHANGELOG.md](CHANGELOG.md) or run `pnpm docs:history`
 
 Start here for concepts. Follow one request, then its data, guards, background work, delivery and growth. Read each diagram, trace the numbered flow, then say the interview-ready answer aloud. The explorer link is in Advanced details.
 
-**Batch 1** has 36 cards in the seven-section format: revise sections 1–6 in two to three minutes, then open Advanced details for technical reference. **Batch 2** has 116 cards with their earlier text; they are the next batch, included here so every concept has a place. Read Batch 1 first for the interview, then return to Batch 2 in the same order.
+All **152 cards** use the seven-section format: revise sections 1–6 in two to three minutes, then open Advanced details for technical reference. **Batch 1** (36 cards) and **Batch 2** (116 cards) record the two completed rewrite batches. Follow the reading order below; the batch labels do not change it. Explain-only cards describe proposals, not implemented features.
 
 The maps show source-configured connections, not proof of a live deployment. The committed dev setup uses `us-east-1`, HTTPS at the ALB and `cdnEnabled=false`. AWS console labels can change; verify the named resource before drawing conclusions.
 
@@ -22,7 +22,7 @@ flowchart LR
     class alb,web,api focus
 ```
 
-- [Regions and availability zones](concepts/regions-and-azs.md) — **Batch 2** — after this you can answer: why does the city network have neighborhoods in two districts?
+- [Regions and availability zones](concepts/regions-and-azs.md) — **Batch 2** — after this you can answer: how do regions and availability zones affect MiniTickets' latency, placement and failure risks?
 - [VPC and CIDR blocks](concepts/vpc.md) — **Batch 1** — after this you can answer: how does a private network connect MiniTickets services without making its data public?
 - [Public vs private subnets](concepts/subnets.md) — **Batch 1** — after this you can answer: why do MiniTickets tasks use public subnets while databases stay in private subnets?
 - [Route tables and the internet gateway](concepts/route-tables.md) — **Batch 1** — after this you can answer: how does a subnet choose where traffic goes, and why does a route not grant access?
@@ -73,12 +73,12 @@ flowchart LR
 ```
 
 - [RDS Postgres](concepts/rds-postgres.md) — **Batch 1** — after this you can answer: where is the final truth for users, bookings and seats?
-- [Postgres schema with Drizzle ORM (UUID keys)](concepts/drizzle-schema.md) — **Batch 2** — after this you can answer: how do TypeScript tables become database rules?
+- [Postgres schema with Drizzle ORM (UUID keys)](concepts/drizzle-schema.md) — **Batch 2** — after this you can answer: how do schema definitions, generated migrations and database constraints work together?
 - [SQL migrations](concepts/migrations.md) — **Batch 2** — after this you can answer: how does a new schema reach an existing MiniTickets database?
 - [Seed data](concepts/seed-data.md) — **Batch 2** — after this you can answer: which rows make the local app useful immediately?
-- [Indexes (B-tree)](concepts/indexing.md) — **Batch 2** — after this you can answer: which lookup can an index avoid scanning?
+- [Database indexes](concepts/indexing.md) — **Batch 2** — after this you can answer: how do MiniTickets' indexes reduce query work, and what do they cost on writes?
 - [EXPLAIN and EXPLAIN ANALYZE](concepts/explain-analyze.md) — **Batch 2** — after this you can answer: how can you prove which SQL step costs time?
-- [Connection pooling](concepts/connection-pooling.md) — **Batch 2** — after this you can answer: why can ten waiting bookings exhaust one API task?
+- [Connection pooling](concepts/connection-pooling.md) — **Batch 2** — after this you can answer: why can waiting bookings exhaust a connection pool even when API CPU is low?
 - [Row locks](concepts/row-locks.md) — **Batch 1** — after this you can answer: how do two buyers avoid taking the same last seat?
 - [Database CHECK constraints](concepts/db-check-constraints.md) — **Batch 2** — after this you can answer: what stops a script from saving a negative seat count?
 - [Unique constraint vs check-then-insert (race condition)](concepts/unique-constraint-race.md) — **Batch 2** — after this you can answer: why is insert-and-handle safer than check-then-insert?
@@ -120,12 +120,12 @@ flowchart LR
 - [Sessions vs JWT](concepts/sessions-vs-jwt.md) — **Batch 1** — after this you can answer: why does MiniTickets store login sessions centrally, and what does that cost in availability?
 - [Session cookie flags](concepts/session-cookie.md) — **Batch 2** — after this you can answer: which cookie flags protect sid and what do they not prevent?
 - [Session revocation](concepts/session-revocation.md) — **Batch 2** — after this you can answer: how can MiniTickets cancel all of one user's badges?
-- [Rbac](concepts/rbac.md) — **Batch 2** — after this you can answer: where is the current admin role checked?
+- [Role-based access control](concepts/rbac.md) — **Batch 2** — after this you can answer: where is the current admin role checked, and what happens when a role changes?
 - [Protected procedures](concepts/protected-procedure.md) — **Batch 2** — after this you can answer: why can callers not choose another user's booking identity?
 - [Route guard in the Next.js proxy (UX only, not security)](concepts/route-guard-proxy.md) — **Batch 2** — after this you can answer: why is a page redirect only a convenience guard?
 - [CSRF (cross-site request forgery)](concepts/csrf.md) — **Batch 2** — after this you can answer: how does MiniTickets reject a mutation sent by another website?
 - [CORS](concepts/cors.md) — **Batch 2** — after this you can answer: which browser cross-origin calls are permitted?
-- [Csp](concepts/csp.md) — **Batch 2** — after this you can answer: how does a fresh nonce permit only intended scripts?
+- [Content Security Policy](concepts/csp.md) — **Batch 2** — after this you can answer: how does a fresh script nonce reduce injected-script risk, and why does it affect HTML caching?
 - [XSS (cross-site scripting)](concepts/xss.md) — **Batch 2** — after this you can answer: what happens if attacker-controlled text becomes executable code?
 - [SQL injection](concepts/sql-injection.md) — **Batch 2** — after this you can answer: why must search text remain a parameter rather than SQL syntax?
 - [Open redirect protection](concepts/open-redirect.md) — **Batch 2** — after this you can answer: why must the login return path stay inside MiniTickets?
@@ -160,7 +160,7 @@ flowchart LR
 - [Ticket signing](concepts/ticket-signing.md) — **Batch 2** — after this you can answer: what proves a QR claim came from MiniTickets?
 - [Retry policy](concepts/retry-policy.md) — **Batch 2** — after this you can answer: which failures should MiniTickets retry and with what identity?
 - [Reminders](concepts/reminders.md) — **Batch 2** — after this you can answer: how would a reminder branch from the current booking flow?
-- [Door checkin](concepts/door-checkin.md) — **Batch 2** — after this you can answer: how would a door worker prevent a second ticket use?
+- [Door check-in](concepts/door-checkin.md) — **Batch 2** — after this you can answer: how would a door worker prevent a second ticket use, and what changes offline?
 - [Live seats](concepts/live-seats.md) — **Batch 2** — after this you can answer: how would browsers hear seat hints without treating them as truth?
 
 ## Part 5: Delivery
@@ -239,7 +239,7 @@ flowchart LR
 - [Virtualization](concepts/virtualization.md) — **Batch 2** — after this you can answer: why does a large event list mount only a small visible window?
 - [Compression at the edge (gzip / Brotli)](concepts/compression.md) — **Batch 2** — after this you can answer: which response bytes are reduced before crossing the network?
 - [Web vitals](concepts/web-vitals.md) — **Batch 2** — after this you can answer: how do real visitors report loading, interaction and layout problems?
-- [Lighthouse ci](concepts/lighthouse-ci.md) — **Batch 2** — after this you can answer: what production page budgets would a future lab check enforce?
+- [Lighthouse CI](concepts/lighthouse-ci.md) — **Batch 2** — after this you can answer: what would repeatable lab performance checks add alongside real visitor measurements?
 - [Load balancing algorithms](concepts/load-balancing-algorithms.md) — **Batch 2** — after this you can answer: how would choosing a different healthy worker affect load?
 - [Vertical vs horizontal scaling](concepts/scaling.md) — **Batch 2** — after this you can answer: what gets faster when MiniTickets adds tasks and what stays serial?
 - [Autoscaling](concepts/autoscaling.md) — **Batch 2** — after this you can answer: which policy would adjust desiredCount if it were built?
@@ -247,11 +247,11 @@ flowchart LR
 - [High availability across availability zones](concepts/high-availability.md) — **Batch 2** — after this you can answer: which current MiniTickets components still have one-copy risks?
 - [Fargate Spot](concepts/fargate-spot.md) — **Batch 2** — after this you can answer: what happens when AWS takes back a spare worker machine?
 - [Monolith vs microservices](concepts/monolith-vs-microservices.md) — **Batch 2** — after this you can answer: why keep one layered API instead of splitting every feature?
-- [Fail fast and timeouts when a dependency is down](concepts/fail-fast.md) — **Batch 2** — after this you can answer: which deadline prevents a slow dependency consuming every worker?
+- [Fail fast and timeouts when a dependency is down](concepts/fail-fast.md) — **Batch 2** — after this you can answer: which operations have time budgets, and where can waiting still stall?
 - [Graceful degradation](concepts/graceful-degradation.md) — **Batch 2** — after this you can answer: which failures allow an old public list and which must deny work?
-- [Graceful shutdown (and PID 1 signals)](concepts/graceful-shutdown.md) — **Batch 2** — after this you can answer: how does a task stop taking work and finish bounded in-flight work?
+- [Graceful shutdown (and PID 1 signals)](concepts/graceful-shutdown.md) — **Batch 2** — after this you can answer: in what order does a task stop work, and what can prevent cleanup from finishing?
 - [Backups, snapshots, disaster recovery](concepts/backups-dr.md) — **Batch 2** — after this you can answer: what can a backup restore and what still needs a recovery drill?
-- [Slo error budget](concepts/slo-error-budget.md) — **Batch 2** — after this you can answer: how would MiniTickets measure a reliability promise?
+- [SLO and error budget](concepts/slo-error-budget.md) — **Batch 2** — after this you can answer: how would MiniTickets define a user-focused reliability target and decide when failures consume too much budget?
 
 ## How this connects
 

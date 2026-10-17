@@ -3,26 +3,62 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-TTL is an expiry boundary. Sessions/cookie use fixed 604800 s; list soft freshness is 30–33 s while Redis PX hard expiry is 300000 ms. Soft jitter does not extend the hard age cap; Dynamo dedup TTL is asynchronous cleanup after 30 days.
+Time to live, or TTL, gives stored information an expiry boundary. Different systems use it for different purposes, from exact access checks to eventual cleanup.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+A MiniTickets session must not stay valid forever, and a displayed event list must not become indefinitely stale. Those limits need separate policies because they protect different things.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser query"] --> n1
-    n1["Next public data"] --> n2
-    n2["Redis envelope"] --> n3
-    n3["Postgres"]
+data["Legacy events.list result"] -->|"before soft deadline"| fresh["Serve fresh copy"]
+    data -->|"past soft deadline, below hard age"| stale["Serve bounded stale copy; refresh"]
+    data -->|"hard age reached"| rebuild["Require new database result"]
 ```
 
-## 4. Where in our code
+1. Choose whether the timer governs freshness, authorization or cleanup.
+2. Record the original age and apply the relevant boundary.
+3. Refresh or reject expired state according to that purpose.
+
+## 4. How do we use it in MiniTickets?
+
+Sessions have fixed expiry. Legacy public lists have soft freshness and a hard stale cap. Browser queries and explicit Next data caching have their own clocks. Current search bypasses the legacy list caches; purchases still recheck Postgres.
+
+## 5. Interview-ready answer
+
+“TTL is a boundary, but its meaning depends on the layer. MiniTickets uses it for session expiry, bounded public-list staleness and eventual dedup-record cleanup. Those timers do not synchronize browser and server caches automatically. A failed refresh must not make old data look new, and stale data must never authorize a booking.”
+
+## 6. Important follow-up questions
+
+- **Does DynamoDB TTL delete exactly on time?** No. It is asynchronous cleanup; enforce exact access rules separately.
+- **Does soft-TTL jitter extend the hard cap?** No. Spread refresh timing without extending the maximum allowed age.
+- **Does invalidating server data update every open tab?** No. Browser queries follow their own freshness and refetch policy.
+- **Why not use one long TTL everywhere?** Different clocks can compound staleness and hide an outdated answer from lower layers.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current implementation
+
+Sessions and cookies use fixed 604800 seconds. Legacy lists have 30–33 second soft freshness and Redis PX hard expiry of 300000 ms. DynamoDB processed-job cleanup is scheduled after 30 days and deletes asynchronously. Next public-data and browser-query freshness are separate; nonce HTML/RSC remains private,no-store. Fake-clock tests and historical demos are evidence sources, not checks rerun by this rewrite.
+
+### Technical limits and diagnosis
+
+Soft freshness jitter spreads refresh demand without extending the original hard age cap. A failed refresh must not reset an old value to fresh. Stale-while-revalidate serves a bounded public stale copy while one refresh runs; stale-if-error uses a previous good value during a bounded failure. A miss has no valid saved copy. Neither stale state may authorize login or sell seats.
+
+The explicit Next public-data helper and legacy useEvents have their own clocks; current catalogue search bypasses the list caches. Invalidation/freshness at one layer does not refresh every open tab. Shared nonce HTML/RSC is private,no-store. DynamoDB dedup TTL is asynchronous cleanup, not exact expiry enforcement.
+
+Long independent TTLs can compound staleness. Expose ages/hit telemetry and define an end-to-end freshness budget before adding overlapping caches. Existing fake-clock SWR/error tests are historical evidence sources, not rerun checks for this rewrite.
+
+### Source anchors
 
 - Anchor: `apps/api/src/procedures/auth.ts` — `module configuration`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/queries/events-cache.ts` — `setUpcomingInCache`; follow the numbered comments at this boundary.
@@ -30,54 +66,17 @@ flowchart LR
 - Anchor: `apps/api/src/services/auth.ts` — `SESSION_MAX_AGE_SECONDS`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/services/events.ts` — `SOFT_TTL_MS`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.
+### Related reading
 
-## 5. See it yourself
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#swr-caches)
+- [explorer tour](../guides/infra-explorer.html?tour=search)
+- [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
 
-Run `pnpm test` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does a successful admin write refresh all open tabs? No; they refetch on their own query policy. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#swr-caches) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-TTL is an expiry boundary. Sessions/cookie use fixed 604800 s; list soft freshness is 30–33 s while Redis PX hard expiry is 300000 ms. Soft jitter does not extend the hard age cap; Dynamo dedup TTL is asynchronous cleanup after 30 days. Bounded stale public listings trade freshness for latency/availability.
-
-## 8. Trade-offs
-
-Never use stale data for authorization or seats. Long independent TTLs can compound staleness. A failing refresh must not reset old data to fresh.
-
-## 9. Alternatives and when to choose them
-
-10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 10. What breaks and how we notice
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** TTL is an expiry boundary.
-- **Senior:** SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-- **Lead:** 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 14. Follow-up questions with answers
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-Can stale listings authorize booking? **No.**
-
-## 15. Say it in 30 seconds
-
-SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=ttl#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

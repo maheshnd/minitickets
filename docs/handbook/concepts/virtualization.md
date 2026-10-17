@@ -4,76 +4,72 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Virtualization mounts only the visible fixed-height rows plus overscan. It bounds DOM work while keyset pages bound transfer; retained page memory is a separate limit and load-more remains accessible.
+## 1. What is it?
 
-## 2. Real-life comparison
+Virtualization renders only the list rows near the visible screen. The full loaded list can exist as data without creating a page element for every row.
 
-A catalogue with a bookmark: each question and position has its own identity, and only the visible page lies open.
+## 2. Why do we need it?
 
-## 3. Picture it
+A visitor may browse thousands of MiniTickets events. Drawing every loaded row makes the browser do unnecessary layout and painting even though only a few rows are visible.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["10k database rows"] --> n1
-    n1["Keyset page"] --> n2
-    n2["Visible window plus overscan"] --> n3
-    n3["Small DOM"]
+    P["MiniTickets paged search results"] -->|"provide loaded event data"| V["VirtualEventList"]
+    S["Scroll position and viewport"] -->|"choose visible range plus buffer"| V
+    V -->|"mount only selected rows"| D["Small browser element tree"]
+    V -->|"approach loaded end: request another page"| P
 ```
 
-## 4. Where in our code
+1. Fetch a bounded page of event data.
+2. Calculate visible rows plus a small surrounding buffer.
+3. Move the rendered window as the visitor scrolls and load more when needed.
+
+## 4. How do we use it in MiniTickets?
+
+`VirtualEventList` uses fixed-height rows and stable event IDs. Search pagination limits transfer; virtualization limits rendered elements. Loaded page memory is a separate concern, and the interface retains an accessible load-more control.
+
+## 5. Interview-ready answer
+
+“MiniTickets combines pagination with virtualization because they solve different costs. Search pages bound data transfer, while the virtual list bounds mounted browser elements. A visible window and small buffer keep scrolling work manageable. Fixed row heights simplify calculation, but accessibility, keyboard behavior and retained page memory still need attention. This does not make an inefficient SQL query efficient.”
+
+## 6. Important follow-up questions
+
+- **Does it reduce database rows scanned?** No. Indexes and pagination address database work.
+- **Does a small element tree bound all memory?** No. Retained result pages can still accumulate.
+- **Why fixed-height rows?** They simplify position calculation, but constrain layout and content.
+- **When would plain pagination be better?** When simpler navigation and accessibility outweigh continuous scrolling.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Implementation and historical exercise
+
+`apps/web/src/features/events/components/virtual-event-list.tsx` → `VirtualEventList` renders fixed-height visible rows plus overscan, using stable event IDs. Search pages contain **50** rows. Load-more remains accessible; position semantics and keyboard use require review, not only a small DOM count.
+
+`pnpm demo:search` seeds an isolated **10,000-event** dataset, checks ordering/query plans and related headless assertions; the virtual-list browser check bounds rendered rows. These are described exercises, not new execution or AWS acceptance from this rewrite.
+
+### Alternatives and growth
+
+Variable-height virtualization needs measurement or a library. Pagination is a valid simpler alternative. Bound retained pages as well as mounted elements. At greater scale, server ranking, narrower payloads or justified search infrastructure may matter more than another browser optimization. The full dataset should not become 10,000 mounted React rows.
+
+### Code anchors
 
 - Anchor: `apps/web/src/features/events/components/virtual-event-list.tsx` — `VirtualEventList`; follow the numbered comments at this boundary.
 
-`apps/web/src/features/events/components/virtual-event-list.tsx` renders a bounded window. Search returns pages of 50. `pnpm demo:search` seeds an isolated 10k dataset, checks ordering/plans and runs related headless assertions. The virtual-list browser check bounds rendered rows.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#virtual-lists) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm demo:search` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does virtualization reduce SQL rows scanned? No; indexes and pagination do that. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#virtual-lists) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-Virtualization mounts only the visible fixed-height rows plus overscan. It bounds DOM work while keyset pages bound transfer; retained page memory is a separate limit and load-more remains accessible. Large DOM trees hurt layout, paint, memory and interaction.
-
-## 8. Trade-offs
-
-Fixed heights are simple but constrain content. Variable-height libraries add measurement. Virtual lists need accessible list position and keyboard testing; pagination is a valid alternative.
-
-## 9. Alternatives and when to choose them
-
-10x: bound retained pages as well as DOM. 100x: server-side ranking, narrower payloads and a search engine may matter more than another UI optimization.
-
-## 10. What breaks and how we notice
-
-Does virtualization reduce SQL rows scanned? No; indexes and pagination do that.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Virtualization mounts only the visible fixed-height rows plus overscan.
-- **Senior:** Pagination bounds transfer and database work; virtualization bounds mounted DOM nodes. They solve different problems. Keep stable event ids, a fixed-height window and overscan. Fetch the next keyset page before the user reaches the end. The full dataset should never become 10,000 React rows.
-- **Lead:** 10x: bound retained pages as well as DOM. 100x: server-side ranking, narrower payloads and a search engine may matter more than another UI optimization.
-
-## 14. Follow-up questions with answers
-
-Does virtualization reduce SQL rows scanned? No; indexes and pagination do that.
-
-What does virtualization primarily bound? **Mounted DOM nodes.**
-
-## 15. Say it in 30 seconds
-
-Pagination bounds transfer and database work; virtualization bounds mounted DOM nodes. They solve different problems. Keep stable event ids, a fixed-height window and overscan. Fetch the next keyset page before the user reaches the end. The full dataset should never become 10,000 React rows.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: bound retained pages as well as DOM. 100x: server-side ranking, narrower payloads and a search engine may matter more than another UI optimization.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=virtualization#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [app-story: 1b. Search input, hydration and bounded rows](../app-story.md#1b-search-input-hydration-and-bounded-rows)
+
+</details>

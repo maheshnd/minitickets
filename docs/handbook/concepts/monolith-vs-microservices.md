@@ -4,107 +4,73 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: ✅ built (a modular monolith) · Step doc: [01 setup](../../01-setup.md)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Our api is a **modular monolith**: one deployable service, split inside by feature (`auth`,
-`account`), instead of many small services that call each other over the network.
+## 1. What is it?
 
-## 2. Real-life comparison
+A modular monolith keeps related business features inside one deployable API with clear internal boundaries. Microservices split business responsibilities into independently deployed network services.
 
-One restaurant kitchen with clear stations (a modular monolith) versus separate food trucks that
-phone each other for every dish (microservices). Trucks scale and fail independently, but every
-order needs phone calls.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets has a small team and closely related booking rules. Splitting every feature would add network failures, deployments and coordination before those boundaries provide a practical benefit.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    alb["ALB /trpc/*"] --> api["one api service<br/>(1 task today)"]
-    api --> auth["auth feature"]
-    api --> account["account feature"]
-    auth --> pg[("Postgres")]
-    account --> pg
-    auth --> r[("Redis")]
+    R["MiniTickets appRouter"] -->|"in-process feature call"| A["Auth and account layers"]
+    R -->|"in-process feature call"| B["Events and booking layers"]
+    A -->|"query-layer storage access"| P["Shared Postgres and Valkey"]
+    B -->|"query-layer storage access"| P
+    B -->|"durable asynchronous boundary"| W["Outbox and separate workers"]
 ```
 
-## 4. Where in our code
+1. Keep feature responsibilities and layers clear within the API.
+2. Use in-process calls where independent deployment provides little value.
+3. Choose a separate service boundary when ownership or workload lifecycle warrants it.
 
-- Anchor: `apps/api/src/trpc/router.ts` · `appRouter = router({ auth: authRouter, account: accountRouter })`.
+## 4. How do we use it in MiniTickets?
 
-Step by step:
+The API remains a modular monolith with one router keyed by feature. Web is a separate UI service, and background email/ticket workers are already separate processes. The older “first likely worker split” description is now historical, not future work.
 
-1. One api process with one router; one key per feature.
-2. Each feature has its own file in each layer (`procedures/auth.ts`, `services/auth.ts`, …)
-   ([layered-api](layered-api.md)).
-3. Features call each other in-process (e.g. `account` uses `queries/users.ts`), no network.
-4. The web app is a second service, but it is the UI, not a split of the domain.
+## 5. Interview-ready answer
 
-## 5. See it yourself
+“MiniTickets keeps its synchronous business API as a modular monolith: features share a deployment and database while preserving procedure, service and query responsibilities. Separate workers handle asynchronous lifecycles. I would split another domain only for clear ownership, independent scaling or release needs, because a network boundary adds distributed failures, data consistency decisions and operational work rather than creating modularity by itself.”
 
-```bash
-ls apps/api/src/procedures apps/api/src/services apps/api/src/queries
-```
+## 6. Important follow-up questions
 
-Two features, one deployable. On AWS: one ECS service `minitickets-dev-api`.
+- **When would you split a domain?** When its ownership, scaling profile or release cadence needs genuine independence.
+- **What is simpler inside one API?** Calls, debugging and transactions can remain local.
+- **What does the monolith risk?** Features share deployment/scaling and a bad change can affect several of them.
+- **How do boundaries erode?** Unreviewed cross-feature data access can turn clear modules into tightly coupled code.
 
-**Break it on purpose (thought experiment):** move `account` to its own service. It now needs
-network calls to read users or a copy of the users table, its own auth check, its own deploy, and
-tracing to debug a slow profile page.
+## 7. Advanced details
 
-## 6. How it connects
+<details>
+<summary>Technical reference</summary>
 
-- **Uses ←** [rpc-vs-rest](rpc-vs-rest.md) (the router), [layered-api](layered-api.md).
-- **Gives →** simple deploys ([ecs-service](ecs-service.md)); scaling is "more of the same task"
-  ([scaling](scaling.md), [stateless-servers](stateless-servers.md)).
+### Current architecture and sources
 
-## 7. Our settings and WHY
+`apps/api/src/trpc/router.ts` defines `appRouter` with auth, account, telemetry, events, bookings, tickets and posters. Features live in procedure/service/query or queue files; procedures validate, services decide, query/queue adapters access external systems. The old two-feature router example is illustrative history, not the full current list.
 
-One api, features as folders and router keys. WHY: one small team, one database, a few features;
-network boundaries would add cost and failure modes without a benefit yet.
+Web is a separate UI deployable, not a split of the synchronous business domain. Email/ticket worker execution is already separate behind durable outbox/SNS/SQS boundaries; the original proposed worker extraction has been realized. One API ECS service still contains the synchronous feature modules. List layer files with `ls apps/api/src/procedures apps/api/src/services apps/api/src/queries`.
 
-## 8. Trade-offs
+### Trade-offs and extraction example
 
-- **Pros:** one deploy, in-process calls, transactions across features possible, simple debugging.
-- **Cons:** everything scales together; one bad deploy affects every feature; boundaries are only
-  conventions.
+A small team gains one API release, local calls and simpler shared transactions; scaling/deployment failures remain shared. Conventions require review because the current lint does not enforce all boundaries. Moving account into its own service would require a data-ownership decision, network/auth boundary, independent deployment and cross-service diagnosis. Extract only when those costs serve concrete team/workload needs, rather than to increase the number of services.
 
-## 9. Alternatives and when to choose them
+### Code anchors
 
-- **Microservices:** separate teams owning separate domains, very different scaling needs, or
-  independent release cycles.
-- **Extract one service** (e.g. a background worker for emails) when its load or lifecycle is
-  different: the first likely split for us.
+- Anchor: `apps/api/src/trpc/router.ts` · `appRouter`: the current router contains auth/account plus telemetry, events, bookings, tickets and posters.
 
-## 10. What breaks, and how we'd notice
+### Related reading
 
-Feature boundaries erode (services reaching into other features' queries); only review notices.
+[layered-api](layered-api.md) · [rpc-vs-rest](rpc-vs-rest.md) · [ecs-service](ecs-service.md) · [scaling](scaling.md) · [stateless-servers](stateless-servers.md)
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** One backend, organised inside by feature.
-- **Senior:** A modular monolith: one Fastify + tRPC service with `appRouter` keyed by feature, each
-  feature split into procedure/service/query files, sharing one Postgres and Redis. It's stateless,
-  so we scale by adding identical tasks.
-- **Lead:** Start with a modular monolith and clear boundaries; split when a team, a scaling profile
-  or a release cadence demands it. The first split I'd expect is async work (emails, notifications)
-  into a worker behind a queue.
-
-## 14. Follow-up questions interviewers ask
-
-- *When do microservices make sense?* Independent teams and domains, different scaling, separate
-  release cycles.
-- *What do you lose by splitting?* In-process calls, simple transactions, simple debugging.
-
-## 15. Say it in 30 seconds
-
-"We have a modular monolith: one api service, one router keyed by feature, each feature split into
-layers, sharing one database. It's stateless, so we scale by adding tasks. I'd split out a service
-only when a team or workload needs its own lifecycle; first likely a queue worker."
-
-## 16. Status
-
-✅ built.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=monolith-vs-microservices#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 12. Monorepo and shared types](../app-story.md#12-monorepo-and-shared-types)
+
+</details>

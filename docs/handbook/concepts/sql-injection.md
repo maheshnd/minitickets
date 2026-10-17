@@ -3,29 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built · Step doc: [05 database](../../05-database.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**SQL injection** is user input being read as SQL code; every query we run goes through Drizzle,
-which sends values separately from the SQL text (`$1`), so input is always data.
+SQL injection happens when untrusted input becomes database instructions. Parameterized queries keep the instruction text separate from the values supplied by users.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A form with boxes versus a blank letter. In a box marked "name", writing "and also give me the
-safe" is just a strange name. In a free letter, the clerk might follow the instruction.
+An email containing quote marks and SQL-like text must remain an email value. It must not turn MiniTickets login lookup into a query that returns every account.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    in["email = a' OR 1=1 --"] --> d["Drizzle eq(users.email, email)"]
-    d --> sql["SQL: ... where email = $1 limit $2"]
-    d --> params["params: [a' OR 1=1 --, 1]"]
-    sql --> pg[("Postgres: value compared as text")]
-    params --> pg
+    input["Login email input"] -->|"validate and pass as a value"| query["MiniTickets findByEmail"]
+    query -->|"SQL placeholders plus separate parameters"| pg["Postgres"]
+    pg -->|"treat input as data; return matching row"| query
 ```
 
-## 4. Where in our code
+1. Define the query structure in trusted code.
+2. Send user-controlled values separately as parameters.
+3. Let the database execute that fixed structure with those values.
+
+## 4. How do we use it in MiniTickets?
+
+Our query layer uses Drizzle query builders and parameterized SQL templates. Validation adds useful bounds and formats; it does not replace parameterization. The current AWS application database user is still more privileged than necessary.
+
+## 5. Interview-ready answer
+
+“MiniTickets prevents SQL injection by keeping query structure separate from user values. Drizzle supplies placeholders and parameters instead of inserting raw input into SQL text. Validation is another layer, not the main defense. I still review raw-SQL escape hatches and restrict database privileges to limit damage if a future query is unsafe.”
+
+## 6. Important follow-up questions
+
+- **Does escaping quotes solve it?** Parameters are the safer structural approach; hand-written escaping is fragile.
+- **Can an ORM still be vulnerable?** Yes. Unsafe raw SQL can bypass its safe value handling.
+- **Can parameters choose any table or column?** They represent values; dynamic query structure needs a trusted allow-list.
+- **Does encryption at rest help?** No. The database decrypts data for queries it accepts.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/src/queries/users.ts` · `findByEmail`: `db.select().from(users).where(eq(users.email, email)).limit(1)`.
 
@@ -44,7 +65,12 @@ params: [ "a' OR 1=1 --", 1 ]
 5. Input validation (must be an email) is a second wall, not the main one.
 6. Redis commands are argument lists too (`redis.get(key)`), not strings to parse.
 
-## 5. See it yourself
+### Configuration and design
+
+Only the query builder; no `sql.raw` anywhere. WHY: parameterisation is structural, so it can't be
+forgotten.
+
+### Checks and troubleshooting
 
 ```bash
 curl -s -X POST localhost:4000/trpc/auth.login -H 'content-type: application/json' \
@@ -58,57 +84,37 @@ And from `apps/api`, print the SQL for any query with `.toSQL()` in a scratch sc
 ``sql.raw(`select * from users where email = '${email}'`)``. Now `' OR 1=1 --` returns the first
 user.
 
-## 6. How it connects
+A future `sql.raw` with user input. `grep -rn "sql.raw" apps/api/src` in review or a lint rule
+catches it.
 
-- **Uses ←** [drizzle-schema](drizzle-schema.md), [validation-at-boundaries](validation-at-boundaries.md).
-- **Gives →** safe queries for every feature.
+- *Does escaping quotes work?* Fragile; parameters are the fix.
+- *Can ORMs be injected?* Yes, through their raw-SQL escape hatches.
 
-## 7. Our settings and WHY
-
-Only the query builder; no `sql.raw` anywhere. WHY: parameterisation is structural, so it can't be
-forgotten.
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** injection-proof by default; typed.
 - **Cons:** complex SQL is sometimes easier by hand; Drizzle's `sql` template is safe, `sql.raw`
   is not, and they look similar.
-
-## 9. Alternatives and when to choose them
 
 - **Raw `pg` with `$1` parameters:** equally safe if always used.
 - **Stored procedures:** move logic into the database; still need parameters.
 - **Least-privileged database user:** limits the damage of any injection (we use the master user on
   AWS today; see [rds-managed-password](rds-managed-password.md)).
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-A future `sql.raw` with user input. `grep -rn "sql.raw" apps/api/src` in review or a lint rule
-catches it.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** User input is always treated as data, never as SQL commands.
-- **Senior:** All queries go through Drizzle in `queries/`; it emits `$1` placeholders and passes
+All queries go through Drizzle in `queries/`; it emits `$1` placeholders and passes
   values separately, so `' OR 1=1 --` is just a string. Zod email validation is a second layer.
-- **Lead:** Make the safe path the only path: one data-access layer, no string-built SQL, a lint
-  rule for raw SQL, and a least-privileged database role so a mistake can't drop tables.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Does escaping quotes work?* Fragile; parameters are the fix.
-- *Can ORMs be injected?* Yes, through their raw-SQL escape hatches.
+- **Uses ←** [drizzle-schema](drizzle-schema.md), [validation-at-boundaries](validation-at-boundaries.md).
+- **Gives →** safe queries for every feature.
 
-## 15. Say it in 30 seconds
-
-"Every query goes through Drizzle in the queries layer, which sends values as parameters, so
-Postgres never parses input as SQL. I printed the SQL for a hostile email: 'where email = $1' with
-the string in the params. Validation is a second layer, and there's no raw SQL in the code."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=sql-injection#chapter=5&piece=rds).
 
 ## Where it appears in the story
 
 - [App story: 9. The query](../app-story.md#9-the-query)
+
+</details>

@@ -3,30 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-We never store passwords; we store an **argon2id hash**: a one-way, deliberately slow and
-memory-hungry fingerprint with a random **salt**, so a stolen database is expensive to crack.
+Password hashing stores a one-way check value instead of the password. MiniTickets uses Argon2id, which deliberately makes each guess require time and memory.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A paper shredder that always shreds the same sheet into the same pattern (plus a random confetti mix
-per person). You can check a sheet by shredding it again and comparing; you can't un-shred. And the
-shredder is slow on purpose, so trying millions of sheets takes forever.
+If our users table leaks, attackers should not receive everyone’s passwords directly. Making guesses expensive reduces the usefulness of that stolen database, especially compared with fast ordinary hashes.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    pw["password"] --> h["argon2id hash()<br/>random salt,<br/>m=19456 KiB, t=2, p=1"]
-    h --> db[("users.password_hash<br/>$argon2id$v=19$m=19456,t=2,p=1$salt$hash")]
-    pw2["login password"] --> v["verify(stored, given)"]
-    db --> v
-    v --> ok["true / false"]
+    signup["MiniTickets signup"] -->|"hash password before storing"| hash["Argon2id with random salt"]
+    hash -->|"save encoded salt, settings and result"| db["users.password_hash"]
+    login["MiniTickets login"] -->|"verify submitted password against saved value"| db
 ```
 
-## 4. Where in our code
+1. Signup hashes the password with a fresh random salt.
+2. Postgres stores the encoded result, not the password.
+3. Login verifies the submitted password using the stored salt and settings.
+
+## 4. How do we use it in MiniTickets?
+
+Our auth service hashes and verifies passwords. Unknown-email login still performs one verification against a dummy hash. Input length is bounded, and request bodies are not logged. Rehash-on-login and passkeys are possible improvements, not built behavior.
+
+## 5. Interview-ready answer
+
+“MiniTickets stores Argon2id password hashes with a separate random salt for each user. The stored encoding includes the settings needed for verification. This makes a leaked database harder to crack, but hash cost also consumes our login capacity. I pair it with bounded input, generic login failures and rate limits.”
+
+## 6. Important follow-up questions
+
+- **Why use a salt?** Equal passwords get different stored results, defeating reusable precomputed guesses.
+- **Why not SHA-256?** It is fast, which helps attackers guessing ordinary passwords.
+- **Can we decrypt the hash?** No. We verify guesses rather than recover the original password.
+- **What if hashing becomes too expensive?** Measure latency and resource use before tuning parameters; retain enough cost to slow offline guessing.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/src/services/auth.ts` · `signup` (`hash(input.password)`), `login` (`verify(...)`).
 
@@ -47,7 +67,16 @@ That equals OWASP's minimum: "Use Argon2id with a minimum configuration of 19 Mi
 iteration count of 2, and 1 degree of parallelism"
 ([OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)).
 
-## 5. See it yourself
+### Configuration and design
+
+| Setting | Value | Why |
+| ------- | ----- | --- |
+| Algorithm | argon2id | Memory-hard; resists GPU cracking; OWASP's first choice. |
+| Parameters | library defaults = OWASP minimum | Safe baseline; no custom tuning to get wrong. |
+| Library | `@node-rs/argon2` (native) | Fast native code; needs glibc, hence the `slim` image. |
+| Max length | 128 | Bounded work per request. |
+
+### Checks and troubleshooting
 
 ```bash
 docker exec minitickets-postgres-1 psql -U minitickets -d minitickets \
@@ -62,29 +91,21 @@ Hash the same password twice: two different strings (different salts), and both 
 identical hashes, and a GPU can try billions of SHA-256 guesses per second; argon2's memory cost is
 what makes that expensive.
 
-## 6. How it connects
+- Parameters raised too far: logins get slow, CPU spikes on small tasks (current entry-on API uses 0.5 vCPU; older measurements used 0.25 vCPU). Response time
+  in logs (`responseTime`).
+- Native module built for the wrong platform: the api crashes on start ("exec format error" or
+  missing binary). The Docker build and CI catch it.
 
-- **Uses ←** [validation-at-boundaries](validation-at-boundaries.md) (length limits),
-  [drizzle-schema](drizzle-schema.md) (`password_hash`).
-- **Gives →** login ([sessions-vs-jwt](sessions-vs-jwt.md)); equal timing for
-  [user-enumeration](user-enumeration.md).
+- *Hashing vs encryption?* Hashing is one-way; encryption can be reversed with a key.
+- *What is a salt for?* Same password, different hash per user; defeats rainbow tables.
+- *Why is SHA-256 fine for session ids but not passwords?* Session ids are 256 random bits: nothing
+  to guess. Passwords are low-entropy.
 
-## 7. Our settings and WHY
-
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Algorithm | argon2id | Memory-hard; resists GPU cracking; OWASP's first choice. |
-| Parameters | library defaults = OWASP minimum | Safe baseline; no custom tuning to get wrong. |
-| Library | `@node-rs/argon2` (native) | Fast native code; needs glibc, hence the `slim` image. |
-| Max length | 128 | Bounded work per request. |
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** cracking a leaked hash is slow and costly; salt per user defeats precomputed tables.
 - **Cons:** CPU and memory per login and signup (on purpose); a native module complicates builds
   (Alpine/musl issues, `.dockerignore` must exclude host `node_modules`).
-
-## 9. Alternatives and when to choose them
 
 - **bcrypt:** widely available; 72-byte input limit (per OWASP).
 - **scrypt:** memory-hard, in Node's standard library.
@@ -92,41 +113,23 @@ what makes that expensive.
 - **A pepper** (secret added before hashing, kept outside the database): extra defence in depth.
 - **Passwordless / passkeys:** no password to store at all.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-- Parameters raised too far: logins get slow, CPU spikes on Spot tasks with ¼ vCPU. Response time
-  in logs (`responseTime`).
-- Native module built for the wrong platform: the api crashes on start ("exec format error" or
-  missing binary). The Docker build and CI catch it.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** We store a scrambled, one-way version of the password, never the password.
-- **Senior:** argon2id via `@node-rs/argon2` with defaults `m=19456,t=2,p=1`, OWASP's minimum; the
+argon2id via `@node-rs/argon2` with defaults `m=19456,t=2,p=1`, OWASP's minimum; the
   encoded string holds salt and parameters so we can raise them later and rehash on login. Login
   always verifies once, even for unknown emails, and passwords are capped at 128 characters.
-- **Lead:** Hash cost is a budget: high enough to slow attackers, low enough for login latency and
-  our ¼-vCPU tasks. I'd add rehash-on-login when parameters change, consider a pepper in Secrets
-  Manager, and push MFA or passkeys for real protection.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Hashing vs encryption?* Hashing is one-way; encryption can be reversed with a key.
-- *What is a salt for?* Same password, different hash per user; defeats rainbow tables.
-- *Why is SHA-256 fine for session ids but not passwords?* Session ids are 256 random bits: nothing
-  to guess. Passwords are low-entropy.
+- **Uses ←** [validation-at-boundaries](validation-at-boundaries.md) (length limits),
+  [drizzle-schema](drizzle-schema.md) (`password_hash`).
+- **Gives →** login ([sessions-vs-jwt](sessions-vs-jwt.md)); equal timing for
+  [user-enumeration](user-enumeration.md).
 
-## 15. Say it in 30 seconds
-
-"Passwords are hashed with argon2id using the library defaults, 19 MiB of memory, 2 iterations, 1
-lane, which is exactly OWASP's minimum. The stored string has its own salt and parameters. Login
-verifies once even for unknown emails, and passwords are capped at 128 characters so hashing can't
-be abused."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=password-hashing#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 8. The service](../app-story.md#8-the-service)
+
+</details>

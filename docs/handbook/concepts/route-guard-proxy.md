@@ -3,38 +3,58 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built · Step doc: [09 dashboard](../../09-dashboard.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-`proxy.ts` sends logged-out visitors from `/dashboard` to `/login?next=/dashboard` **before** the
-page renders; it only checks that a `sid` cookie exists, so it is a convenience, not a lock.
+A route guard redirects visitors toward login before showing a private page. MiniTickets’ Next.js proxy checks cookie presence for this navigation convenience; it does not authenticate the session.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A receptionist who asks "do you have a badge?" but never scans it. Fine for sending lost visitors
-to the front desk; useless against someone with a fake badge. The real scanner is on the door of
-the vault (the api).
+A logged-out visitor opening the dashboard should go straight to login instead of seeing an empty private screen. The API must still refuse fake or expired cookies.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    req["GET /dashboard"] --> p{"proxy:<br/>sid cookie?"}
-    p -->|"no"| login["302 → /login?next=/dashboard"]
-    p -->|"yes (real OR fake)"| page["DashboardPage"]
-    page --> api{"api: protectedProcedure<br/>session in Redis?"}
-    api -->|"no → 401"| back["useProfile → /login"]
+    browser["Browser requests dashboard"] -->|"request private page"| proxy["Next.js proxy"]
+    proxy -->|"no sid: redirect with safe next path"| login["Login page"]
+    proxy -->|"sid present: allow rendering"| page["Dashboard"]
+    page -->|"API verifies actual session"| api["Protected API"]
 ```
 
-## 4. Where in our code
+1. The proxy recognizes a private-page path.
+2. Missing cookie presence triggers a login redirect.
+3. A rendered page still obtains private data through the protected API.
+
+## 4. How do we use it in MiniTickets?
+
+The navigation guard covers dashboard, admin and tickets. The wider HTML/RSC matcher also supplies fresh security nonces and no-store responses. Login passes its return path through `getSafeNext` before navigating.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses the proxy to improve navigation, not as its data security boundary. It redirects missing-cookie visitors before private pages render, but a fake cookie can pass that test. The protected API verifies the real session. Keeping those responsibilities clear prevents a convenient frontend check being mistaken for authorization.”
+
+## 6. Important follow-up questions
+
+- **Why not query Redis in the guard?** We keep navigation cheap; the API already checks authority for private data.
+- **What happens with an expired cookie?** The page can render, but private API calls reject it and navigation returns to login.
+- **Is the next parameter trusted?** No. `getSafeNext` permits only safe local paths.
+- **Does the proxy run only on dashboard?** No. Current HTML/RSC handling is broader; the redirect test selects private pages.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/web/src/proxy.ts` · `proxy`, `config.matcher`: the cookie check and the redirect.
 - Anchor: `apps/web/e2e/dashboard.spec.ts` · test "a fake sid cookie passes the route guard…": proves it is UX only.
 
 Step by step:
 
-1. `config = { matcher: ["/dashboard/:path*"] }`: the proxy runs only for `/dashboard` and below,
-   not for every request.
+1. The matcher covers HTML/RSC routes, excluding API/tRPC/static/image/favicon paths; only `/dashboard`, `/admin` and `/tickets` branches trigger the cookie-presence redirect.
 2. `request.cookies.has("sid")`: yes → `NextResponse.next()` (render the page).
 3. No cookie → build `/login`, put the wanted path in `?next=`, return a redirect.
 4. The page then loads `ProfileCard`, whose `useProfile` asks the api. If the session is fake or
@@ -48,7 +68,15 @@ runtime** by default. Verified in the installed Next.js 16.4.0 docs
 (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`: "Proxy defaults
 to using the Node.js runtime"; "`v16.0.0` Middleware is deprecated and renamed to Proxy").
 
-## 5. See it yourself
+### Configuration and design
+
+| Setting | Why |
+| ------- | --- |
+| Only checks that the cookie exists | No Redis call is made; API session checks remain authoritative. |
+| HTML/RSC matcher plus private-page path test | All HTML/RSC gets fresh nonce/CSP and private,no-store; private pages also get the navigation guard. |
+| `?next=` path kept | The user lands where they wanted after login. |
+
+### Checks and troubleshooting
 
 ```bash
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://localhost:3000/dashboard
@@ -61,31 +89,23 @@ curl -s -o /dev/null -w '%{http_code}\n' -b 'sid=fake' http://localhost:3000/das
 `NextResponse.redirect` uses by default.) The e2e test `dashboard.spec.ts` checks both paths in a
 real browser.
 
-**Break it on purpose:** change the matcher to `["/"]`. `/dashboard` is no longer guarded: a
+**Isolated thought experiment (not performed):** change the matcher to `["/"]`. `/dashboard` is no longer guarded: a
 logged-out visitor sees "Loading your profile..." and then the 401 redirect. Still safe, because the
 api is the real check; just a worse experience.
 
-## 6. How it connects
+- Cookie renamed in the api but not here: everyone is redirected to login. The e2e dashboard test
+  fails.
+- Someone relies on the guard as security: a data leak, if the api check were missing. Our e2e test
+  with a fake cookie documents that the api must refuse.
 
-- **Uses ←** the `sid` cookie set by login ([session-cookie](session-cookie.md)).
-- **Gives →** a fast redirect; the real check is [protected-procedure](protected-procedure.md).
-  Locally the cookie is set by `localhost:4000` and read by `localhost:3000`: cookies are scoped
-  by host, not port, so the proxy can see it.
+- *Why not check the session in the proxy?* An extra Redis round-trip per page for UX only; the api
+  checks anyway.
+- *Is `next` safe to redirect to?* Only after `getSafeNext` ([open-redirect](open-redirect.md)).
 
-## 7. Our settings and WHY
-
-| Setting | Why |
-| ------- | --- |
-| Only checks that the cookie exists | The proxy cannot reach Redis (and should not: one extra hop per page). |
-| `matcher: ["/dashboard/:path*"]` | Runs only where it is needed; static files and other pages skip it. |
-| `?next=` path kept | The user lands where they wanted after login. |
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** no flash of an empty dashboard; zero network calls; easy to reason about.
 - **Cons:** a fake or expired cookie passes; developers might mistake it for security.
-
-## 9. Alternatives and when to choose them
 
 - **Validate the session in the proxy** (call the api or Redis): stronger UX for expired sessions,
   but adds latency to every guarded page.
@@ -94,40 +114,23 @@ api is the real check; just a worse experience.
 - **Check in a Server Component** (fetch `auth.me` while rendering): page-level, needs cookie
   forwarding.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-- Cookie renamed in the api but not here: everyone is redirected to login. The e2e dashboard test
-  fails.
-- Someone relies on the guard as security: a data leak, if the api check were missing. Our e2e test
-  with a fake cookie documents that the api must refuse.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** If you're not logged in, opening the dashboard sends you to login first.
-- **Senior:** `proxy.ts` runs before rendering for `/dashboard/*`, checks only that a `sid` cookie
+`proxy.ts` covers HTML/RSC and guards dashboard/admin/tickets; it checks only that a `sid` cookie
   exists and redirects with `?next=`. It is UX; the api's `protectedProcedure` validates the session
   in Redis, and an e2e test proves a fake cookie gets past the proxy but not the api.
-- **Lead:** Frontend guards are for experience; authorization lives at the data boundary. I'd keep
-  the proxy cheap and make sure every data path is protected server-side, with tests that bypass
-  the UI.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Why not check the session in the proxy?* An extra Redis round-trip per page for UX only; the api
-  checks anyway.
-- *Is `next` safe to redirect to?* Only after `getSafeNext` ([open-redirect](open-redirect.md)).
+- **Uses ←** the `sid` cookie set by login ([session-cookie](session-cookie.md)).
+- **Gives →** a fast redirect; the real check is [protected-procedure](protected-procedure.md).
+  Locally the cookie is set by `localhost:4000` and read by `localhost:3000`: cookies are scoped
+  by host, not port, so the proxy can see it.
 
-## 15. Say it in 30 seconds
-
-"A Next.js proxy on `/dashboard/*` redirects to login when there's no `sid` cookie. It only checks
-that the cookie exists, so it's a UX shortcut, not security. The real check is the api's
-protectedProcedure, and an e2e test shows a fake cookie gets past the proxy but gets a 401 from the
-api."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=route-guard-proxy#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [App story: 1. Browser → Next.js: layout, server vs client components, proxy guard](../app-story.md#1-browser--nextjs-layout-server-vs-client-components-proxy-guard)
+
+</details>

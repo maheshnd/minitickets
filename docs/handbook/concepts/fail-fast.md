@@ -4,78 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Fail-fast bounds resource wait rather than hanging. Postgres now has explicit pool/statement deadlines, Redis operations are bounded, and queue SDK requests enforce connect/hard timeouts; commit outcomes can still be ambiguous.
+## 1. What is it?
 
-## 2. Real-life comparison
+Fail-fast behavior stops waiting when work cannot complete within a useful budget. Timeouts protect scarce connections and let callers receive a bounded failure.
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+## 2. Why do we need it?
 
-## 3. Picture it
+If a queue endpoint silently accepts a connection but never replies, a MiniTickets relay should not occupy a database connection forever. It needs a deadline and durable work to retry later.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["HTTP request"] --> n1
-    n1["Pool wait budget"] --> n2
-    n2["SQL budget"] --> n3
-    n3["Downstream budget"]
+    R["MiniTickets request or relay"] -->|"use the selected operation's budget"| D["Pool / SQL / list cache / SNS"]
+    D -->|"success within budget"| S["Continue work"]
+    D -->|"deadline reached"| F["Return failure or retain pending outbox"]
+    F -->|"ambiguous outcome: retry same identity or reconcile"| I["Idempotency and durable state"]
 ```
 
-## 4. Where in our code
+1. Set a budget for acquiring resources and for performing the operation.
+2. Stop waiting when the relevant deadline expires.
+3. Handle uncertain outcomes with stable identity and recovery rather than assuming nothing happened.
+
+## 4. How do we use it in MiniTickets?
+
+MiniTickets gives database work, list-cache calls and background publishing separate budgets. Other Redis calls have retry settings but no hard command deadline. Outbox failure leaves durable work pending. A request-path circuit breaker and overall request deadline remain future work.
+
+## 5. Interview-ready answer
+
+“MiniTickets sets separate budgets for database work, list-cache operations and background publishing. These do not create one overall request deadline, and some Redis calls can still stall. A timeout also cannot prove an operation never committed. Booking retries keep their original identity, and background work remains durable for recovery. A repeated-failure circuit breaker would be a separate design.”
+
+## 6. Important follow-up questions
+
+- **Does SQL timeout bound pool wait?** No. Acquiring a connection has its own timeout.
+- **Does a network timeout prove rollback?** No. The remote operation may have completed before the reply was lost.
+- **Why not retry indefinitely in the request?** It consumes resources and may exceed a useful user-facing deadline.
+- **When might a breaker help?** Repeated slow failures can justify pausing calls and probing recovery, while durable work stays pending.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Budgets and implementation
+
+`apps/api/src/db/client.ts` sets **2-second connection/acquisition** and **5-second statement** budgets; statement time includes lock wait but not pool acquisition. The SQL timeout is server-side, not an end-to-end HTTP or network-reply deadline. `apps/api/src/queries/events-cache.ts` wraps public-list cache operations with **100 ms** limits. The shared Redis client disables the offline queue and limits retries, but has no `commandTimeout`; direct session, inventory and rate-limit calls can stall on a connected server that stops replying. Retry limits do not establish a hard command deadline. `apps/api/src/queues/jobs.ts` bounds SDK connect/hard request time. The outbox publisher leaves failed notes pending.
+
+`pnpm demo:outbox` includes a silent queue timeout exercise; no new run/live acceptance is claimed here. An application breaker around `apps/api/src/services/outbox.ts` would need closed/open/half-open state and recovery probes; this is proposed, distinct from the built ECS deployment breaker.
+
+### Design limits and growth
+
+Independent timeouts can exceed the useful request budget when added together; define overall deadlines and leave recovery time. Timeout cannot establish commit outcome. Retrying durable work requires idempotency/reconciliation, not blindly assuming failure. Poorly tuned breakers can suppress useful recovery calls. Future options include pool occupancy/queue telemetry, per-dependency capacity isolation, adaptive limits and end-to-end deadlines.
+
+### Code anchors
 
 - Anchor: `apps/api/src/db/client.ts` — `db`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/queries/events-cache.ts` — `CACHE_TIMEOUT_MS`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/redis/client.ts` — `module configuration`; follow the numbered comments at this boundary.
 
-`apps/api/src/db/client.ts` sets 2 s connect/acquisition and 5 s statements. `apps/api/src/queues/jobs.ts` bounds SDK connection/request time; Redis adapters bound operations. Run `pnpm demo:outbox` for a silent queue timeout. A breaker is explain-only: proposed state in services/outbox.ts around delivery, with half-open probes and durable rows left pending.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#timeouts-pools) · [explorer tour](../guides/infra-explorer.html?tour=sale-day)
 
-Run `pnpm demo:outbox` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#timeouts-pools) and [explorer tour](../guides/infra-explorer.html?tour=sale-day).
-
-## 7. Our settings and WHY
-
-Fail-fast bounds resource wait rather than hanging. Postgres now has explicit pool/statement deadlines, Redis operations are bounded, and queue SDK requests enforce connect/hard timeouts; commit outcomes can still be ambiguous. Unbounded waits keep scarce connections and shutdowns occupied.
-
-## 8. Trade-offs
-
-Timeouts need an overall deadline, not independent budgets longer than the request. Circuit breakers can reject useful probes or hide recovery if poorly tuned.
-
-## 9. Alternatives and when to choose them
-
-10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
-
-## 10. What breaks and how we notice
-
-Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Fail-fast bounds resource wait rather than hanging.
-- **Senior:** An acquisition timeout bounds waiting for a connection; a statement timeout bounds SQL execution including lock wait. Network timeouts bound downstream calls. None proves an operation did not commit. A circuit breaker can stop repeated calls to an unhealthy dependency, but critical durable work still needs an eventual retry path.
-- **Lead:** 10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
-
-## 14. Follow-up questions with answers
-
-Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results.
-
-Does a statement timeout limit pool wait? **No; acquisition has a separate timeout.**
-
-## 15. Say it in 30 seconds
-
-An acquisition timeout bounds waiting for a connection; a statement timeout bounds SQL execution including lock wait. Network timeouts bound downstream calls. None proves an operation did not commit. A circuit breaker can stop repeated calls to an unhealthy dependency, but critical durable work still needs an eventual retry path.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=fail-fast#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

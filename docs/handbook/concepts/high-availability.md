@@ -4,124 +4,79 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: 🟡 partial (multi-AZ shape, single copies) · Step docs: [12 network](../../12-infra-network.md) (section 3.9), [14 data](../../14-infra-data.md) (section 3.3)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-**High availability (HA)** means the system keeps working when one part fails, which on AWS means a
-copy of every tier in at least two AZs; we have the two-AZ shape but run one copy of each tier.
+## 1. What is it?
 
-## 2. Real-life comparison
+High availability means continuing useful service when a component fails. It needs working spare capacity and a tested recovery path, not just resources placed in several locations.
 
-Two buildings, but only one staffed. The second building has desks and phone lines ready; if the first
-burns down, nobody is there to answer the phone yet.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets can have subnets in two availability zones yet still lose service when its only API task or database fails. An empty second location cannot serve buyers.
+
+## 3. How does it work?
 
 ```mermaid
-flowchart TB
-    subgraph az1["AZ #1"]
-        alb1["ALB node"]
-        api1["api task"]
-        db1[("RDS primary")]
-    end
-    subgraph az2["AZ #2"]
-        alb2["ALB node"]
-        api2["api task (planned)"]
-        db2[("RDS standby (planned)")]
-    end
+flowchart LR
+    L["MiniTickets ALB across two AZs"] -->|"current: one API copy"| A["API task"]
+    L -->|"proposed: healthy copy in another AZ"| N["Additional API task"]
+    A -->|"current shared dependencies"| D["Single-copy RDS and Valkey"]
+    N -->|"proposed: needs resilient data tier too"| F["Database standby and cache replica"]
 ```
 
-Today only the ALB is truly in both AZs. The task, RDS and Valkey each exist once.
+1. Identify which component failures interrupt a user journey.
+2. Provide independent working capacity and data recovery/failover for those failures.
+3. Test client reconnects, capacity and recovery rather than assuming the diagram guarantees availability.
 
-## 4. Where in our code
+## 4. How do we use it in MiniTickets?
+
+The network and ALB span two zones, but API/web and data stores use single copies. Current availability is therefore partial. Additional tasks, resilient data configuration, dependable baseline capacity and failure drills are future work; no recovery-time guarantee has been demonstrated.
+
+## 5. Interview-ready answer
+
+“MiniTickets has a two-zone network shape, not a fully highly available stack. Single application copies and data nodes can still interrupt service. I would choose the failure scope and user objective, then add independently placed capacity and appropriate database/cache failover. Clients must reconnect and have enough surviving capacity. More copies reduce specific risks, but shared dependencies and regional failure remain separate concerns.”
+
+## 6. Important follow-up questions
+
+- **Do two subnets establish high availability?** No. They provide placement options; useful copies and recovery behavior must exist.
+- **Does another API task solve database failure?** No. The shared data tier needs its own resilience.
+- **How fast would recovery be?** It depends on failure mode and configuration; measure it in drills instead of promising a fixed duration.
+- **Is high availability the same as backups?** No. Availability maintains service; backups recover lost or corrupted data.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current and proposed tiers
+
+`infra/src/network.ts` creates public/private subnets in two AZs. ALB spans both. API/web each run one Spot task. `infra/src/data/postgres.ts` has `multiAz: false`; `infra/src/data/cache.ts` has `numCacheClusters: 1`, `automaticFailoverEnabled: false`, `multiAzEnabled: false`.
+
+A proposed stronger design would use 2+ placed tasks with dependable on-demand base, RDS Multi-AZ, and Valkey primary/replica with automatic failover/Multi-AZ. These changes require capacity, compatibility, reconnect and operational validation; “just a config change” overstates the work. Multi-region active/passive adds replication/recovery complexity; Aurora is another database architecture, not an automatic requirement.
+
+### Operations, recovery and costs
+
+Read-only checks: `aws ecs describe-tasks --profile ticketlite --cluster minitickets-dev --tasks <task-arns> --query 'tasks[].[group,availabilityZone]' --output table`; `aws rds describe-db-instances --profile ticketlite --db-instance-identifier minitickets-dev-db --query 'DBInstances[0].[MultiAZ,AvailabilityZone]'`.
+
+A sole API failure can leave no healthy target until replacement; database failure affects reads/bookings; cache loss affects authentication/admission/cache behavior according to each policy. The old 1–2 minute task/about-one-minute database estimates were unmeasured examples, not bounds. Failover endpoints can stay stable while clients still need DNS/reconnect handling.
+
+The old **~$0.033/hour** data-layer figure and “doubling” estimates were historical, unpriced approximations. No HA setup cost or recovery drill was measured here; additional capacity/storage/traffic costs require current sizing/pricing. A second zone alone does not remove every failure point.
+
+### Code anchors
 
 - Anchor: `infra/src/network.ts` · `azNames`: 2 AZs, a public and a private subnet in each.
 - Anchor: `infra/src/compute/service.ts` · `desiredCount: 1`: one api task.
 - Anchor: `infra/src/data/postgres.ts` · `multiAz: false`: no standby.
 - Anchor: `infra/src/data/cache.ts` · `numCacheClusters: 1`, `automaticFailoverEnabled: false`: one node.
 
-| Tier | Dev today | HA version |
-| ---- | --------- | ---------- |
-| ALB | 2 AZs | 2 AZs (already) |
-| api, web | 1 Spot task each | 2+ tasks across AZs, on-demand base |
-| RDS | single-AZ | Multi-AZ (standby takes over in about a minute) |
-| Valkey | 1 node | primary + replica, automatic failover, Multi-AZ |
+### Related reading
 
-## 5. See it yourself
+[regions-and-azs](regions-and-azs.md) · [scaling](scaling.md) · [rds-postgres](rds-postgres.md) · [elasticache-valkey](elasticache-valkey.md) · [fargate-spot](fargate-spot.md) · [backups-dr](backups-dr.md)
 
-```bash
-aws ecs describe-tasks --profile ticketlite --cluster minitickets-dev \
-  --tasks $(aws ecs list-tasks --profile ticketlite --cluster minitickets-dev --query 'taskArns' --output text) \
-  --query "tasks[].[group,availabilityZone]" --output table
-aws rds describe-db-instances --profile ticketlite --db-instance-identifier minitickets-dev-db \
-  --query "DBInstances[0].[MultiAZ,AvailabilityZone]"
-```
-
-## 6. How it connects
-
-- **Uses ←** [regions-and-azs](regions-and-azs.md), [scaling](scaling.md), [rds-postgres](rds-postgres.md),
-  [elasticache-valkey](elasticache-valkey.md), [fargate-spot](fargate-spot.md).
-- **Gives →** the answer to "what happens if an AZ fails?"; pairs with [backups-dr](backups-dr.md).
-
-## 7. Our settings and WHY
-
-Single copies everywhere except the ALB: Multi-AZ RDS doubles its price, a cache replica doubles the
-cache, and a second task per service doubles compute. Dev can be down for a while.
-
-## 8. Trade-offs
-
-- **Pros:** cheapest possible dev; the multi-AZ shape means HA is a config change, not a redesign.
-- **Cons:** any AZ failure, Spot interruption or instance failure is an outage today.
-
-## 9. Alternatives and when to choose them
-
-- **Full multi-AZ** (table above): any production system.
-- **Multi-region active/passive:** when a regional outage is unacceptable; needs data replication.
-- **Aurora:** faster failover than RDS Multi-AZ, storage replicated across 3 AZs.
-
-## 10. What breaks, and how we'd notice
-
-| Failure | Effect today |
-| ------- | ------------ |
-| api task dies | ALB 503 for ~1-2 min until replaced |
-| RDS AZ fails | `/ready` 503, logins 500, until AWS recovers it |
-| Valkey node fails | Everyone logged out; `/ready` 503 |
-
-## 11. Reach / Allowed / Password
-
-Not a connection. Failover keeps the same DNS names (RDS endpoint, Valkey primary endpoint), so the
-api's settings do not change.
-
-## 12. Cost
-
-Multi-AZ RDS and a cache replica each run a second machine, so the data layer's hourly price
-(~$0.033 today, [docs/14](../../14-infra-data.md)) would roughly double, plus one more task per
-service. We have not priced or measured the HA setup.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** HA means a failure in one data centre does not take the app down. We have the layout,
-  not the copies.
-- **Senior:** Two AZs with subnets in each; the ALB spans both. But we run one Spot task per service,
-  single-AZ RDS and a single Valkey node, so dev has several single points of failure. Each is one
-  setting away from HA: `desiredCount`, `multiAz`, `numCacheClusters` with failover.
-- **Lead:** HA is decided per tier against an availability target. I'd start with the stateful tiers
-  (Multi-AZ RDS, cache replica), then 2+ tasks with an on-demand base, and test failover regularly.
-
-## 14. Follow-up questions interviewers ask
-
-- *Does Multi-AZ RDS help read scaling?* No, the standby is not readable; that's what read replicas are for.
-- *What is a single point of failure in your setup?* Every tier except the ALB.
-
-## 15. Say it in 30 seconds
-
-"We have the two-AZ layout and the ALB spans both, but dev runs one task per service, single-AZ RDS and
-one Valkey node. Making it HA is configuration: more tasks across AZs, Multi-AZ RDS, and a cache
-replica with failover, at roughly double the cost."
-
-## 16. Status
-
-🟡 partial. **To make it production-grade:** the "HA version" column above.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=high-availability#chapter=1&piece=az-b).
 
 ## Where it appears in the story
 
 - [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)
+
+</details>

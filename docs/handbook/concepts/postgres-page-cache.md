@@ -3,77 +3,73 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: 🟡 partial
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Postgres caches database pages in shared buffers and can benefit from OS page cache. SQL still executes on a hit; Redis result caching and browser caching are different layers.
+Postgres keeps recently used table and index pages in memory. The operating system can cache file pages too, reducing repeated storage reads.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+MiniTickets may run the same search often. A warm database can reuse pages instead of fetching each one from storage, even when the API still executes a fresh SQL query.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["SQL plan"] --> n1
-    n1["Shared buffers"] --> n2
-    n2["OS page cache"] --> n3
-    n3["Storage if needed"]
+query["MiniTickets search SQL"] -->|"needs table and index pages"| shared["Postgres shared buffers"]
+    shared -->|"missing page: read file"| os["Operating-system page cache"]
+    os -->|"not cached: read storage"| disk["Database storage"]
+    shared -->|"pages available: execute query work"| result["Search result"]
 ```
 
-## 4. Where in our code
+1. Look for needed database pages in shared buffers.
+2. Load missing pages through the operating system’s file path.
+3. Execute visibility checks, filtering and other query work using those pages.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-`apps/api/src/queries/events.ts` still executes SQL on a Redis miss. `pnpm demo:search` reports EXPLAIN plans on its isolated data. Inspect EXPLAIN (ANALYZE, BUFFERS) in a controlled read-only session; warm and cold runs answer different questions. Production cache sizing has not been benchmarked.
+Current catalogue search still executes SQL. Legacy list cache misses do too. A database page hit is different from Redis returning a previously assembled list. Production buffer sizing and cold-cache behaviour have not been benchmarked.
 
-## 5. See it yourself
+## 5. Interview-ready answer
 
-Run `pnpm demo:search` and inspect the asserted outcome described above.
+“Postgres caching can make MiniTickets queries faster without an application-result cache. It keeps table and index pages in shared buffers, with possible operating-system caching underneath. A hit avoids some storage work, but SQL still runs. I inspect buffers, CPU and the working set before assuming another Redis cache will solve the bottleneck.”
 
-Failure thought experiment: Does a shared-buffer hit skip SQL execution? No. Do not change a live stack to demonstrate it.
+## 6. Important follow-up questions
 
-## 6. How it connects
+- **Does a shared-buffer hit skip SQL execution?** No. Filtering, joins, visibility checks and sorting can still consume work.
+- **Does a reported read mean physical disk access?** Not necessarily. The operating system may already cache the file page.
+- **Should every benchmark clear caches?** No. Forced eviction can disrupt other work; compare representative warm and controlled cold conditions.
+- **Why not allocate all memory to shared buffers?** Connections, sorts, other database work and the operating system need memory too.
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#postgres-cache) and [explorer tour](../guides/infra-explorer.html?tour=database-reach).
+## 7. Advanced details
 
-## 7. Our settings and WHY
+<details>
+<summary>Technical reference</summary>
 
-Postgres caches database pages in shared buffers and can benefit from OS page cache. SQL still executes on a hit; Redis result caching and browser caching are different layers. A warm database can be fast without a separate application cache.
+### Current implementation
 
-## 8. Trade-offs
+This is built-in Postgres behaviour, not a custom MiniTickets result-cache implementation. EXPLAIN (ANALYZE, BUFFERS) helps distinguish page hits/reads while executing a controlled read. work_mem can multiply across operations and sessions. The existing partial status reflects unbenchmarked tuning rather than a missing application feature.
 
-Larger shared buffers are not unlimited free memory; sorts/work_mem multiply with operations and sessions. Evicting caches just to benchmark can disrupt other workloads.
+### Technical limits and diagnosis
 
-## 9. Alternatives and when to choose them
+There is no general automatic result cache for arbitrary SELECTs. Shared buffers hold table/index pages; visibility checks, filtering, joins and sorting still execute. A database buffer read can hit OS memory rather than physical storage. Redis's completed public result, Next public data and browser cache representations are separate.
 
-10x: inspect hit/read counts and CPU. 100x: tune working set, queries and IO before assuming Redis solves all load.
+Current search executes SQL; queries/events.ts also executes SQL on a legacy Redis miss. A warm database can be fast without an additional application cache. Inspect EXPLAIN (ANALYZE, BUFFERS) for controlled reads and representative warm/cold comparisons. Historical demo:search reports isolated plans; no production cache sizing benchmark was performed here.
 
-## 10. What breaks and how we notice
+Shared buffers compete with memory for connections and other work. work_mem can multiply across operations and sessions. Forcing cache eviction can disrupt other workloads. Inspect hit/read counts, CPU, working set and IO before tuning memory or assuming Redis fixes load. Partial status describes observational/tuning scope, not a missing custom feature.
 
-Does a shared-buffer hit skip SQL execution? No.
+### Related reading
 
-## 13. Interview answers at 3 levels
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#postgres-cache)
+- [explorer tour](../guides/infra-explorer.html?tour=database-reach)
+- [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
 
-- **Simple:** Postgres caches database pages in shared buffers and can benefit from OS page cache.
-- **Senior:** Postgres keeps table/index pages in shared buffers, and the operating system can cache file pages too. A cache hit avoids a storage read, but the query still executes: visibility checks, joins, filtering and sorting cost CPU. This is different from Redis storing the finished public events result. There is no general automatic result cache for arbitrary SELECTs.
-- **Lead:** 10x: inspect hit/read counts and CPU. 100x: tune working set, queries and IO before assuming Redis solves all load.
-
-## 14. Follow-up questions with answers
-
-Does a shared-buffer hit skip SQL execution? No.
-
-What is stored in shared buffers? **Database pages.**
-
-## 15. Say it in 30 seconds
-
-Postgres keeps table/index pages in shared buffers, and the operating system can cache file pages too. A cache hit avoids a storage read, but the query still executes: visibility checks, joins, filtering and sorting cost CPU. This is different from Redis storing the finished public events result. There is no general automatic result cache for arbitrary SELECTs.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: inspect hit/read counts and CPU. 100x: tune working set, queries and IO before assuming Redis solves all load.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=postgres-page-cache#chapter=0&piece=laptop-postgres).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

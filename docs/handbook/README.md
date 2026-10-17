@@ -45,9 +45,9 @@ flowchart LR
 ## How to use it
 
 1. Start with the [concept learning path](learning-path.md); use the [concept map](concept-map.md) to look up a topic.
-2. Read the Batch 1 card’s seven sections: one diagram, a numbered flow, an interview answer and follow-up questions. Open Advanced details for configuration and troubleshooting. Batch 2 cards retain the earlier format.
+2. Read the card’s seven sections: one diagram, a numbered flow, an interview answer and follow-up questions. Open Advanced details for configuration and troubleshooting.
 3. Open the code at the anchor (search for `@concept: <slug>`). Read the step-wise comments there.
-4. Do "See it yourself": run the command or test, then break it on purpose.
+4. For built features, use the local checks in Advanced details. For explain-only topics, trace the proposed flow and discuss its failure cases.
 5. Say the interview-ready answer aloud, then try its three to five follow-up questions.
 
 ## Reading paths
@@ -71,7 +71,7 @@ Files that are not written yet are shown without a link and with their phase.
 1. 10 min: [00-big-picture.md](00-big-picture.md), sections 2 and 3 (one request, one login).
 2. 15 min: [aws-foundations.md](aws-foundations.md), chapter 3 (Reach / Allowed / Password) and
    chapter 8 (the debugging table).
-3. 25 min: "Interview-ready answer" in Batch 1 cards ("Say it in 30 seconds" in older cards) in the areas the role cares about.
+3. 25 min: "Interview-ready answer" and the follow-up questions in cards from the areas the role cares about.
 4. 10 min: `interview-drills.md` (Phase 5) for that round.
 
 **System design round**
@@ -142,7 +142,7 @@ never change behaviour.
 
 One concept can have anchors in several files.
 
-**Batch 1 card format.** The 36 interview cards marked in the learning path use these seven headings:
+**Concept card format.** All 152 cards in the learning path use these seven headings:
 
 1. What is it?
 2. Why do we need it?
@@ -154,9 +154,10 @@ One concept can have anchors in several files.
 
 Sections 1–6 have at most 350 words, excluding the diagram. Keep configuration, permissions, Console
 paths, CLI commands, source anchors, related links and story placement in Advanced details. History
-and status remain machine-readable. The checker enforces this format for Batch 1; Batch 2 is next.
+and status remain machine-readable. The checker enforces this format for every card, including
+partial and explain-only topics. Batch labels in the learning path record completed rewrite batches.
 
-**Earlier format.** The 116 Batch 2 cards and earlier story chapters retain these headings,
+**Story chapters.** Earlier story chapters retain these headings,
 omitting a heading only when it truly does not apply:
 
 1. In one line
@@ -176,15 +177,15 @@ omitting a heading only when it truly does not apply:
 15. Say it in 30 seconds
 16. Status (+ "to make it production-grade" if partial)
 
-Earlier cards use `## 4. Where in our code`; Batch 1 keeps the anchors in Advanced details.
-Each anchor is listed on its own line in this form, which the check script reads in either format:
+Concept cards keep the anchors in Advanced details. Each anchor is listed on its own line in this
+form, which the check script reads even when the reference section is folded:
 
 ```markdown
 - Anchor: `apps/api/src/server.ts` · `shutdown`: stops accepting requests, then closes the pools.
 ```
 
-Planned and explain-only cards write "Not in our app yet" under headings 4 and 5, plus what we would
-build and where.
+Planned and explain-only cards say clearly that their proposed flow is not built. Advanced details
+name existing integration points separately from proposed files, permissions and operational checks.
 
 ## Keeping it true: `pnpm docs:check`
 
@@ -203,7 +204,7 @@ with a clear message when:
    handbook root (guides belong in `guides/`), a guide is not linked from this README, a guide has a
    broken relative link, or the [explorer](guides/infra-explorer.html) names a code file or symbol
    that does not exist, or a chapter title that differs from the build-along guide;
-9. a Batch 1 card breaks the seven-section format, exceeds 350 main words, has anything other than
+9. a concept card breaks the seven-section format, exceeds 350 main words, has anything other than
    one small labeled flowchart, omits numbered flow steps or three to five answered follow-ups,
    or loses its folded story/explorer links; a card is missing its learning-path answer goal.
 

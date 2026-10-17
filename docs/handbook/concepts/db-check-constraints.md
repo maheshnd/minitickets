@@ -3,29 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built · Step doc: [21 events list](../../21-events-list.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-A **CHECK constraint** is a rule written into the table ("`seats_left` can never be bigger than
-`total_seats`") that Postgres enforces on every insert and update, whoever sends it.
+A CHECK constraint is a rule stored with a database table. Postgres refuses a row when its values violate that rule, whichever writer sent it.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A turnstile at a stadium. It does not care whether you came from the main gate, the side door or
-with a staff pass: if the ticket is wrong, it does not turn. App-level checks are the guard at the
-main gate only.
+A buggy MiniTickets script must not save eleven seats left for an event with ten total seats. Application validation is one entrance; the database rule guards every entrance.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    svc["service code"] --> db[("Postgres<br/>events + 3 CHECKs")]
-    script["a script"] --> db
-    psql["a person in psql"] --> db
-    db -->|"bad row"| no["ERROR: violates<br/>check constraint"]
+api["MiniTickets booking transaction"] -->|"insert or update row"| db["Postgres events CHECK rules"]
+    script["Seed or maintenance writer"] -->|"same table write"| db
+    db -->|"valid row accepted"| saved["Stored event"]
+    db -->|"rule false: reject statement"| error["Named constraint violation"]
 ```
 
-## 4. Where in our code
+1. Define the invariant beside the schema.
+2. Apply it through a migration.
+3. Let Postgres enforce it on each inserted or updated row.
+
+## 4. How do we use it in MiniTickets?
+
+Events require positive total seats and remaining seats within bounds. Current booking also checks availability while holding a transaction lock. Shared input schemas provide friendly early validation; constraints remain the final safeguard for every writer.
+
+## 5. Interview-ready answer
+
+“MiniTickets puts seat invariants in Postgres: total seats must be positive, and remaining seats must stay between zero and the total. This protects scripts and concurrent application writers alike. The booking transaction still locks and validates the sale; constraints backstop those decisions instead of replacing a correct concurrency design.”
+
+## 6. Important follow-up questions
+
+- **Why not validate only in the service?** Other writers and future code can bypass it; the stored invariant must still hold.
+- **Does CHECK reject NULL automatically?** No. Unknown passes, so required fields also need NOT NULL.
+- **Can CHECK enforce any cross-row rule?** No. It is suited to row-local rules; other constraints or transactional designs handle wider invariants.
+- **What if existing rows violate a new rule?** Adding the constraint can fail and scan existing data; plan validation and rollout carefully.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current events has three named checks; users also restricts roles, and bookings restricts quantity/status. The old “booking not built” and “no API validation” statements are obsolete. Historical invalid-insert examples below were recorded locally and not rerun. The transaction locks availability before decrementing; unexpected constraint errors still need diagnosis.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/db/schema/events.ts` · `events`: three `check(...)` calls in the table's second argument.
 
@@ -36,9 +62,9 @@ Step by step:
 3. `events_seats_left_within_total`: `seats_left <= total_seats`.
 4. `drizzle-kit generate` puts them in `apps/api/drizzle/0001_*.sql` as `CONSTRAINT ... CHECK (...)`, so
    they exist in every environment the migration runs in ([migrations](migrations.md)).
-5. Nothing in the api code checks these rules yet. The database is the only guard, on purpose, for now.
+5. Current booking code also checks availability under a transaction lock, and shared schemas validate inputs. CHECK constraints remain the final rule for every writer.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 docker exec minitickets-postgres-1 psql -U minitickets -d minitickets -c \
@@ -52,61 +78,46 @@ We ran this locally. `(0, 0)` fails with `events_total_seats_positive` and `(10,
 **Break it on purpose:** remove one `check(...)` from the schema, generate a migration, apply it, and
 repeat the insert: the bad row is saved.
 
-## 6. How it connects
-
-- **Uses ←** [drizzle-schema](drizzle-schema.md) and [migrations](migrations.md).
-- **Gives →** a safety net for the booking step (not built): when two buyers race for the last seat,
-  the constraint stops `seats_left` from going below 0 even if the code has a bug
-  ([unique-constraint-race](unique-constraint-race.md) is the same idea for emails).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 Three small named constraints, not one big one. WHY: the error message names the exact rule that failed.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** works for every writer; cannot be forgotten; costs almost nothing per write.
 - **Cons:** the error is a raw Postgres error, so the app must translate it into a friendly message
   (as `queries/users.ts` does for the unique violation); changing a rule needs a migration.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Validate only in the service:** friendlier messages, but any other writer can bypass it.
 - **Triggers:** for rules that look at other rows or tables; a CHECK sees only its own row.
 - **Enum types / foreign keys:** for "value must be one of these" and "must point to a real row".
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - Seeding or importing data that breaks a rule: the whole statement fails with a named constraint.
 - A NULL passes a CHECK (the result is "unknown"), which is why the columns are also `NOT NULL`.
 - Adding a CHECK to a big existing table scans it; in production this needs care ("expand and contract").
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** The database refuses bad data by itself.
-- **Senior:** `events` has three CHECKs on seat counts. Postgres evaluates them per row on insert and
-  update, so a buggy service or a manual query cannot create "12 seats left of 10". NULLs pass a
-  CHECK, so the columns are `NOT NULL` too.
-- **Lead:** Put invariants that must never be false in the database, and keep friendly validation in
-  the app. With concurrent bookings, `seats_left >= 0` is the last line of defence; the real fix is an
-  atomic `update ... where seats_left > 0`. Adding constraints to a large live table needs a plan.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why not just validate in code?* Code is one door; the database is the building.
 - *Do CHECKs cover NULL?* No: a NULL makes the check "unknown", which passes. Use `NOT NULL` as well.
 
-## 15. Say it in 30 seconds
+### Status and remaining work
 
-"Our events table has three CHECK constraints: seats are positive, seats left isn't negative and
-isn't more than the total. Postgres enforces them for every writer, I showed an insert with 11 of 10
-failing in psql, and the app still needs friendly errors on top."
+✅ built. Booking is now built: the transaction checks availability before writing; unexpected constraint violations still need clear diagnosis.
 
-## 16. Status
+### Related reading
 
-✅ built. **To make it production-grade:** translate constraint violations into friendly errors when
-the booking step writes `seats_left`.
+- [drizzle-schema](drizzle-schema.md)
+- [unique-constraint-race](unique-constraint-race.md)
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=db-check-constraints#chapter=24&piece=code-store).
 
 ## Where it appears in the story
 
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+
+</details>

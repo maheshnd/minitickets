@@ -4,79 +4,65 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: 📖 explain-only
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Explain-only: bounded Application Auto Scaling targets would adjust ECS desiredCount on CPU or ALB demand; current services have no autoscaling policy and a hot row still serializes buyers.
+## 1. What is it?
 
-## 2. Real-life comparison
+Autoscaling would adjust the number of running application copies as demand changes. A policy would decide when to add or remove capacity within explicit limits.
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets traffic may spike when a sale opens and drop later. A fixed fleet can be too small during the spike or wasteful afterward, but automatic growth must respect the database’s limits.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["CPU or ALB demand"] --> n1
-    n1["Target tracking policy"] --> n2
-    n2["Bounded ECS tasks"] --> n3
-    n3["Shared DB bottleneck"]
+    M["MiniTickets CPU or ALB demand"] -->|"proposed: evaluate target and cooldown"| P["Application Auto Scaling policy"]
+    P -->|"proposed: change bounded desiredCount"| E["API or web ECS service"]
+    E -->|"proposed extra tasks share downstream capacity"| D["Postgres and Valkey"]
 ```
 
-## 4. Where in our code
+1. A proposed policy would watch a demand-related measurement.
+2. It would change task count within minimum and maximum bounds.
+3. Cooldowns and downstream budgets would limit unstable or excessive growth.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-WHERE IN MINITICKETS: proposed Pulumi module infra/src/compute/autoscaling.ts after ECS service creation, using Application Auto Scaling target/policy for desiredCount. Start with explicit min 1/max 3 for a controlled exercise, account for API and web separately and set cooldowns/alarms. No scaling resource/IAM policy is built. Inspect existing service desiredCount; load test only under an owner budget.
+Autoscaling is explain-only. Current services have no scaling target or policy. Adding API copies could help independent work, but all buyers for one event would still compete for its row lock. API and web would need separate policies.
 
+## 5. Interview-ready answer
 
-Existing integration point: `infra/src/compute/service.ts`.
+“MiniTickets does not yet autoscale. A proposed target-tracking policy could change ECS task count from demand measurements, with minimums, maximums and cooldowns. I would choose bounds from latency, database connection capacity and cost. Scale-out takes time, and extra tasks still share data bottlenecks; autoscaling is not a substitute for admission control or reliable baseline capacity.”
 
-## 5. See it yourself
+## 6. Important follow-up questions
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+- **Why not set a very high maximum?** It can overload the database, exhaust quotas and increase cost.
+- **Will scale-out absorb an instant spike?** Not immediately. Measurement, startup and health checks introduce delay.
+- **Can it remove a hot-row bottleneck?** No. That row still serializes its writers.
+- **Does a task maximum cap the AWS bill?** No. It bounds one resource count, not every service or traffic charge.
 
-Failure thought experiment: Why not just set max 100? Cost, DB connection limits and downstream saturation. Do not change a live stack to demonstrate it.
+## 7. Advanced details
 
-## 6. How it connects
+<details>
+<summary>Technical reference</summary>
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#autoscaling) and [explorer tour](../guides/infra-explorer.html?tour=sale-day).
+### Proposed source placement
 
-## 7. Our settings and WHY
+Existing integration point: `infra/src/compute/service.ts`. A proposed `infra/src/compute/autoscaling.ts` would create Application Auto Scaling targets/policies after ECS services, using CPU or ALB requests per target. A controlled exercise could start at **minimum 1 / maximum 3**, with separate API/web policies, cooldowns and alarms. These are proposed exercise values, not deployed settings. No scaling resource or IAM policy is built, and no runnable feature demo exists.
 
-Explain-only: bounded Application Auto Scaling targets would adjust ECS desiredCount on CPU or ALB demand; current services have no autoscaling policy and a hot row still serializes buyers. Elastic compute reduces overprovisioning for variable independent load.
+### Capacity contract and future evidence
 
-## 8. Trade-offs
+More API tasks mean more Postgres pools. Load-test cooldowns, startup/health timing and total connections under an owner-approved budget; inspect existing desiredCount before any change. Do not blindly scale beyond RDS/downstream capacity. Minimum tasks cost while idle; maximum task count does not fully cap spend. Scheduled on-sale capacity, downstream quotas and event/seat partitioning may complement target tracking at greater scale.
 
-Scale-out is delayed by metrics, image start and health checks. Min tasks cost while idle; max tasks bound but do not fully cap AWS spend. Never blindly scale past RDS pool capacity.
+### Related reading
 
-## 9. Alternatives and when to choose them
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#autoscaling) · [explorer tour](../guides/infra-explorer.html?tour=sale-day)
 
-10x: load-test cooldowns and connection totals. 100x: scheduled on-sale capacity plus downstream quotas and event sharding.
-
-## 10. What breaks and how we notice
-
-Why not just set max 100? Cost, DB connection limits and downstream saturation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Explain-only: bounded Application Auto Scaling targets would adjust ECS desiredCount on CPU or ALB demand; current services have no autoscaling policy and a hot row still serializes buyers..
-- **Senior:** Target tracking can add tasks on CPU or ALB requests per target, with min/max bounds and scale-in/out cooldowns. It helps independent request work; it cannot parallelize a single locked event row. More API tasks also create more database pools. Pick bounds from latency, DB connection budget and cost.
-- **Lead:** 10x: load-test cooldowns and connection totals. 100x: scheduled on-sale capacity plus downstream quotas and event sharding.
-
-## 14. Follow-up questions with answers
-
-Why not just set max 100? Cost, DB connection limits and downstream saturation.
-
-Can task scaling remove one row lock bottleneck? **No.**
-
-## 15. Say it in 30 seconds
-
-Target tracking can add tasks on CPU or ALB requests per target, with min/max bounds and scale-in/out cooldowns. It helps independent request work; it cannot parallelize a single locked event row. More API tasks also create more database pools. Pick bounds from latency, DB connection budget and cost.
-
-## 16. Status and production work
-
-Explain-only: no feature deployment exists. 10x: load-test cooldowns and connection totals. 100x: scheduled on-sale capacity plus downstream quotas and event sharding.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=autoscaling#chapter=22&piece=ecs-autoscaling).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

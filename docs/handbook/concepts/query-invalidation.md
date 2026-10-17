@@ -3,76 +3,77 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Browser invalidation marks matching query keys stale and refetches observed queries. Server generation INCR and fixed-tag Next revalidation are separate layers. A new catalogue search request reads Postgres; an open tab still follows its query policy.
+Invalidation tells a cache that an earlier answer may be out of date. The cache then follows its own rules for replacing or refetching that answer.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+After a MiniTickets login, the header’s cached “logged out” answer is wrong. After an event changes, old catalogue copies can also be wrong, but they live in different caches.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Commit event"] --> n1
-    n1["Increment generation"] --> n2
-    n2["New readers use new key"] --> n3
-    n3["Old refill expires"]
+login["Successful auth.login"] -->|"useLogin invalidates auth.me key"| cache["Browser QueryClient"]
+    cache -->|"active query refetches"| api["auth.me API"]
+    api -->|"new identity answer"| header["HeaderNav"]
 ```
 
-## 4. Where in our code
+1. Complete the authoritative change first.
+2. Mark the relevant cached answer stale.
+3. Refetch observed data so the interface reflects the new answer.
+
+## 4. How do we use it in MiniTickets?
+
+Login invalidates auth.me; logout clears the query cache before navigation. Legacy server event lists use a separate Redis generation and signed Next revalidation. Current search reads Postgres directly, while an open browser tab still follows its own freshness policy.
+
+## 5. Interview-ready answer
+
+“Invalidation is about which old answer can still be used. MiniTickets invalidates browser identity queries after login and clears private cached data after logout. Its legacy server-list caches use generation changes so an old refill cannot restore the current key. Each cache layer needs its own policy; one invalidation does not instantly refresh every tab.”
+
+## 6. Important follow-up questions
+
+- **Why not just delete a Redis list key?** An earlier database read could refill it with old rows after deletion.
+- **Why capture generation before SQL?** Otherwise an old read could be stored under the new generation.
+- **What if invalidation fails after commit?** Log it and let bounded expiry limit stale public results; do not pretend the committed write failed.
+- **Does browser invalidation refresh every visitor?** No. Each client cache follows its own observation and freshness rules.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current implementation
+
+`apps/web/src/features/auth/hooks/use-login.ts` invalidates auth.me; use-logout.ts clears the entire QueryClient. Server `invalidateUpcomingList` runs after commit and increments the Redis generation; readers capture it before SQL. `apps/api/src/queries/web-cache.ts` requests fixed-tag revalidation afterward. Current events.search bypasses both legacy list caches. Generation cardinality, independent stale windows and future outbox-driven invalidation remain explicit trade-offs.
+
+### Technical limits and diagnosis
+
+Login marks auth.me stale and refetches active observers. Logout clears the whole browser cache before going home, so the next user does not see previous private answers. Server generation changes do not update every browser tab instantly.
+
+A legacy list reader captures its generation before SQL and writes only under that key, including canonical filters. A late reader can refill its old generation without restoring the new one. DEL alone cannot close that race. Incrementing before commit or capturing generation after SQL could publish old rows under the new key. Invalidation follows commit; failure is logged rather than undoing a successful event write. Bounded expiry limits public stale data.
+
+Redis generation churn creates temporary key cardinality; old keys expire. Redis, Next public data and browser queries have independent windows. Current search bypasses legacy list caching; nonce HTML is no-store. Historical demo:stampede and unit cases cover late-refill and failure scenarios. Monitor invalidation failures and key churn; outbox-driven invalidation and end-to-end freshness objectives remain designs.
+
+### Source anchors
 
 - Anchor: `apps/web/src/features/auth/hooks/use-login.ts` · `useLogin`: `onSuccess` → `queryClient.invalidateQueries({ queryKey: trpc.auth.me.queryKey() })`.
 - Anchor: `apps/web/src/features/auth/hooks/use-logout.ts` · `useLogout`: `onSuccess` → `queryClient.clear()`, then `router.push("/")`.
 
-`apps/api/src/services/events.ts` → `invalidateUpcomingList` runs after event creation. `queries/events-cache.ts` builds generation/filter keys. `queries/web-cache.ts` calls signed Next revalidation. Run `pnpm demo:stampede`; inspect cache invalidation unit tests for late refill and failure.
+### Related reading
 
-## 5. See it yourself
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#cache-invalidation)
+- [explorer tour](../guides/infra-explorer.html?tour=search)
+- [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
 
-`apps/api/src/services/events.ts` → `invalidateUpcomingList` runs after event creation. `queries/events-cache.ts` builds generation/filter keys. `queries/web-cache.ts` calls signed Next revalidation. Run `pnpm demo:stampede`; inspect cache invalidation unit tests for late refill and failure.
-
-Failure thought experiment: Why read generation before SQL? Reading after SQL could place old rows in the new generation.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#cache-invalidation) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-Browser invalidation marks matching query keys stale and refetches observed queries. Server generation INCR and fixed-tag Next revalidation are separate layers. A new catalogue search request reads Postgres; an open tab still follows its query policy. DEL alone allows an in-flight old reader to repopulate the same key.
-
-## 8. Trade-offs
-
-Generation keys increase transient cardinality. Redis and Next/browser caches have separate stale windows; one invalidation does not instantly refresh every tab.
-
-## 9. Alternatives and when to choose them
-
-10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
-
-## 10. What breaks and how we notice
-
-Why read generation before SQL? Reading after SQL could place old rows in the new generation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Browser invalidation marks matching query keys stale and refetches observed queries. Server generation INCR and fixed-tag Next revalidation are separate layers. A new catalogue search request reads Postgres; an open tab still follows its query policy.
-- **Senior:** Commit the write, then increment a cache generation. A reader captures the generation before its database read and stores only under that generation. A slow pre-write reader can fill its old key, but new readers use the new generation. TTL bounds stale data if invalidation fails; errors are logged instead of undoing a committed event.
-- **Lead:** 10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
-
-## 14. Follow-up questions with answers
-
-Why read generation before SQL? Reading after SQL could place old rows in the new generation.
-
-## 15. Say it in 30 seconds
-
-Commit the write, then increment a cache generation. A reader captures the generation before its database read and stores only under that generation. A slow pre-write reader can fill its old key, but new readers use the new generation. TTL bounds stale data if invalidation fails; errors are logged instead of undoing a committed event.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=query-invalidation#chapter=24&piece=code-hook).
 
 ## Where it appears in the story
 
 - [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
+
+</details>

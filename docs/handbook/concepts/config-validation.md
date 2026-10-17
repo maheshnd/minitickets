@@ -3,30 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md), [17 ECS api](../../17-infra-ecs-api.md), [22 events SSR](../../22-events-ssr.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The api checks every environment variable with Zod **when it starts**; if one is missing or wrong it
-prints what and exits, instead of failing later on a random request.
+Configuration validation checks application settings before code depends on them. MiniTickets turns environment strings into typed settings and rejects missing or inconsistent values.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A pilot's pre-flight checklist: if a gauge is broken, you find out on the ground, not at 10,000
-metres.
+A mistyped database setting should fail clearly during startup, instead of surfacing as a mysterious error when the first customer books. Syntax checks still cannot prove the host is reachable.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    env["process.env"] --> a["EnvSchema<br/>PORT, HOST, WEB_ORIGIN,<br/>REDIS_URL, NODE_ENV, TRUST_PROXY_HOPS"]
-    env --> d["DatabaseEnvSchema<br/>DATABASE_URL OR DB_*"]
-    a --> ok{"both valid?"}
-    d --> ok
-    ok -->|"no"| exit["print + exit(1)"]
-    ok -->|"yes"| envobj["typed env object"]
+    env["API environment values"] -->|"parse types and required combinations"| schema["Zod app and database schemas"]
+    schema -->|"valid settings"| config["Validated env export"]
+    schema -->|"invalid settings: report field names and exit"| startup["API startup"]
 ```
 
-## 4. Where in our code
+1. Read settings at the appropriate application boundary.
+2. Parse types and check dependent values together.
+3. Start with validated settings or fail clearly.
+
+## 4. How do we use it in MiniTickets?
+
+API settings are checked at startup. Database configuration accepts either a local URL or complete AWS fields, never both. The web server checks its server-only URL lazily so builds do not require runtime settings; the revalidation endpoint validates its own secret separately.
+
+## 5. Interview-ready answer
+
+“MiniTickets validates configuration with Zod and exports typed settings. The API fails startup on incomplete or inconsistent configuration. Web server-only values are checked when needed because its image builds without runtime settings. Validation makes mistakes visible, but a well-formed wrong hostname can still pass, so reachability and readiness need separate checks.”
+
+## 6. Important follow-up questions
+
+- **Why not silently choose defaults?** A believable wrong database can be worse than a clear startup failure.
+- **Can validation prove credentials work?** No. It validates shape and relationships, not external availability.
+- **Why reject mixed database modes?** The app should not guess which source of credentials wins.
+- **Can errors leak secret values?** Report field names and safe explanations, not sensitive configuration contents.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/src/config/env.ts` · `EnvSchema`, `env`: the app settings; exits on failure.
 - Anchor: `apps/api/src/config/database.ts` · `DatabaseEnvSchema`: local URL **or** the five AWS pieces, with SSL on AWS.
@@ -55,7 +75,15 @@ settings; and it **throws** instead of `process.exit(1)`, so only `/events` fail
 boundary shows a message) while other pages keep working. The thrown message names the field and
 says "copy API_INTERNAL_URL from apps/web/.env.example into apps/web/.env.local".
 
-## 5. See it yourself
+### Configuration and design
+
+| Choice | Why |
+| ------ | --- |
+| Validate at import, exit 1 | A crash at start is obvious and blocks a bad deploy (health checks never pass). |
+| Two database modes, never both | ECS can only put each secret into its own env var; it can't build a URL. |
+| `rediss://` allowed | TLS to Valkey on AWS. |
+
+### Checks and troubleshooting
 
 ```bash
 cd apps/api && PORT=4401 WEB_ORIGIN=not-a-url ./node_modules/.bin/tsx --env-file=.env src/server.ts
@@ -67,69 +95,45 @@ echo $?    # 1
 (Output recorded on the owner's laptop. Port 4401 so it never clashes with `pnpm dev`.) Unit tests:
 `apps/api/src/config/database.test.ts` (five cases: local, AWS with SSL, neither, incomplete, both).
 
-**Break it on purpose:** in the AWS task definition, drop `DB_PORT`: the task exits at start with
+**Isolated thought experiment (not performed):** in the AWS task definition, drop `DB_PORT`: the task exits at start with
 "Missing DB_PORT (needed when DB_* is used)", and the ECS circuit breaker stops the rollout.
 
-## 6. How it connects
+- A missing variable: the process exits at once; locally you see the message, on ECS the task
+  stops and the log says why.
+- A variable that is valid but wrong (wrong host): passes validation; `/ready` turns 503.
 
-- **Uses ←** [twelve-factor-config](twelve-factor-config.md) (config comes from the environment);
-  ECS secrets ([secrets-management](secrets-management.md)).
-- **Gives →** typed `env` for [fastify-app](fastify-app.md), the pool
-  ([connection-pooling](connection-pooling.md)), Redis, CORS and cookies.
+- *Why exit instead of using defaults?* A silent default (wrong database) is worse than a crash.
+- *Where are secrets validated?* The same way: they arrive as env vars from ECS.
 
-## 7. Our settings and WHY
-
-| Choice | Why |
-| ------ | --- |
-| Validate at import, exit 1 | A crash at start is obvious and blocks a bad deploy (health checks never pass). |
-| Two database modes, never both | ECS can only put each secret into its own env var; it can't build a URL. |
-| `rediss://` allowed | TLS to Valkey on AWS. |
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** bad config never reaches users; clear messages; typed config everywhere.
 - **Cons:** importing any file that imports `env` needs valid env vars, which makes some tests
   awkward.
-
-## 9. Alternatives and when to choose them
 
 - **`@t3-oss/env` or `envalid`:** the same idea packaged.
 - **A config service (AWS AppConfig, Parameter Store) read at start:** central config for many
   services.
 - **Lazy validation on first use:** only when startup time matters more than safety.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-- A missing variable: the process exits at once; locally you see the message, on ECS the task
-  stops and the log says why.
-- A variable that is valid but wrong (wrong host): passes validation; `/ready` turns 503.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** The api checks its settings when it starts and refuses to run if something is wrong.
-- **Senior:** Zod schemas for app and database settings run at import; coercion turns strings into
+Zod schemas for app and database settings run at import; coercion turns strings into
   numbers; the database schema accepts a local URL or the five AWS pieces and adds verified TLS on
   AWS. Failure prints flattened errors and exits 1, so ECS never puts a misconfigured task behind the
   ALB.
-- **Lead:** Fail fast turns config mistakes into failed deploys instead of incidents. Combined with
-  the circuit breaker, a bad config rolls back automatically.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Why exit instead of using defaults?* A silent default (wrong database) is worse than a crash.
-- *Where are secrets validated?* The same way: they arrive as env vars from ECS.
+- **Uses ←** [twelve-factor-config](twelve-factor-config.md) (config comes from the environment);
+  ECS secrets ([secrets-management](secrets-management.md)).
+- **Gives →** typed `env` for [fastify-app](fastify-app.md), the pool
+  ([connection-pooling](connection-pooling.md)), Redis, CORS and cookies.
 
-## 15. Say it in 30 seconds
-
-"Env vars are checked with Zod at startup. Ports are coerced to numbers, URLs must have the right
-protocol, and the database settings are either one local URL or the five AWS pieces with verified
-TLS. Anything wrong prints a clear message and exits 1, so a bad config fails the deploy, not a
-user's request."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=config-validation#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 13. Validation at boundaries](../app-story.md#13-validation-at-boundaries)
+
+</details>

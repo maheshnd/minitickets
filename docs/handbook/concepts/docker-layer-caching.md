@@ -3,28 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: DevOps & CI/CD · Status: ✅ built · Step doc: [11 docker](../../11-docker.md), [10 CI](../../10-ci.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Docker saves the result of each instruction as a **layer** and reuses it when the inputs haven't
-changed; we order the Dockerfiles so the slow install is reused on almost every build, and CI keeps
-those layers between runs.
+Docker build caching reuses earlier results when their inputs have not changed. Instruction order decides how much work a small code change must repeat.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Baking a layered cake where yesterday's bottom layers are still in the fridge: if only the icing
-changed, you only redo the icing.
+A MiniTickets text change should not download every dependency again. Package manifests change less often than source, so we install from those inputs before copying application code.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
-flowchart TB
-    a["COPY package.json, lockfile<br/>(rarely changes)"] --> b["RUN pnpm install<br/>(slow, CACHED)"]
-    b --> c["COPY source<br/>(changes every commit)"]
-    c --> d["RUN build<br/>(re-runs)"]
+flowchart LR
+    manifests["MiniTickets package files and lockfile"] -->|"unchanged inputs can reuse install result"| deps["Cached dependency install"]
+    deps -->|"copy later-changing source"| source["Application source"]
+    source -->|"rebuild changed application artifacts"| build["Compile and runtime image"]
 ```
 
-## 4. Where in our code
+1. Copy dependency inputs before application source.
+2. Reuse the install result when those inputs match.
+3. Rebuild later stages whose code inputs changed.
+
+## 4. How do we use it in MiniTickets?
+
+API, web and worker Dockerfiles use this ordering and a BuildKit download-store cache. CI imports and exports build layers with separate image scopes. `.dockerignore` removes irrelevant and sensitive files from the build context.
+
+## 5. Interview-ready answer
+
+“MiniTickets orders Docker instructions by how often their inputs change. Package files and the lockfile come before installation, then source and compilation. A download-store cache helps when installation must rerun, while CI shares build layers between runs. These are different caches, and a cache miss must still produce a correct build.”
+
+## 6. Important follow-up questions
+
+- **Layer cache versus cache mount?** One reuses an instruction result; the other preserves a build-time working directory.
+- **What if the lockfile changes?** Dependency installation must rerun, though downloaded packages may be reused.
+- **Does a cache belong in the shipped app?** The build-time package-store cache is not copied into the runtime image.
+- **What if builds suddenly slow down?** Inspect changed inputs, instruction order and cache availability rather than assuming cache hits.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/Dockerfile` · step 4 (package files only) and step 5 (`--mount=type=cache` for the pnpm store).
 - Anchor: `apps/web/Dockerfile` · steps 4-5, the same pattern.
@@ -46,7 +68,12 @@ Step by step:
 7. `.dockerignore` keeps `node_modules`, build output, `.env*`, `.git` and docs out of the build
    context, so they never bust the cache or leak in.
 
-## 5. See it yourself
+### Configuration and design
+
+Package files first, cache mount for the store, GHA cache with separate scopes. WHY: installs are
+the slowest step and change least often.
+
+### Checks and troubleshooting
 
 ```bash
 docker build -f apps/api/Dockerfile -t mt-api .      # first build: slow
@@ -57,61 +84,41 @@ git checkout apps/api/src/server.ts
 
 In GitHub Actions, the docker job log shows `CACHED` for unchanged steps.
 
-**Break it on purpose:** move `COPY apps/api apps/api` above `RUN pnpm install`. Every code edit
+**Isolated thought experiment (not performed):** move `COPY apps/api apps/api` above `RUN pnpm install`. Every code edit
 now reinstalls all dependencies.
 
-## 6. How it connects
-
-- **Uses ←** [docker-multi-stage](docker-multi-stage.md), BuildKit / Buildx.
-- **Gives →** fast local builds and a fast [ci-pipeline](ci-pipeline.md) docker job;
-  `pnpm images:push` on the laptop.
-
-## 7. Our settings and WHY
-
-Package files first, cache mount for the store, GHA cache with separate scopes. WHY: installs are
-the slowest step and change least often.
-
-## 8. Trade-offs
-
-- **Pros:** most builds skip the install; CI builds stay quick.
-- **Cons:** cache invalidation surprises (any change to any `package.json` re-installs); GHA cache
-  has a size limit and is evicted (as I understand GitHub's policy; not checked).
-
-## 9. Alternatives and when to choose them
-
-- **Registry cache** (`type=registry`, e.g. in ECR): shared between CI and laptops.
-- **`pnpm fetch`** (install from the lockfile only, before copying `package.json` files): even
-  better cache hits in monorepos.
-
-## 10. What breaks, and how we'd notice
-
 A misordered `COPY`: builds get slow; the build log shows no `CACHED` steps.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Docker reuses the parts of a build that didn't change.
-- **Senior:** We copy only lockfile and package files before `pnpm install`, so code changes reuse
-  the install layer; a BuildKit cache mount keeps the pnpm store; in the runtime stage dependencies
-  come before code; CI uses the GHA cache with `mode=max` per image.
-- **Lead:** Order instructions by change frequency and share caches across machines. With more
-  images I'd move to a registry cache and measure build time per stage.
-
-## 14. Follow-up questions interviewers ask
 
 - *Layer cache vs cache mount?* A layer is part of the image result; a cache mount is a scratch
   folder kept between builds and never in the image.
 - *What busts the cache?* Any change to a copied file or an earlier instruction.
 
-## 15. Say it in 30 seconds
+### Trade-offs and alternatives
 
-"The Dockerfiles copy only package files before pnpm install, so code changes reuse the install
-layer; a BuildKit cache mount keeps pnpm's store, and dependencies are copied before code in the
-final stage. CI keeps layers in the GitHub Actions cache, separately for api and web."
+- **Pros:** most builds skip the install; CI builds stay quick.
+- **Cons:** cache invalidation surprises (any change to any `package.json` re-installs); GHA cache
+  has a size limit and is evicted (as I understand GitHub's policy; not checked).
 
-## 16. Status
+- **Registry cache** (`type=registry`, e.g. in ECR): shared between CI and laptops.
+- **`pnpm fetch`** (install from the lockfile only, before copying `package.json` files): even
+  better cache hits in monorepos.
 
-✅ built.
+### Further technical context
+
+We copy only lockfile and package files before `pnpm install`, so code changes reuse
+  the install layer; a BuildKit cache mount keeps the pnpm store; in the runtime stage dependencies
+  come before code; CI uses the GHA cache with `mode=max` per image.
+
+### Related reading
+
+- **Uses ←** [docker-multi-stage](docker-multi-stage.md), BuildKit / Buildx.
+- **Gives →** fast local builds and a fast [ci-pipeline](ci-pipeline.md) docker job;
+  `pnpm images:push` on the laptop.
+
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=docker-layer-caching#chapter=13&piece=github).
 
 ## Where it appears in the story
 
 - [App story: 15. Docker](../app-story.md#15-docker)
+
+</details>

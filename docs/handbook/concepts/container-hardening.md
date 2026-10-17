@@ -3,45 +3,71 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: DevOps & CI/CD · Status: ✅ built · Step doc: [11 docker](../../11-docker.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Our images run as the unprivileged `node` user, contain only production dependencies on a slim
-base, keep app files owned by root (read-only for the app), and never contain env files or secrets.
+Container hardening reduces the privileges and unnecessary software available to a running application. It limits damage if application code is compromised, while still requiring other security controls.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A hotel room for a guest: they get a key card that opens their room only, the furniture is bolted
-down, and the master keys and the safe codes are not in the room.
+A MiniTickets API exploit should not automatically let the process rewrite its own program or use package tools to install more software. Narrow runtime capabilities reduce that opportunity.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    img["runtime image"] --> u["USER node (uid 1000)"]
-    img --> f["app files owned by root<br/>(read-only for node)"]
-    img --> d["prod deps only<br/>slim Debian base"]
-    img --> s["no .env, no secrets<br/>(.dockerignore)"]
+    build["MiniTickets Docker build"] -->|"copy production artifacts; exclude secret files"| runtime["API and web runtime image"]
+    runtime -->|"USER node; root-owned application files"| process["Unprivileged Node process"]
+    process -->|"task role grants only intended actions"| aws["Scoped AWS resources"]
 ```
 
-## 4. Where in our code
+1. Ship required production artifacts on a maintained base.
+2. Run without root and keep application files unwritable to that user.
+3. Limit runtime credentials and review remaining writable paths.
+
+## 4. How do we use it in MiniTickets?
+
+API/web run as the node user with root-owned code. Their runtime patches Perl and removes package managers and shims. Secret files stay outside the image. ECS does not currently make the whole root filesystem read-only; Lambda uses its own runtime model.
+
+## 5. Interview-ready answer
+
+“MiniTickets hardens API and web images with non-root execution, root-owned code and a reduced production runtime. We patch the base and remove package managers, then rely on narrow task roles for AWS access. That limits an attacker’s options but does not make the container an absolute boundary or remove the need for image scanning.”
+
+## 6. Important follow-up questions
+
+- **Does non-root mean no writes anywhere?** No. User-writable directories still exist; a read-only root filesystem is a separate setting.
+- **What if a required path is root-owned?** The application can fail with a permission error; define writable paths intentionally.
+- **Why remove package managers?** They are unnecessary in the shipped app and increase available software.
+- **Are secrets safe just because the image lacks them?** Injected runtime values still need access controls and safe logging.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/Dockerfile` · step 15 `USER node`; step 9 `pnpm … --prod deploy`; step 12 copies without `--chown`.
 - Anchor: `apps/web/Dockerfile` · step 15 `USER node`; standalone output only.
 
 Step by step:
 
-1. `USER node`: the official Node image's built-in user (uid 1000). A compromised process can't
-   install packages or change system files.
+1. `USER node`: the official Node image's built-in user (uid 1000). This prevents the process changing root-owned system/application files; user-writable paths remain.
 2. Files are copied as root and not `chown`ed, so the app can read but not rewrite its own code.
 3. Only production dependencies (`pnpm deploy --prod`; Next standalone tracing): fewer packages,
    fewer vulnerabilities.
-4. `node:24.13.0-slim`: Debian with little beyond Node.
+4. API/web runtime is `node:24.22.0-bookworm-slim`; build stages remain `node:24.13.0-slim`. Runtime patches `perl-base` and removes npm/npx/Corepack/Yarn and shims.
 5. `.dockerignore` excludes `.env`, `.env.*`, `.git`, docs and `.claude`, so secrets and history
    never reach a layer; runtime config comes from the environment ([twelve-factor-config](twelve-factor-config.md)).
 6. The RDS CA file is added with `--chmod=644` so the `node` user can read it.
 
-## 5. See it yourself
+### Configuration and design
+
+Non-root, root-owned read-only files, prod deps, slim base, no secrets in images. WHY: if someone
+breaks in, they get as little as possible.
+
+### Checks and troubleshooting
 
 Recorded on the owner's laptop with the compose-built image:
 
@@ -52,64 +78,43 @@ docker run --rm --entrypoint sh minitickets-api -c 'touch dist/x'
 # touch: cannot touch 'dist/x': Permission denied
 ```
 
-**Break it on purpose:** remove `USER node`: the app runs as root inside the container, and any code
+**Isolated thought experiment (not performed):** remove `USER node`: the app runs as root inside the container, and any code
 execution bug gets root there.
 
-## 6. How it connects
+A file the app must write (a cache folder) owned by root: the app fails with `EACCES` at runtime.
+Application output uses stdout; new writable cache paths need explicit ownership/mount planning. The ECS root filesystem is not configured read-only.
 
-- **Uses ←** [docker-multi-stage](docker-multi-stage.md).
-- **Gives →** smaller attack surface for [image-scanning](image-scanning.md); defence in depth with
-  [least-privilege](least-privilege.md) and the task role.
+- *Why does non-root matter in a container?* Container escapes and mounted resources are worse as
+  root.
+- *Where are secrets then?* Injected as env vars at task start from Secrets Manager.
 
-## 7. Our settings and WHY
-
-Non-root, root-owned read-only files, prod deps, slim base, no secrets in images. WHY: if someone
-breaks in, they get as little as possible.
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** limited damage from a compromise; fewer CVEs to deal with.
 - **Cons:** debugging tools (curl, ps) aren't in the image; the base image is pinned by tag, not
   digest; the root filesystem is not read-only on ECS.
-
-## 9. Alternatives and when to choose them
 
 - **`readonlyRootFilesystem: true`** in the task definition: no writes anywhere except mounted
   volumes.
 - **Distroless images:** no shell or package manager at all.
 - **Pin by digest** (`node:24.13.0-slim@sha256:…`) and drop Linux capabilities.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-A file the app must write (a cache folder) owned by root: the app fails with `EACCES` at runtime.
-Not an issue today; the app writes only to stdout.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Our containers run with as little power as possible.
-- **Senior:** Both images run as `USER node`, with app files owned by root so the process can't
+Both images run as `USER node`, with app files owned by root so the process can't
   modify its code, only production dependencies on `node:slim`, and `.dockerignore` keeps env files
   and git history out. Config and secrets come in at runtime from ECS.
-- **Lead:** Containers aren't a security boundary by themselves; layer it: non-root, read-only root
-  filesystem, minimal base pinned by digest, scanning in CI, and a tight task role.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Why does non-root matter in a container?* Container escapes and mounted resources are worse as
-  root.
-- *Where are secrets then?* Injected as env vars at task start from Secrets Manager.
+- **Uses ←** [docker-multi-stage](docker-multi-stage.md).
+- **Gives →** smaller attack surface for [image-scanning](image-scanning.md); defence in depth with
+  [least-privilege](least-privilege.md) and the task role.
 
-## 15. Say it in 30 seconds
-
-"Both images run as the node user, app files are owned by root so the app can't rewrite itself, only
-production dependencies are shipped on a slim base, and .dockerignore keeps env files and git out.
-Next steps would be a read-only root filesystem and digest-pinned base images."
-
-## 16. Status
-
-✅ built. **To make it production-grade:** `readonlyRootFilesystem`, digest-pinned bases, CI
-scanning ([image-scanning](image-scanning.md)).
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=container-hardening#chapter=8&piece=api-task).
 
 ## Where it appears in the story
 
 - [App story: 15. Docker](../app-story.md#15-docker)
+
+</details>

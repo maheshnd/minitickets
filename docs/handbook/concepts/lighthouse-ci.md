@@ -4,79 +4,66 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Testing · Status: 📖 explain-only
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Explain-only: CI could audit a seeded production build with calibrated metric/asset budgets. P10 field-vital logs and axe checks are built, but no Lighthouse package/job is installed.
+## 1. What is it?
 
-## 2. Real-life comparison
+Lighthouse CI would repeat browser audits during a build pipeline and compare results with chosen limits. It can flag large performance or asset-size regressions before release.
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+## 2. Why do we need it?
 
-## 3. Picture it
+A MiniTickets change could ship much more JavaScript while all functional tests pass. A repeatable lab audit could reveal that cost before buyers encounter it.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Published production build"] --> n1
-    n1["Fixed audit fixture"] --> n2
-    n2["Repeated lab runs"] --> n3
-    n3["Budget comparison"]
+    C["MiniTickets CI web build"] -->|"proposed: start isolated production app with fixed data"| A["Seeded audit fixture"]
+    A -->|"proposed: repeat Lighthouse runs"| L["Lab audit results"]
+    L -->|"proposed: compare calibrated budgets and baseline"| B["Regression decision"]
+    L -->|"proposed: retain diagnostic reports"| R["CI artifacts"]
 ```
 
-## 4. Where in our code
+1. A proposed job would audit a production build with stable data.
+2. It would repeat measurements to reduce noise.
+3. Metric and asset budgets would identify regressions worth investigating.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-WHERE IN MINITICKETS: proposed Lighthouse CI config at repo root and a job after web build in .github/workflows/ci.yml, serving isolated API/web ports with seeded public events. Set budgets for LCP/CLS, JS bytes and accessibility; collect several runs and retain reports. No Lighthouse dependency, config or CI job is installed. P10 field telemetry is built separately.
+Lighthouse CI is explain-only: no dependency, configuration or job is installed. Existing field-vital reporting and axe accessibility checks are separate built features. A future audit would complement those checks rather than replace real-user measurements or human review.
 
+## 5. Interview-ready answer
 
-Existing integration point: `.github/workflows/ci.yml`.
+“MiniTickets could add Lighthouse audits to a seeded production build and compare repeated results with explicit performance and asset budgets. I would track regressions and diagnostic reports, not chase a perfect score. Shared runners are noisy, so budgets need calibration. This remains a proposal; current browser vitals and axe checks are built separately and answer different questions.”
 
-## 5. See it yourself
+## 6. Important follow-up questions
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+- **Which build should be audited?** A production build; development mode changes performance behavior.
+- **Why repeat runs?** Shared machines and browser scheduling introduce measurement noise.
+- **Can a good score prove real-user INP?** No. Field interactions and device populations differ from a lab run.
+- **What makes a useful gate?** Stable fixtures, calibrated metric/byte budgets and actionable reports, rather than a fragile score alone.
 
-Failure thought experiment: Can a good lab score prove p75 field INP? No; real interactions and device populations differ. Do not change a live stack to demonstrate it.
+## 7. Advanced details
 
-## 6. How it connects
+<details>
+<summary>Technical reference</summary>
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#lighthouse) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
+### Proposed location and scope
 
-## 7. Our settings and WHY
+Existing integration point: `.github/workflows/ci.yml`. A future root Lighthouse CI config/job would run after the web build, serving isolated API/web ports with seeded public events. Suggested budgets cover LCP/CLS, JavaScript bytes and accessibility; retain multiple runs/reports and compare medians with a baseline. No Lighthouse package, config, job or runnable feature demo currently exists.
 
-Explain-only: CI could audit a seeded production build with calibrated metric/asset budgets. P10 field-vital logs and axe checks are built, but no Lighthouse package/job is installed. A lab gate catches a large regression before release.
+### Trade-offs and growth
 
-## 8. Trade-offs
+Hard score thresholds on shared runners can be flaky. Lab metrics help reproduce regressions, while built P10 telemetry reports field measurements and axe checks accessibility rules. A lab audit cannot establish p75 field INP or complete accessibility. Later work could add representative routes/devices, controlled runners, trend storage and field/lab correlation. No deployment or audit execution was performed here.
 
-Shared CI runners are noisy; hard score thresholds can be flaky. Use calibrated metric/asset budgets and compare medians with a baseline.
+### Related reading
 
-## 9. Alternatives and when to choose them
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#lighthouse) · [explorer tour](../guides/infra-explorer.html?tour=security-layers)
 
-10x: representative routes/devices. 100x: controlled runners, trend storage and field/lab correlation.
-
-## 10. What breaks and how we notice
-
-Can a good lab score prove p75 field INP? No; real interactions and device populations differ.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Explain-only: CI could audit a seeded production build with calibrated metric/asset budgets.
-- **Senior:** Run repeatable audits against a production build with fixed data and explicit budgets. Track trends and regressions, not a perfect score. Lab metrics help diagnose reproducible work; field vitals reveal real user distributions. Axe remains a separate P10 gate already built.
-- **Lead:** 10x: representative routes/devices. 100x: controlled runners, trend storage and field/lab correlation.
-
-## 14. Follow-up questions with answers
-
-Can a good lab score prove p75 field INP? No; real interactions and device populations differ.
-
-Which build should an audit measure? **Production build.**
-
-## 15. Say it in 30 seconds
-
-Run repeatable audits against a production build with fixed data and explicit budgets. Track trends and regressions, not a perfect score. Lab metrics help diagnose reproducible work; field vitals reveal real user distributions. Axe remains a separate P10 gate already built.
-
-## 16. Status and production work
-
-Explain-only: no feature deployment exists. 10x: representative routes/devices. 100x: controlled runners, trend storage and field/lab correlation.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=lighthouse-ci#chapter=13&piece=github).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

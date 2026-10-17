@@ -4,79 +4,68 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Observability · Status: 📖 explain-only
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Explain-only: timed spans and propagated W3C trace context would add causal timing beyond current UUID correlation logs; no collector, X-Ray permissions or tracing resources exist.
+## 1. What is it?
 
-## 2. Real-life comparison
+Distributed tracing would follow one operation through timed steps called spans. It would show which step was slow and how work crossed service boundaries.
 
-A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
+## 2. Why do we need it?
 
-## 3. Picture it
+A MiniTickets email is delayed, but matching log IDs do not show where the time went. A trace could distinguish API work, queue waiting and worker processing.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["User outcome SLI"] --> n1
-    n1["Target over window"] --> n2
-    n2["Error budget"] --> n3
-    n3["Multi-window burn alert"]
+    A["MiniTickets API"] -->|"proposed: start timed span and propagate trace context"| O["Outbox booking message"]
+    O -->|"proposed: preserve context across queue"| W["Email worker"]
+    A -->|"proposed: export sampled spans"| T["Tracing backend"]
+    W -->|"proposed: export linked timed spans"| T
 ```
 
-## 4. Where in our code
+1. A proposed implementation would start a trace at the request boundary.
+2. It would carry trace context through stored messages.
+3. Sampled spans would be exported and inspected together.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-WHERE IN MINITICKETS: proposed apps/api/src/tracing.ts loaded before server modules, ADOT sidecar in API task, Lambda tracing config and narrowly scoped X-Ray write IAM. Propagate W3C traceparent through the message envelope. Proposed CloudWatch SLI for booking success/latency and email delay; logs remain current evidence. No OTel collector, tracing grants or SLO resource is built.
+Tracing is explain-only. MiniTickets currently connects logs using correlation IDs. No collector, tracing permissions or tracing resources are built. The existing correlation/message boundaries are the natural places to discuss adding trace propagation.
 
+## 5. Interview-ready answer
 
-Existing integration point: `apps/api/src/http/correlation-id.ts`.
+“MiniTickets currently has correlation logs, not distributed tracing. A tracing design would add timed spans and carry trace context from the API through the outbox and consumers. That could locate latency across asynchronous work. I would define sampling, privacy and cost limits before adding a collector, and would still use business metrics to judge whether bookings and confirmations actually succeed.”
 
-## 5. See it yourself
+## 6. Important follow-up questions
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+- **How is this different from correlation?** A label connects records; spans add timing and causal relationships.
+- **Does sampling keep every failure?** Not necessarily. Sampling policy trades coverage for cost and overhead.
+- **Can traces replace success metrics?** No. Sampled operations do not define a complete business-outcome denominator.
+- **What happens if export fails?** A proposed design should bound exporter work so diagnostics do not stall bookings.
 
-Failure thought experiment: Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective. Do not change a live stack to demonstrate it.
+## 7. Advanced details
 
-## 6. How it connects
+<details>
+<summary>Technical reference</summary>
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#tracing-slos) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
+### Proposed placement, not built resources
 
-## 7. Our settings and WHY
+Existing integration point: `apps/api/src/http/correlation-id.ts`. A proposal would load a new `apps/api/src/tracing.ts` before server modules, use an ADOT sidecar in the API task, configure Lambda tracing and narrowly scoped X-Ray writes, and propagate W3C `traceparent` through the message envelope. None of that file, collector, sidecar, tracing IAM or tracing configuration is established as built here; no runnable feature demo exists.
 
-Explain-only: timed spans and propagated W3C trace context would add causal timing beyond current UUID correlation logs; no collector, X-Ray permissions or tracing resources exist. Average latency and raw error counts can hide a failing user journey.
+### Observability design and trade-offs
 
-## 8. Trade-offs
+Spans form a timed tree or linked asynchronous work. Sampling may omit an individual trace; sidecars consume CPU/memory and collectors require operations. Bound exported customer data and tracing cost. Current UUID-correlated logs remain actual evidence.
 
-Sampling loses individual traces; sidecars cost CPU/memory and collector operations. ALB errors alone do not fully describe business success. Use a business metric where needed.
+A related SLI would measure booking success/latency or email delay; an SLO would choose its target/window, and an error budget would define tolerated failures. For example, 99.5% permits 0.5% of valid events to miss the objective; it is not a claimed MiniTickets target. Define exclusions/denominators, test alerts, and prefer sustained budget-burn signals over harmless blips. No SLO resources or meaningful production SLO demonstration exists in this development app. At greater scale, evaluate sampled spans and release policy tied to measured budgets.
 
-## 9. Alternatives and when to choose them
+### Related reading
 
-10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#tracing-slos) · [explorer tour](../guides/infra-explorer.html?tour=failing-email)
 
-## 10. What breaks and how we notice
-
-Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Explain-only: timed spans and propagated W3C trace context would add causal timing beyond current UUID correlation logs; no collector, X-Ray permissions or tracing resources exist..
-- **Senior:** Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
-- **Lead:** 10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
-
-## 14. Follow-up questions with answers
-
-Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
-
-What is an SLI? **A measured user outcome ratio.**
-
-## 15. Say it in 30 seconds
-
-Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
-
-## 16. Status and production work
-
-Explain-only: no feature deployment exists. 10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=tracing#chapter=8&piece=logs).
 
 ## Where it appears in the story
 
 - [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)
+
+</details>

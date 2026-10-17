@@ -3,28 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built · Step doc: [09 dashboard](../../09-dashboard.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-An **open redirect** is our site forwarding users to any URL an attacker puts in a link; after login
-we only follow `?next=` if it is a path on **our** site.
+An open redirect lets an attacker make our website forward a visitor to another site. A safe return path keeps post-login navigation inside MiniTickets.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A trusted receptionist who says "go to room 12" is fine. One who reads "go to the building across
-the street" from a sticky note anyone could write, and repeats it with authority, helps scammers.
+A phishing link could begin with our genuine login page but send the visitor to an attacker’s imitation afterward. Trust in our domain should not authorize a caller-chosen destination.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    link["/login?next=https://evil.com"] --> login["log in"]
-    login --> safe{"getSafeNext(next)"}
-    safe -->|"'/dashboard'"| ok["/dashboard"]
-    safe -->|"'//evil.com', '/\\evil.com',<br/>'https://...', 'javascript:...'"| home["/"]
+    url["Untrusted login next parameter"] -->|"validate path shape"| helper["getSafeNext"]
+    helper -->|"accepted relative path"| good["Local MiniTickets path"]
+    helper -->|"missing or unsafe value falls back"| home["Home page"]
 ```
 
-## 4. Where in our code
+1. Read the requested destination as untrusted input.
+2. Allow only the supported local-path shape.
+3. Navigate to that result; otherwise go home.
+
+## 4. How do we use it in MiniTickets?
+
+The login form calls `getSafeNext` before navigation. It accepts paths beginning with one slash, rejects protocol-relative paths and backslashes, and falls back to `/`. New redirect locations need the same deliberate review.
+
+## 5. Interview-ready answer
+
+“MiniTickets keeps login return paths local through one small helper. It rejects full external URLs, protocol-relative destinations and backslashes before navigation. That prevents a trusted login URL being used as a bridge to a phishing site. If future flows need external destinations, I would add an explicit, carefully parsed allow-list.”
+
+## 6. Important follow-up questions
+
+- **Why reject two leading slashes?** Browsers treat them as a destination host rather than our local path.
+- **Why reject backslashes?** Browser normalization can turn them into slash-based external redirects.
+- **What happens to an invalid value?** The helper returns the home path.
+- **Does one safe helper protect every redirect?** Only when every relevant redirect actually uses it; review new entry points.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/web/src/features/auth/lib/safe-next.ts` · `getSafeNext`.
 - Anchor: `apps/web/src/features/auth/lib/safe-next.test.ts` · `describe("getSafeNext")`: the attack cases.
@@ -38,7 +60,12 @@ Step by step:
    `/`).
 4. Anything else (full URLs, `javascript:`) → `/`.
 
-## 5. See it yourself
+### Configuration and design
+
+Allow-list by shape (relative path only) rather than a deny-list of bad hosts. WHY: there are
+endless ways to write another host; there's one simple shape for "our path".
+
+### Checks and troubleshooting
 
 ```bash
 pnpm test safe-next      # 6 cases: keeps /dashboard, home for null, rejects 4 attack shapes
@@ -47,59 +74,39 @@ pnpm test safe-next      # 6 cases: keeps /dashboard, home for null, rejects 4 a
 e2e: `dashboard.spec.ts` "an external ?next= is ignored after login (no open redirect)": log in
 from `/login?next=https://evil.com` and land on `/`.
 
-**Break it on purpose:** change the check to `next.startsWith("/")`. The test "rejects a
+**Isolated thought experiment (not performed):** change the check to `next.startsWith("/")`. The test "rejects a
 protocol-relative URL" (`//evil.com`) fails.
 
-## 6. How it connects
+A new redirect parameter elsewhere that skips `getSafeNext`. Code review; the e2e test covers login
+only.
 
-- **Uses ←** [route-guard-proxy](route-guard-proxy.md) (sets `next`).
-- **Gives →** safe post-login navigation; also blocks `javascript:` URLs ([xss](xss.md)).
+- *Why block `//evil.com`?* It's a protocol-relative URL: the browser goes to evil.com.
+- *Why the backslash?* Browsers normalise `\` to `/`, so `/\evil.com` becomes `//evil.com`.
 
-## 7. Our settings and WHY
-
-Allow-list by shape (relative path only) rather than a deny-list of bad hosts. WHY: there are
-endless ways to write another host; there's one simple shape for "our path".
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** tiny, pure function, fully unit-tested.
 - **Cons:** can't redirect to legitimate other domains (we have none).
-
-## 9. Alternatives and when to choose them
 
 - **`new URL(next, origin)` and compare `origin`:** robust parsing; good when full same-origin URLs
   must be accepted.
 - **An allow-list of route names:** strictest, for a few fixed destinations.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-A new redirect parameter elsewhere that skips `getSafeNext`. Code review; the e2e test covers login
-only.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** After login we only send you to pages on our own site.
-- **Senior:** `getSafeNext` accepts only paths that start with `/` but not `//` and contain no
+`getSafeNext` accepts only paths that start with `/` but not `//` and contain no
   backslash; everything else goes home. Unit tests cover protocol-relative, backslash, full URL and
   `javascript:`; an e2e test logs in with `next=https://evil.com`.
-- **Lead:** Open redirects make phishing believable because the link starts with our domain. Treat
-  every URL parameter as untrusted, validate by allow-list, and centralise it in one tested helper.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Why block `//evil.com`?* It's a protocol-relative URL: the browser goes to evil.com.
-- *Why the backslash?* Browsers normalise `\` to `/`, so `/\evil.com` becomes `//evil.com`.
+- **Uses ←** [route-guard-proxy](route-guard-proxy.md) (sets `next`).
+- **Gives →** safe post-login navigation; also blocks `javascript:` URLs ([xss](xss.md)).
 
-## 15. Say it in 30 seconds
-
-"After login we redirect to ?next=, but only through getSafeNext, which accepts a path starting
-with a single slash and no backslash. Full URLs, protocol-relative URLs and javascript: all go home.
-Unit tests cover the tricks and an e2e test tries https://evil.com."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=open-redirect#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [App story: 13. Validation at boundaries](../app-story.md#13-validation-at-boundaries)
+
+</details>

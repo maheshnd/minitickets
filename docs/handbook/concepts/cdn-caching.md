@@ -4,76 +4,72 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces. Optional CloudFront events minimum/default TTL is zero; static hashed assets retain caching. CDN is inactive in committed dev shape.
+## 1. What is it?
 
-## 2. Real-life comparison
+A content delivery network (CDN) keeps reusable responses near visitors. Safe caching depends on deciding exactly which responses may be shared.
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+## 2. Why do we need it?
 
-## 3. Picture it
+Sharing a JavaScript bundle speeds up MiniTickets for everyone. Sharing one buyer’s account page with another visitor would be a serious data leak, so these are different caching decisions.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["User cookie"] --> n1
-    n1["Dynamic private HTML"] --> n2
-    n2["Browser only"] --> n3
-    n3["No shared CDN page"]
+    B["MiniTickets browser"] -->|"optional CDN mode: request content"| C["CloudFront policy"]
+    C -->|"optional: reuse hashed public assets"| S["Static asset copy"]
+    C -->|"optional: forward uncached dynamic requests"| A["ALB and web/API origin"]
+    A -->|"HTML/RSC: private, no-store"| B
 ```
 
-## 4. Where in our code
+1. Classify public static files separately from dynamic or user-bound responses.
+2. Make cache policy and origin headers agree.
+3. Verify actual response headers and cache behavior when CDN mode is enabled.
+
+## 4. How do we use it in MiniTickets?
+
+CloudFront is optional and inactive in the committed dev shape. Current HTML and React navigation responses are private,no-store because scripts use a fresh request code. Explicit public-data caches and hashed static files are separate from shared page caching.
+
+## 5. Interview-ready answer
+
+“MiniTickets allows caching of reusable public assets while keeping HTML and user-bound responses out of shared caches. Current HTML has per-request script authorization, so even the public catalogue page is no-store. CloudFront is inactive today. If enabled, its cache policy must respect those headers; a positive minimum TTL could override privacy instructions and create a dangerous mismatch.”
+
+## 6. Important follow-up questions
+
+- **Does Vary: Cookie make sharing safe?** No. The CDN cache key and expiration rules must also match the intended behavior.
+- **Why avoid caching public catalogue HTML?** It contains a fresh per-request script code, unlike reusable catalogue data.
+- **Can static files still be cached?** Yes. Content-hashed assets are designed for long reuse.
+- **What should acceptance inspect?** HTML and navigation payload headers, cookies, cache keys and observed hits—not configuration alone.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current configuration and sources
+
+Committed `cdnEnabled=false` means CloudFront is inactive; repository settings are not live deployment proof. `apps/web/src/proxy.ts` and `apps/web/next.config.ts` apply private,no-store to HTML/RSC, including catalogue pages. `apps/web/src/features/events/server/cached-events.ts` separately caches explicit public data.
+
+`infra/src/entry/cdn.ts` retains optional behaviors for hashed static assets, API and events. Events policy has **minimum/default TTL 0** (maximum 330); zero minimum respects origin privacy directives. A positive minimum can override no-store/private. Static hashed files retain long caching. Do not rely on a generic Vary header to define CloudFront cache identity.
+
+### Trade-offs, checks and growth
+
+Per-user edge keys multiply entries and are hard to audit. No-store trades server work for a simple privacy boundary; static JS/images can still be reused. `pnpm demo:security` covers production-mode local headers/cache behavior, not live CDN acceptance and was not rerun here. Inspect both HTML and RSC headers. Future public-HTML caching would require a deliberate separate security/cache strategy and centralized policy checks.
+
+### Code anchors
 
 - Anchor: `infra/src/entry/cdn.ts` — `module configuration`; follow the numbered comments at this boundary.
 
-`apps/web/src/proxy.ts` and `apps/web/next.config.ts` guard HTML caching. `apps/web/src/features/events/server/cached-events.ts` only stores public catalogue data. `infra/src/entry/cdn.ts` has zero minimum/default TTL on the events policy. CloudFront is inactive: `cdnEnabled=false`. Run `pnpm demo:security`.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#private-page-cache) · [explorer tour](../guides/infra-explorer.html?tour=security-layers)
 
-Run `pnpm demo:security` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#private-page-cache) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
-
-## 7. Our settings and WHY
-
-Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces. Optional CloudFront events minimum/default TTL is zero; static hashed assets retain caching. CDN is inactive in committed dev shape. A cross-user cache leak exposes private data, and cached nonce HTML breaks CSP assumptions.
-
-## 8. Trade-offs
-
-Per-user edge keys are difficult to audit and multiply cache entries. No-store simplifies privacy at server cost. Static JS/images can still be cached.
-
-## 9. Alternatives and when to choose them
-
-10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
-
-## 10. What breaks and how we notice
-
-Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Current HTML/RSC is private,no-store, including public catalogue HTML because it has fresh nonces.
-- **Senior:** Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
-- **Lead:** 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
-
-## 14. Follow-up questions with answers
-
-Does Vary: Cookie make every policy safe? No; the CDN cache key and minimum TTL must also agree.
-
-Which CloudFront setting can override no-store? **A positive minimum TTL.**
-
-## 15. Say it in 30 seconds
-
-Cache public data, never a shared personalized page. P10 generates a nonce for every HTML/RSC request and explicitly sends private,no-store for those responses. Keep user-bound queries out of shared server caches. A CDN must honor no-store; a positive CloudFront minimum TTL can override origin privacy directives.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: inspect headers on HTML and RSC. 100x: centralize cache policy tests and keep any public HTML strategy separate.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=cdn-caching#chapter=12&piece=cloudfront).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

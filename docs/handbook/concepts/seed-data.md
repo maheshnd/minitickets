@@ -3,27 +3,54 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built · Step doc: [21 events list](../../21-events-list.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**Seed data** is sample rows loaded by a script (`pnpm --filter @minitickets/api db:seed`), so a fresh
-database has something to show and the e2e tests have known data to look for.
+Seed data is sample content loaded for development and tests. It gives a new MiniTickets database known events without mixing sample content into production migrations.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Stocking the shelves of a new shop before opening day. If you run the stocking job twice, you do not
-want two copies of every product.
+A fresh events page would otherwise be empty, and browser tests would have nothing predictable to find. Repeating setup should not duplicate every concert or overwrite someone’s edits unexpectedly.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    seed["db:seed<br/>12 events, fixed ids"] --> ins["insert ... on conflict do nothing"]
-    ins --> db[("Postgres events")]
-    db --> e2e["e2e test looks for known titles"]
+samples["SEED_EVENTS with fixed IDs"] -->|"seed.ts creates dates"| insert["Insert missing sample rows"]
+    insert -->|"ON CONFLICT DO NOTHING"| db["Local or CI Postgres"]
+    db -->|"known titles and availability"| use["Events UI and browser checks"]
 ```
 
-## 4. Where in our code
+1. Create sample event values with stable IDs.
+2. Insert only rows that are missing during normal setup.
+3. Close the script’s database connection when finished.
+
+## 4. How do we use it in MiniTickets?
+
+The normal seed preserves existing rows and their edits. A separate explicit local reset restores sample events and deletes their bookings transactionally. Reset checks that the database host is local. Seeds are absent from the production image.
+
+## 5. Interview-ready answer
+
+“MiniTickets seeds known sample events with fixed identifiers and insert-on-conflict-do-nothing. Normal reruns add missing rows without duplicating or overwriting them. Relative dates are set when rows are created, so old data does not move forward automatically. An explicit local reset has different, destructive semantics and must be treated separately from ordinary setup.”
+
+## 6. Important follow-up questions
+
+- **Why fixed IDs?** A rerun can identify the same logical sample row rather than create another copy.
+- **Does rerunning refresh old dates?** No. Existing rows are preserved; resetting sample data is a separate operation.
+- **Why keep seeds outside migrations?** Schema changes belong in every environment; demonstration content does not.
+- **What is the test-isolation trade-off?** Shared seed data is fast, but per-test fixtures reduce interference between tests and repeated runs.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current seed.ts imports SEED_EVENTS from seed-events.ts. Normal mode uses a one-connection pool and skips conflicts; --reset verifies a loopback host, deletes sample-event bookings and upserts restored events in one transaction. It deliberately changes those sample bookings. Historical first/second-run counts below are recorded evidence, not a seed executed during this rewrite.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/db/seed.ts` · `rows`, `onConflictDoNothing()`: the sample events and the safe insert.
 
@@ -35,7 +62,7 @@ Step by step:
 4. `insert ... on conflict do nothing` skips rows whose id exists. Local result: first run `12 new events, 0 already there`; second run `0 new events, 12 already there`.
 5. It uses a one-connection pool and closes it at the end, like `migrate.ts`.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 pnpm --filter @minitickets/api db:seed   # run it twice and compare the two messages
@@ -44,12 +71,7 @@ pnpm --filter @minitickets/api db:seed   # run it twice and compare the two mess
 **Break it on purpose:** remove `.onConflictDoNothing()` and run it twice: the second run fails on
 the duplicate primary key.
 
-## 6. How it connects
-
-- **Uses ←** [drizzle-schema](drizzle-schema.md), [migrations](migrations.md) (the tables must exist first), [db-check-constraints](db-check-constraints.md) (the seed rows must obey them).
-- **Gives →** known data for [e2e-tests](e2e-tests.md); the CI e2e job runs it after the migrations.
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 | Setting | Value | Why |
 | ------- | ----- | --- |
@@ -58,44 +80,39 @@ the duplicate primary key.
 | Dates | relative to the run | There is always a mix of past and upcoming events. |
 | Where it runs | laptop and CI only | It is not in the production image. |
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** one command gives a usable database; safe to repeat.
 - **Cons:** relative dates are fixed when the row is first created, so after about 40 days the
   earliest "upcoming" events become past and a re-run will not refresh them (empty the table to reseed).
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Fixtures created inside each test:** best for isolation, slower and more code.
 - **`on conflict do update`:** when the seed should reset rows to a known state.
 - **Production data dumps:** realistic, but may hold personal data; avoid.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - Seed not run: `/events` shows "No upcoming events" and the events e2e test fails.
 - Old local data: past "upcoming" events make the e2e test fail until the table is emptied and reseeded.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** A script that fills the database with sample data.
-- **Senior:** Fixed ids plus `on conflict do nothing` make it idempotent, so it is safe in CI and on a laptop that already has data.
-- **Lead:** Seeds are for development and tests, never production. Decide between shared seed data (fast, couples tests) and per-test data (isolated, slower), and keep seed rules in line with the database constraints.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why not random ids?* A second run would insert 12 more rows.
 - *Why is the seed not part of migrations?* Migrations change structure and run everywhere, including AWS; sample data must not.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"A db:seed script inserts 12 events with fixed ids using on conflict do nothing, so it is safe to run
-twice. Dates are relative to now, so there are past and upcoming events. It runs on my laptop and in
-CI before the e2e tests, never in production."
+- [drizzle-schema](drizzle-schema.md)
+- [migrations](migrations.md)
+- [db-check-constraints](db-check-constraints.md)
+- [e2e-tests](e2e-tests.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=seed-data#chapter=0&piece=laptop-postgres).
 
 ## Where it appears in the story
 
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+
+</details>

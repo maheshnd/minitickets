@@ -4,75 +4,75 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: ✅ built in repository; live acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Legacy public list reads fail open from Redis to Postgres and can serve bounded stale-if-error. Search bypasses the list cache. Authentication/session-index failure fails closed; inventory hints may fail open only because Postgres still enforces seats.
+## 1. What is it?
 
-## 2. Real-life comparison
+Graceful degradation keeps useful behavior available when an optional part fails. It changes the fallback deliberately without weakening a correctness or security rule.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+## 2. Why do we need it?
 
-## 3. Picture it
+If MiniTickets’ public-list cache is unavailable, visitors can still browse from Postgres. If login authority is unavailable, however, guessing that a visitor is authenticated would be unsafe.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser query"] --> n1
-    n1["Next public data"] --> n2
-    n2["Redis envelope"] --> n3
-    n3["Postgres"]
+    L["MiniTickets public list"] -->|"cache available: reuse bounded copy"| R["Redis list cache"]
+    L -->|"cache failed: read source"| P["Postgres"]
+    A["Protected MiniTickets action"] -->|"require verified authority"| S["Session and index check"]
+    S -->|"missing authority: deny"| D["No protected action"]
 ```
 
-## 4. Where in our code
+1. Classify whether a dependency provides an optimization or authority.
+2. Choose a fallback that preserves the required guarantee.
+3. Bound waiting and stale age; expose degraded behavior for investigation.
+
+## 4. How do we use it in MiniTickets?
+
+The legacy public list falls back from Redis to SQL and can use bounded stale-if-error. Search bypasses that list cache. The inventory hint can fall back because Postgres still enforces seats; session authority and abuse-protection policies have stricter failure behavior.
+
+## 5. Interview-ready answer
+
+“MiniTickets chooses fallback per responsibility. Losing a rebuildable public cache can send reads to Postgres, and a bounded older list can help during a short outage. Losing authentication authority must deny protected work. Inventory hints can fail open only because the database still decides seats. Graceful degradation means preserving useful service within explicit limits, not treating every dependency failure as safe to ignore.”
+
+## 6. Important follow-up questions
+
+- **Why not fail open everywhere?** Some dependencies enforce identity, quotas or ownership; bypassing them changes the guarantee.
+- **Can stale listings authorize a purchase?** No. The transaction checks authoritative stock.
+- **What can fallback overload?** The database can receive cache-miss traffic it normally avoids.
+- **How do we avoid stale data forever?** Keep original age, enforce hard limits and never renew age on failed refresh.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current fallback boundaries
+
+`apps/api/src/services/events.ts` handles Redis list read/write failures and fresh/stale/error windows. `apps/api/src/queries/events-cache.ts` bounds cache operations at **100 ms**. Redis failure falls back to Postgres for legacy `events.list`; current `events.search` bypasses the list cache. Bounded stale-if-error serves a previous good public result, never authoritative seats or roles.
+
+Authentication requires both session record and index membership and fails closed. Rate limiting has its own fail-closed unavailable policy. Advisory inventory can fall back to Postgres because the same durable booking transaction remains final authority.
+
+### Cache layers, evidence and growth
+
+`apps/web/src/features/events/server/cached-events.ts` and `apps/web/src/features/events/hooks/use-events.ts` have independent clocks. P10 disables shared HTML caching while retaining explicit public-data caches. Admin writes do not instantly refresh every open tab. Staleness can compound, and failed refresh must not make old data fresh.
+
+`pnpm test` has fake-clock stale/error cases; no new run/live acceptance is claimed. Track hit/age/fallback rates and database pressure. Larger deployments may consolidate redundant layers and define an end-to-end freshness budget rather than extend TTLs independently.
+
+### Code anchors
 
 - Anchor: `apps/api/src/services/events.ts` · `listUpcomingEvents`: `try`/`catch` around the cache read; the write is also wrapped.
 - Anchor: `apps/api/src/queries/events-cache.ts` · `CACHE_TIMEOUT_MS`, `withTimeout`: the 100 ms deadline.
 
-`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#swr-caches) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-`apps/api/src/services/events.ts` applies fresh/stale/error windows and tracks in-flight refreshes. `apps/web/src/features/events/server/cached-events.ts` and `hooks/use-events.ts` add separate caches. Run `pnpm test` for fake-clock SWR/error cases. P10 disables shared HTML caching while retaining explicit public data caching.
-
-Failure thought experiment: Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#swr-caches) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-Legacy public list reads fail open from Redis to Postgres and can serve bounded stale-if-error. Search bypasses the list cache. Authentication/session-index failure fails closed; inventory hints may fail open only because Postgres still enforces seats. Bounded stale public listings trade freshness for latency/availability.
-
-## 8. Trade-offs
-
-Never use stale data for authorization or seats. Long independent TTLs can compound staleness. A failing refresh must not reset old data to fresh.
-
-## 9. Alternatives and when to choose them
-
-10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 10. What breaks and how we notice
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Legacy public list reads fail open from Redis to Postgres and can serve bounded stale-if-error. Search bypasses the list cache. Authentication/session-index failure fails closed; inventory hints may fail open only because Postgres still enforces seats.
-- **Senior:** SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-- **Lead:** 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
-
-## 14. Follow-up questions with answers
-
-Does a successful admin write refresh all open tabs? No; they refetch on their own query policy.
-
-## 15. Say it in 30 seconds
-
-SWR serves a bounded stale value while one background refresh runs; stale-if-error serves a previous good value during a bounded outage. Each cache layer has its own clock: Redis, Next public data and browser queries. Fresh at one layer does not force another layer to refetch. Seat purchase always checks the writer.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expose age/hit telemetry. 100x: consolidate overlapping caches and define end-to-end freshness budgets.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=graceful-degradation#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+
+</details>

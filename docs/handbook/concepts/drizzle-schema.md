@@ -3,28 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built · Step doc: [05 database](../../05-database.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The `users` table is described once in TypeScript with **Drizzle**; that description gives typed
-queries in the api and is the source the SQL migrations are generated from.
+A database schema describes tables, columns and rules. Drizzle lets MiniTickets express that structure in TypeScript and use it when building typed SQL queries.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-An architect's drawing of a room: builders work from it (migrations), and the furniture shop uses
-the same drawing to know what fits (typed queries).
+If a signup query expects a field that the database lacks, compilation alone cannot save it. A shared schema description helps generate reviewed database changes and makes query shapes easier to check.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    schema["db/schema/users.ts<br/>pgTable('users')"] --> gen["drizzle-kit generate"]
-    gen --> sql["drizzle/0000_first_northstar.sql"]
-    schema --> db["db/client.ts<br/>drizzle(pool, { schema })"]
-    db --> q["queries/users.ts<br/>typed select / insert"]
+schema["MiniTickets db/schema files"] -->|"generate reviewed changes"| migration["Committed SQL migrations"]
+    migration -->|"migration runner applies"| pg["Postgres tables and constraints"]
+    schema -->|"supplies query types"| drizzle["Drizzle queries"]
+    drizzle -->|"parameterized SQL"| pg
 ```
 
-## 4. Where in our code
+1. Describe columns and database constraints.
+2. Generate and review a migration for a structural change.
+3. Apply it before code depends on the new structure.
+
+## 4. How do we use it in MiniTickets?
+
+Users, events, bookings and outbox have schema files. UUID keys identify records; constraints protect allowed values and relationships. Query adapters use Drizzle over the shared connection pool. Input validation remains a separate boundary.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses Drizzle as a typed SQL-oriented schema and query tool. Schema files describe columns and constraints, and generated SQL migrations update the actual database. That reduces type drift, but the schema file itself does not change a running database. Reviewed migrations and compatibility during deployment still carry the operational risk.”
+
+## 6. Important follow-up questions
+
+- **Does changing TypeScript alter production tables?** No. The migration must be generated, reviewed and applied.
+- **Does a random UUID authorize access?** No. Ownership and permissions are checked independently of identifier unpredictability.
+- **Why keep constraints in the database too?** Every writer must obey them, including scripts and concurrent requests.
+- **What is the cost of random UUID keys?** They are larger and less insertion-local than sequential keys; assess it against actual scale.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current users also has role with a default and CHECK constraint; the original four-column table below is the initial schema, not the complete current table. Schema composition in db/client.ts includes users/events/bookings/outbox. Random identifiers resist enumeration but are not access control. Postgres timestamptz stores an instant rather than the original display timezone.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/db/schema/users.ts` · `users`: the table definition.
 - Anchor: `apps/api/src/db/client.ts` · `db`: the Drizzle instance on top of the pool.
@@ -34,7 +61,7 @@ The table:
 
 | Column | Drizzle | SQL (from the migration) | Why |
 | ------ | ------- | ------------------------ | --- |
-| `id` | `uuid().primaryKey().defaultRandom()` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | Random ids can't be guessed or counted. |
+| `id` | `uuid().primaryKey().defaultRandom()` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | Random IDs resist enumeration; they are not an authorization check. |
 | `email` | `text().notNull().unique()` | `text NOT NULL`, `CONSTRAINT users_email_unique UNIQUE` | One account per email. |
 | `password_hash` | `text().notNull()` | `text NOT NULL` | Only the argon2 hash, never the password. |
 | `created_at` | `timestamp({ withTimezone: true }).defaultNow()` | `timestamp with time zone DEFAULT now()` | Unambiguous instant. |
@@ -48,7 +75,7 @@ Step by step:
    ([sql-injection](sql-injection.md)).
 4. Changing the schema means generating a new migration ([migrations](migrations.md)).
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 docker exec -it minitickets-postgres-1 psql -U minitickets -d minitickets -c '\d users'
@@ -60,61 +87,44 @@ You see the four columns, the primary key and `users_email_unique`.
 api compiles, but inserts fail at runtime (`column "name" does not exist`). Run
 `pnpm --filter @minitickets/api db:generate` to create the migration.
 
-## 6. How it connects
+### Settings and reasoning
 
-- **Uses ←** [rds-postgres](rds-postgres.md) on AWS, Postgres 17.6 in Docker locally;
-  [connection-pooling](connection-pooling.md).
-- **Gives →** [migrations](migrations.md), typed [layered-api](layered-api.md) queries,
-  [unique-constraint-race](unique-constraint-race.md).
-
-## 7. Our settings and WHY
-
-UUID keys made by Postgres (`gen_random_uuid()`), `timestamptz`, email unique. WHY: no guessable
-ids in URLs later; time zones handled by the database; uniqueness enforced where races can't beat
+UUID keys made by Postgres (`gen_random_uuid()`), `timestamptz`, email unique. WHY: IDs resistant to enumeration, while ownership checks remain required; time zones handled by the database; uniqueness enforced where races can't beat
 it.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** one typed source; SQL-like API (easy to read the SQL it makes); small runtime.
 - **Cons:** random UUIDs make B-tree inserts less local than sequential ids (fine at our size);
   Drizzle is younger than Prisma or TypeORM.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Prisma:** schema file + generated client; great tooling, heavier runtime.
 - **Kysely / plain SQL with `pg`:** maximum control; types by hand or codegen.
-- **UUIDv7 / ULID:** time-ordered ids, better index locality, still not guessable in practice.
+- **UUIDv7 / ULID:** time-ordered ids, better index locality, improved index locality, but never a substitute for authorization.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - Schema and database out of sync: runtime SQL errors (500s, logged with the cause). CI's e2e job
   runs migrations first, so a missing migration fails CI.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** We describe our database table in TypeScript, and the tools build the real table from
-  it.
-- **Senior:** Drizzle `pgTable` defines `users` with a random UUID key, unique email, hash and
-  `timestamptz`. `drizzle-kit generate` turns changes into committed SQL; `db` gives typed queries
-  that compile to parameterised SQL.
-- **Lead:** Schema-as-code keeps types and database aligned, but migrations are still the contract
-  with production data. I'd consider time-ordered ids (UUIDv7) once tables grow, for index locality.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why UUID over serial?* Not guessable, can be made anywhere; cost is index locality and size.
 - *ORM or query builder?* Drizzle is closer to a typed query builder.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"The users table is defined in TypeScript with Drizzle: random UUID key, unique email, the argon2
-hash and a timestamptz. drizzle-kit generates the SQL migrations from it, and the same schema gives
-us typed, parameterised queries."
+- [rds-postgres](rds-postgres.md)
+- [connection-pooling](connection-pooling.md)
+- [layered-api](layered-api.md)
+- [unique-constraint-race](unique-constraint-race.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=drizzle-schema#chapter=24&piece=code-store).
 
 ## Where it appears in the story
 
 - [App story: 9. The query](../app-story.md#9-the-query)
+
+</details>

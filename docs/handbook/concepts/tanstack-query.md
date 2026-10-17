@@ -3,78 +3,81 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-TanStack Query identifies server state by a complete input key. Current catalogue uses infinite events.search with q/filters/cursor, 30 s staleTime and previous-data feedback. Auth mutations invalidate relevant identity data; booking retries explicitly retain intent identity.
+TanStack Query manages browser copies of server data. It remembers answers by a query key and tracks loading, errors, freshness and refetching.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A catalogue with a bookmark: each question and position has its own identity, and only the visible page lies open.
+On MiniTickets, someone may search for “jazz” and then “rock” before the first request finishes. A late jazz answer must not replace the results for rock.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Type a then ap"] --> n1
-    n1["Separate query keys"] --> n2
-    n2["Late a fills a only"] --> n3
-    n3["Visible ap results"]
+input["EventList search input"] -->|"useEventSearch waits for typing pause"| hook["Complete query input key"]
+    hook -->|"request events.search"| api["MiniTickets API"]
+    api -->|"answer fills only matching key"| cache["TanStack Query cache"]
+    cache -->|"current key selects visible rows"| input
 ```
 
-## 4. Where in our code
+1. Build a key from the full search input.
+2. Request and store its answer under that identity.
+3. Observe the active key so an older completion cannot become the new search result.
+
+## 4. How do we use it in MiniTickets?
+
+`useEventSearch` debounces text, uses infinite-query pages and labels previous results while new input loads. Auth hooks invalidate identity data after changes. Booking retries separately keep the same durable intent identity.
+
+## 5. Interview-ready answer
+
+“TanStack Query is MiniTickets’ server-state manager. Each complete input identifies its own cache entry, which keeps late search responses attached to the right request. It also handles freshness and request state. Debounce and cancellation reduce work; correct identity prevents stale completion from winning even when cancellation cannot stop the server.”
+
+## 6. Important follow-up questions
+
+- **Does debounce prevent response races?** No. Earlier requests can still finish late; query identity provides correctness.
+- **What if a filter is absent from the key?** Different questions can share one answer incorrectly; include every result-changing input.
+- **Does a cached seat count authorize purchase?** No. Postgres rechecks availability in the booking transaction.
+- **Why retain previous data?** It avoids a blank list, but clearly show that a replacement search is loading.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current implementation
+
+Current search uses 250 ms debounce, limit 50, 30-second staleTime, keepPreviousData and abortOnUnmount. The infinite-query cache owns its cursor pages within that complete input identity. QueryProvider retries non-4xx failures at most twice; mutations do not retry globally. Legacy useEvents remains a separate events.list example; catalogue SSR uses events.search.
+
+### Technical limits and diagnosis
+
+QueryProvider creates QueryClient and tRPC client once for the mounted browser provider. Queries avoid retrying 4xx; other failures get at most two retries. Mutations use retry 0 globally; booking separately opts into durable-intent retry. useMe observes auth.me; legacy useEvents observes events.list.
+
+Current search uses infinite-query pages with getNextPageParam from nextCursor. All result-changing filters/text belong to the input identity; cursor pages belong to the same traversal. Debounce reduces calls but does not order completions. Cancellation can save resources but cannot prove server work stopped. Previous rows remain explicitly marked while the next input loads; their availability cannot authorize purchase.
+
+The isolated search demo and browser spec deliberately delayed an older response in historical local evidence. A manual increasing request ID is an alternative to query-key identity. Measure input-to-result latency and cap retained pages before introducing specialised relevance infrastructure. No demo or production benchmark was run for this rewrite.
+
+### Source anchors
 
 - Anchor: `apps/web/src/providers/query-provider.tsx` · `QueryProvider`: creates one `QueryClient` per browser tab with our retry rules.
 - Anchor: `apps/web/src/features/auth/hooks/use-me.ts` · `useMe`: `useQuery(trpc.auth.me.queryOptions())`.
 - Anchor: `apps/web/src/features/events/hooks/use-events.ts` · `useEvents`: `useQuery(trpc.events.list.queryOptions(undefined, { staleTime: 30_000 }))`, a second example of the same pattern (key `events.list`), filled from the server since Step 22.
 
-`apps/web/src/features/events/hooks/use-event-search.ts` → `useEventSearch` debounces 250 ms, uses tRPC infinite-query options keyed by all input, consumes cancellation and keeps previous data. The component labels typing/loading. Run `pnpm demo:search`; the related browser spec deliberately delays an older response.
+### Related reading
 
-## 5. See it yourself
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#search-races)
+- [explorer tour](../guides/infra-explorer.html?tour=search)
+- [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
+- [App story: 10b. Reading events](../app-story.md#10b-reading-events)
 
-`apps/web/src/features/events/hooks/use-event-search.ts` → `useEventSearch` debounces 250 ms, uses tRPC infinite-query options keyed by all input, consumes cancellation and keeps previous data. The component labels typing/loading. Run `pnpm demo:search`; the related browser spec deliberately delays an older response.
-
-Failure thought experiment: Could filters race too? Yes: venue/date/cursor must be in the input key. Should previous rows be bookable? Recheck authoritative availability on booking.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#search-races) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-TanStack Query identifies server state by a complete input key. Current catalogue uses infinite events.search with q/filters/cursor, 30 s staleTime and previous-data feedback. Auth mutations invalidate relevant identity data; booking retries explicitly retain intent identity. A shared results variable with no request identity allows stale completion to win.
-
-## 8. Trade-offs
-
-A monotonically increasing request id also works for manual fetch. Abort alone does not prove the server stopped; debounce does not order responses.
-
-## 9. Alternatives and when to choose them
-
-10x: measure input-to-result latency and cap retained pages. 100x: add relevance/search infrastructure only after query plans and traffic justify it.
-
-## 10. What breaks and how we notice
-
-Could filters race too? Yes: venue/date/cursor must be in the input key. Should previous rows be bookable? Recheck authoritative availability on booking.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** TanStack Query identifies server state by a complete input key. Current catalogue uses infinite events.search with q/filters/cursor, 30 s staleTime and previous-data feedback. Auth mutations invalidate relevant identity data; booking retries explicitly retain intent identity.
-- **Senior:** An old request may finish last. Give each search input its own query key so it can only fill its own cache entry. Cancellation saves work, but identity provides correctness even when a server ignores cancellation. Keep previous results visibly marked while the next input is loading.
-- **Lead:** 10x: measure input-to-result latency and cap retained pages. 100x: add relevance/search infrastructure only after query plans and traffic justify it.
-
-## 14. Follow-up questions with answers
-
-Could filters race too? Yes: venue/date/cursor must be in the input key. Should previous rows be bookable? Recheck authoritative availability on booking.
-
-## 15. Say it in 30 seconds
-
-An old request may finish last. Give each search input its own query key so it can only fill its own cache entry. Cancellation saves work, but identity provides correctness even when a server ignores cancellation. Keep previous results visibly marked while the next input is loading.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: measure input-to-result latency and cap retained pages. 100x: add relevance/search infrastructure only after query plans and traffic justify it.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=tanstack-query#chapter=24&piece=code-hook).
 
 ## Where it appears in the story
 
 - [App story: 2. TanStack Query: cache, retries, invalidation](../app-story.md#2-tanstack-query-cache-retries-invalidation)
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events) (the events hook as a second example)
+
+</details>

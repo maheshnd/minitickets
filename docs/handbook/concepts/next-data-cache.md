@@ -4,76 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-The Next data cache stores an explicit public result independently of HTML. unstable_cache and a fixed events tag remain; P7 search SSR bypasses this helper and P10 HTML is private,no-store.
+## 1. What is it?
 
-## 2. Real-life comparison
+The Next data cache saves a server-side function result for reuse. Cached data is separate from the HTML page that displays it.
 
-A catalogue with a bookmark: each question and position has its own identity, and only the visible page lies open.
+## 2. Why do we need it?
 
-## 3. Picture it
+Several visitors may need the same public event list. Reusing that data can avoid repeated API work while still producing a separate, secure HTML response for each visitor.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Incoming request"] --> n1
-    n1["Dynamic nonce HTML"] --> n2
-    n2["Hydrated public data"] --> n3
-    n3["Interactive client"]
+    H["Legacy getCachedEvents helper"] -->|"look up canonical public-list input"| C["Next data cache"]
+    C -->|"miss or refresh: call events.list"| A["MiniTickets API"]
+    A -->|"return public rows to save"| C
+    W["Committed event write"] -->|"signed revalidation expires events tag"| C
 ```
 
-## 4. Where in our code
+1. Name the public result using complete, normalized inputs.
+2. Reuse the saved function result until refresh or invalidation.
+3. Expire related tagged entries after a committed change.
+
+## 4. How do we use it in MiniTickets?
+
+The legacy helper remains built, but current search rendering bypasses it to avoid multiplying entries for arbitrary search text and cursors. MiniTickets produces private, uncached HTML with fresh script authorization; that does not forbid explicitly caching suitable public data.
+
+## 5. Interview-ready answer
+
+“MiniTickets separates data caching from page caching. Its legacy Next helper can reuse a public list result under normalized inputs and an invalidation tag. Current search prefetch bypasses that helper, while HTML remains dynamic and no-store. The important trade-off is layered freshness: a server cache can save data that was already old in Redis, and different web tasks have separate cache state.”
+
+## 6. Important follow-up questions
+
+- **Does dynamic HTML forbid cached data?** No. A correctly keyed public result can be cached independently.
+- **Can this hold a personalized account response?** Not under a shared public key; keep user-bound data out.
+- **Is the helper’s refresh time a hard age cap?** No. Background refresh and failure can retain older data.
+- **What changes with multiple web tasks?** Each cache is separate; a revalidation call does not automatically reach every copy.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Helper contract and current route
+
+`apps/web/src/features/events/server/cached-events.ts` uses `unstable_cache` around `events.list`, key parts `events.list`, canonical arguments, tag `events`, `revalidate: 30`. `revalidateEventsCache` calls `revalidateTag(EVENTS_TAG, { expire: 0 })` for immediate expiration from the signed revalidation route. This is the existing caching model; Cache Components/use-cache would be a broader rendering change, not enabled by this helper.
+
+`apps/web/src/features/events/server/prefetch-events.ts` currently prefetches `events.search`, bypassing the helper to avoid unbounded text/cursor keys. `apps/web/src/app/layout.tsx` waits for a request; HTML/RSC is private,no-store with fresh CSP nonces. There is no static export.
+
+### Layered freshness and evidence
+
+The helper’s 30-second interval is soft, not a hard bound: stale data may be served during refresh, including failed background refresh. It is process/disk-local to a web copy. Browser queries and Redis have independent clocks; freshness can compound and one revalidation request reaches only one web instance.
+
+`pnpm demo:security` exercises production-mode local HTML/cache behavior, not live AWS/CI acceptance. Future work may measure TTFB/hit rates and deliberately evaluate static hash-based CSP or separate public/static routes. No new command was run for this rewrite.
+
+### Code anchors
 
 - Anchor: `apps/web/src/features/events/server/cached-events.ts` — `getCachedEvents`; follow the numbered comments at this boundary.
 
-`apps/web/src/app/layout.tsx` waits for a request; `apps/web/src/features/events/server/prefetch-events.ts` hydrates public data. `apps/web/src/features/events/server/cached-events.ts` provides an explicit public-data cache; the current search-prefetch path bypasses that helper to avoid unbounded cursor/text keys. Run `pnpm demo:security` for production HTML/cache acceptance; there is no static-site export.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#rendering-models) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm demo:security` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does dynamic HTML forbid cached data? No. Cache only public results with complete keys. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#rendering-models) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-The Next data cache stores an explicit public result independently of HTML. unstable_cache and a fixed events tag remain; P7 search SSR bypasses this helper and P10 HTML is private,no-store. Initial content and interactivity have different latency and security constraints.
-
-## 8. Trade-offs
-
-Static HTML has cheap delivery but cannot reuse a fresh per-request nonce. CSR adds client work. Dynamic HTML costs server work even when data is cached.
-
-## 9. Alternatives and when to choose them
-
-10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
-
-## 10. What breaks and how we notice
-
-Does dynamic HTML forbid cached data? No. Cache only public results with complete keys.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** The Next data cache stores an explicit public result independently of HTML.
-- **Senior:** SSR sends useful initial HTML, CSR handles interactive changes and static output suits public content that tolerates rebuilds. MiniTickets combines server-prefetched catalogue data with client queries. P10 nonce security makes HTML dynamic and no-store; explicit public data caching remains a separate choice.
-- **Lead:** 10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
-
-## 14. Follow-up questions with answers
-
-Does dynamic HTML forbid cached data? No. Cache only public results with complete keys.
-
-Can public data still be cached inside dynamic HTML rendering? **Yes with correct data keys.**
-
-## 15. Say it in 30 seconds
-
-SSR sends useful initial HTML, CSR handles interactive changes and static output suits public content that tolerates rebuilds. MiniTickets combines server-prefetched catalogue data with client queries. P10 nonce security makes HTML dynamic and no-store; explicit public data caching remains a separate choice.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: measure TTFB/cache hit rate. 100x: evaluate hash-based static CSP or separating public/static routes as a deliberate redesign.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=next-data-cache#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [app-story: 1b. Search input, hydration and bounded rows](../app-story.md#1b-search-input-hydration-and-bounded-rows)
+
+</details>

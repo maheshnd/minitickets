@@ -4,74 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: DevOps & CI/CD · Status: ✅ built in repository; live acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off.
+## 1. What is it?
 
-## 2. Real-life comparison
+An environment switch controls whether a group of infrastructure resources exists. It changes the environment’s shape rather than choosing which feature a visitor sees.
 
-A sealed package is built once, then checked at a gate before the manager installs that exact version.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets is a learning project and does not always need every hourly service running. Explicit switches let the owner choose an intended environment instead of forgetting individual resources.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["CI tests"] --> n1
-    n1["Publish SHA once"] --> n2
-    n2["Approved CD plus migration"] --> n3
-    n3["Roll and smoke test"]
+    C["Committed Pulumi.dev.yaml"] -->|"declare data, compute, entry and CDN shape"| P["MiniTickets infrastructure program"]
+    P -->|"validate layer dependencies"| G["Allowed environment shape"]
+    G -->|"owner-approved deployment applies shape"| R["AWS resource groups"]
+    R -->|"standing storage may remain billable"| B["Budget review"]
 ```
 
-## 4. Where in our code
+1. Commit the intended environment shape.
+2. Validate dependencies between enabled layers.
+3. An owner-approved deployment applies it; review what still exists afterward.
+
+## 4. How do we use it in MiniTickets?
+
+MiniTickets separates infrastructure switches from runtime settings such as its inventory gate. The selected application image and deployment-history records are separate too. Turning off hourly layers does not promise zero cost because storage and other standing resources may remain.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses committed environment switches to control infrastructure shape. That is different from a runtime feature flag, which changes behavior without rebuilding the environment. The switches must respect layer dependencies and be applied through the deployment process. Cost review still matters afterward: retained storage, queues, secrets and images may continue to incur charges even when application compute is off.”
+
+## 6. Important follow-up questions
+
+- **Is the CDN switch a per-user flag?** No. It changes infrastructure and the public request path.
+- **Does off mean free?** No. Persistent or standing resources may remain.
+- **Should an incident start with teardown?** Usually start with symptoms, recent releases and reversible recovery, not an unreviewed infrastructure change.
+- **What makes a good feature flag?** An owner, safe defaults, expiry and tests for both paths.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Shape, runtime configuration and state
+
+`infra/Pulumi.dev.yaml` commits `dataEnabled`, `computeEnabled`, `entryEnabled`, `cdnEnabled` and domain shape. The recorded current dev shape is data/compute/entry **true**, CDN **false**; this is repository configuration, not live deployment verification. Dependencies are checked in `infra/index.ts`. Change entry/CDN mode with entry off as documented; do not improvise a running graph transition.
+
+SSM image-tag and deployed-commit records are distinct from shape, written by CD. Standing queues, storage, secrets and ECR may retain charges when hourly resources are disabled. `apps/api/src/config/env.ts` validates `INVENTORY_GATE_ENABLED`, a runtime policy setting rather than an infrastructure mode.
+
+### Operations and trade-offs
+
+Any shape change is owner/deployment work; no AWS/Pulumi write was performed here. Incident response starts with symptoms, recent release, health/queue/DB evidence and a reversible app rollback where appropriate. Proposed general feature flags belong in validated API config/service policy; only browser-safe values should be public. No general flag service or blue/green deployment is built.
+
+Remote flag services add availability/privacy dependencies. Blue/green adds overlapping capacity while retaining shared migration risk. Future controls include flag ownership/expiry, compatibility tests, staged cohorts, audit trails, canary criteria and expiring approvals.
+
+### Code anchors
 
 - Anchor: `infra/index.ts` · `dataEnabled`, `computeEnabled`, `entryEnabled` and the two `RunError` checks.
 
-`infra/Pulumi.dev.yaml` commits the shape; `apps/api/src/config/env.ts` validates INVENTORY_GATE_ENABLED. Proposed feature flags belong in validated API config/service policy with browser-safe public values only. Incident response starts from symptom, recent release, health/queue/DB evidence and reversible app rollback, not an unreviewed infrastructure teardown.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#delivery-rollback) · [explorer tour](../guides/infra-explorer.html?tour=deploy)
 
-`infra/Pulumi.dev.yaml` commits the shape; `apps/api/src/config/env.ts` validates INVENTORY_GATE_ENABLED. Proposed feature flags belong in validated API config/service policy with browser-safe public values only. Incident response starts from symptom, recent release, health/queue/DB evidence and reversible app rollback, not an unreviewed infrastructure teardown.
-
-Failure thought experiment: Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#delivery-rollback) and [explorer tour](../guides/infra-explorer.html?tour=deploy).
-
-## 7. Our settings and WHY
-
-Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off. A reversible behavior switch can reduce blast radius but stale flags create hidden paths.
-
-## 8. Trade-offs
-
-Blue/green costs overlapping capacity and still shares data migration risk. Remote flag services add availability and privacy dependencies.
-
-## 9. Alternatives and when to choose them
-
-10x: flag owner/expiry and compatibility tests. 100x: staged cohorts, audit history and automated canary criteria.
-
-## 10. What breaks and how we notice
-
-Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Committed data/compute/entry/CDN switches define graph shape; current dev data/compute/entry are true and CDN false. Change mode with entry off. SSM image/deployed-commit records are separate. Standing queues/storage/secrets/ECR may retain costs while hourly services are off.
-- **Senior:** An environment switch controls infrastructure shape; a product feature flag controls behavior and needs ownership, expiry and safe defaults. MiniTickets commits data/compute/entry/CDN switches and uses a runtime inventory gate setting. It has rolling ECS deployments; blue/green and a general flag service are explain-only.
-- **Lead:** 10x: flag owner/expiry and compatibility tests. 100x: staged cohorts, audit history and automated canary criteria.
-
-## 14. Follow-up questions with answers
-
-Is cdnEnabled a per-user product flag? No; it changes the infrastructure graph.
-
-## 15. Say it in 30 seconds
-
-An environment switch controls infrastructure shape; a product feature flag controls behavior and needs ownership, expiry and safe defaults. MiniTickets commits data/compute/entry/CDN switches and uses a runtime inventory gate setting. It has rolling ECS deployments; blue/green and a general flag service are explain-only.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=cost-switches#chapter=1&piece=pulumi).
 
 ## Where it appears in the story
 
 - [Infra story: 14. Pulumi and the switches](../infra-story.md#14-pulumi-and-the-switches)
+
+</details>

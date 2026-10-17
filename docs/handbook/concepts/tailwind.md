@@ -3,27 +3,54 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built · Step doc: [03 landing](../../03-landing.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**Tailwind CSS** styles elements with small single-purpose class names (`px-4`, `text-red-700`)
-written directly in the markup; at build time it generates only the CSS for the classes we use.
+Tailwind styles elements with small CSS utility classes written beside the markup. Its build tool generates the styles for the class names it finds.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Building with Lego bricks instead of carving each piece: a fixed set of small, standard pieces that
-you combine on the spot, and only the pieces you used are packed in the box.
+MiniTickets needs consistent spacing, colours and focus states across forms and cards. Small shared building blocks make those choices easy to see where the UI is written.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    tsx["className='mx-auto max-w-5xl px-4'"] --> build["next build<br/>PostCSS + @tailwindcss/postcss"]
-    css["globals.css<br/>@import 'tailwindcss'"] --> build
-    build --> out["one CSS file<br/>only used classes"]
+component["MiniTickets Container and Button"] -->|"complete utility class names"| build["Tailwind PostCSS build"]
+    stylesheet["globals.css"] -->|"imports Tailwind"| build
+    build -->|"generated CSS"| browser["Browser renders MiniTickets"]
 ```
 
-## 4. Where in our code
+1. Write recognised utility names in components.
+2. Run Tailwind through the web build.
+3. Load generated CSS to apply the selected styles.
+
+## 4. How do we use it in MiniTickets?
+
+Tailwind v4 runs through PostCSS. The root layout imports global CSS; shared Button, Input and Container components reuse visual rules. Responsive prefixes adjust layouts, while visible focus helps keyboard users.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses utility CSS so layout and appearance stay near the elements they affect. Tailwind generates the detected styles at build time, while shared React components provide reuse. This keeps styling local, but long class lists and undetected dynamic names need discipline. Browser review still matters because a style typo can fail silently.”
+
+## 6. Important follow-up questions
+
+- **What if a class name is misspelled?** It may produce no style and no build error; inspect the rendered UI.
+- **Why avoid building names from string fragments?** The scanner needs complete detectable class names; choose explicit class alternatives.
+- **How do you avoid repeating long styles?** Put a reusable look in a focused UI component with clear variants.
+- **Does Tailwind guarantee accessibility?** No. Semantics, contrast, focus, interaction and human testing still matter.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current setup uses Tailwind 4 through `apps/web/postcss.config.mjs`; no extra Tailwind config file is required for this small app. Optional CloudFront can cache hashed static CSS, but current public entry is direct ALB. Build/visual examples below are reference instructions, not checks rerun for this documentation edit.
+
+### Implementation reference
 
 - Anchor: `apps/web/postcss.config.mjs` · `plugins: { "@tailwindcss/postcss": {} }`: Tailwind v4 runs as a PostCSS plugin that Next.js picks up.
 - Anchor: `apps/web/src/components/ui/container.tsx` · `Container`: a typical use, `mx-auto w-full max-w-5xl px-4 sm:px-6`.
@@ -39,7 +66,7 @@ Step by step:
 4. `sm:` prefixes apply from the small breakpoint up (`sm:grid-cols-3` in `FeaturesList`).
 5. `focus-visible:outline-*` gives keyboard users a visible focus ring, but not mouse users.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 pnpm --filter @minitickets/web build
@@ -49,60 +76,42 @@ ls apps/web/.next/static/css/       # the generated CSS file(s)
 **Break it on purpose:** write a class that does not exist, e.g. `bg-indigo-650`. There is no
 error; it silently has no effect. Tailwind generates only classes it recognises.
 
-## 6. How it connects
-
-- **Uses ←** Next.js's built-in PostCSS support.
-- **Gives →** the look of every component; the static CSS file is served from `/_next/static/*`,
-  which CloudFront caches ([cdn-caching](cdn-caching.md)).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 Tailwind v4 with zero config (no `tailwind.config.js`). WHY: v4 finds class names in the source by
 itself, so there is nothing to configure for a small app.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** no naming of CSS classes; styles next to markup; small final CSS; consistent spacing
   and colour scale.
 - **Cons:** long class strings; dynamic class names built from variables (`"bg-" + color`) are not
   detected; a typo fails silently.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **CSS Modules:** scoped plain CSS; good when designers write CSS.
 - **A component library** (shadcn/ui on Tailwind, MUI): faster for big UIs.
 - **CSS-in-JS** (styled-components): runtime cost; less common with Server Components.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 Silent: missing styles from typos or dynamic class names. Visible only in the browser (the e2e tests
 don't check styles).
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** We style with small ready-made classes instead of writing CSS files.
-- **Senior:** Tailwind v4 as a PostCSS plugin; `globals.css` imports it once; components compose
-  utilities and shared looks are React components (`Button` variants), not CSS classes. The build
-  emits only used utilities.
-- **Lead:** Utility CSS makes styles local and deletable, which keeps CSS from growing forever. The
-  reuse unit becomes the component, so a small design system of components matters more than CSS
-  conventions.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *How does Tailwind keep CSS small?* It scans source files and generates only the classes it finds.
 - *How do you reuse styles?* Components (`Button`), not `@apply`.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"Tailwind v4 via PostCSS with no config. One import in globals.css; components use utility classes,
-and reusable looks are React components like Button and Input. The build outputs only the classes we
-actually use."
+- [cdn-caching](cdn-caching.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=tailwind#chapter=0&piece=laptop-web).
 
 ## Where it appears in the story
 
 - [App story: 1. Browser → Next.js: layout, server vs client components, proxy guard](../app-story.md#1-browser--nextjs-layout-server-vs-client-components-proxy-guard)
+
+</details>

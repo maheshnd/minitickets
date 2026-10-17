@@ -3,80 +3,78 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-API_INTERNAL_URL is runtime server-only configuration: localhost locally, api:4000 via Docker/Service Connect on AWS. The browser uses same-origin /trpc on AWS and never resolves internal service names.
+A server-to-server call goes from one backend process to another. For MiniTickets, the Next.js web server calls the separate API while preparing an events page.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Road signs find the right building, guards allow the right door and staff badges allow specific service actions.
+The browser should receive an initial event list without first downloading JavaScript and requesting it. Web needs its own usable API address; a browser-relative URL is not enough on the server.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser HTTPS ALB"] --> n1
-    n1["Target SG and task ENI"] --> n2
-    n2["API private route"] --> n3
-    n3["DB SG and credentials"]
+browser["Browser"] -->|"request /events"| web["Next.js web server"]
+    web -->|"API_INTERNAL_URL + typed HTTP call"| api["MiniTickets API"]
+    api -->|"first search page"| web
+    web -->|"HTML and saved query data"| browser
 ```
 
-## 4. Where in our code
+1. Read and validate the server-only API address at request time.
+2. Call the API over HTTP and prepare the first result page.
+3. Send rendered content and matching query data to the browser.
+
+## 4. How do we use it in MiniTickets?
+
+Web uses localhost locally and the api service name in Compose or ECS Service Connect. Browser calls have separate public configuration. Current event search is public, so this server client does not forward the visitor’s session cookie.
+
+## 5. Interview-ready answer
+
+“MiniTickets web and API remain separate applications. During event rendering, web uses a runtime server-only URL and a typed HTTP client to fetch data. The browser receives HTML and query data, then uses its own public API route. Private rendering would additionally need deliberate cookie forwarding and strict cache isolation.”
+
+## 6. Important follow-up questions
+
+- **Can the browser resolve the internal API name?** No. Use public same-origin routing for browser calls.
+- **What if the internal URL is missing?** Lazy validation throws a clear server error; the events error boundary handles the render failure.
+- **Does import type run API code in web?** No. The server client still makes a real HTTP request.
+- **Could we prefetch private data the same way?** Only with deliberate credentials and per-user isolation; never put private responses in a shared cache.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current implementation
+
+`apps/web/src/lib/server-env.ts` validates and memoizes `API_INTERNAL_URL` lazily, so image builds do not require runtime configuration. `apps/web/src/lib/trpc/server.ts` uses `httpLink` and a per-request QueryClient with no server retries. `prefetch-events.ts` now calls `events.search` as an infinite query. ECS Service Connect is implemented; old statements calling this integration proposed or saying AWS cannot reach api are obsolete. Live AWS acceptance remains pending.
+
+### Technical limits and diagnosis
+
+getServerEnv lazily validates and memoizes the runtime URL, keeping image build configuration separate. getServerTrpc is request-scoped and uses httpLink; browser batching is a separate client. The per-request QueryClient retries no server queries. Current public search forwards no visitor cookie. Private SSR would need explicit credential forwarding and isolation from shared caches.
+
+Missing/invalid configuration throws at request time and can reach the events error boundary. A private-network failure needs alias, endpoint, route and source-group diagnosis before application passwords. Service Connect is built. The browser cannot resolve its private aliases. Public tasks avoid NAT in dev; private placement changes outbound reach and cost. No deployment or live network check occurred in this rewrite.
+
+### Source anchors
 
 - Anchor: `.github/workflows/ci.yml` — `module configuration`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/lib/server-env.ts` — `ServerEnvSchema`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/lib/trpc/server.ts` — `getServerTrpc`; follow the numbered comments at this boundary.
 - Anchor: `docker-compose.yml` — `module configuration`; follow the numbered comments at this boundary.
 
-`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
+### Related reading
 
-## 5. See it yourself
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#network-boundaries)
+- [explorer tour](../guides/infra-explorer.html?tour=database-reach)
+- [infra-story: 4b. Private service discovery and asynchronous workers](../infra-story.md#4b-private-service-discovery-and-asynchronous-workers)
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
-
-Failure thought experiment: Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#network-boundaries) and [explorer tour](../guides/infra-explorer.html?tour=database-reach).
-
-## 7. Our settings and WHY
-
-API_INTERNAL_URL is runtime server-only configuration: localhost locally, api:4000 via Docker/Service Connect on AWS. The browser uses same-origin /trpc on AWS and never resolves internal service names. A valid password cannot repair a missing route or blocked SG.
-
-## 8. Trade-offs
-
-Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.
-
-## 9. Alternatives and when to choose them
-
-10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
-
-## 10. What breaks and how we notice
-
-Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** API_INTERNAL_URL is runtime server-only configuration: localhost locally, api:4000 via Docker/Service Connect on AWS.
-- **Senior:** First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
-- **Lead:** 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
-
-## 14. Follow-up questions with answers
-
-Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
-
-Which control is stateful? **Security group.**
-
-## 15. Say it in 30 seconds
-
-First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=server-to-server-calls#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [infra-story: 4b. Private service discovery and asynchronous workers](../infra-story.md#4b-private-service-discovery-and-asynchronous-workers)
+
+</details>

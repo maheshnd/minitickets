@@ -4,78 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Web Vitals measure field experience. LCP/INP/CLS plus TTFB/FCP are logged through a bounded normalized-route endpoint; no analytics dashboard, sampling pipeline or Lighthouse CI is built.
+## 1. What is it?
 
-## 2. Real-life comparison
+Web Vitals measure how a page feels in a real browser: when useful content appears, how quickly interactions respond and whether the layout unexpectedly moves.
 
-A stopwatch on a real visitor’s journey answers different questions from a rehearsed practice lap.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets may feel fast on the developer’s laptop but slow on a buyer’s phone. Browser measurements help identify real experiences that a server response time alone misses.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser observation"] --> n1
-    n1["Normalized bounded report"] --> n2
-    n2["API structured log"] --> n3
-    n3["Investigate route distribution"]
+    B["MiniTickets visitor browser"] -->|"observe content, interaction and layout"| H["useWebVitals"]
+    H -->|"send bounded report with normalized route"| A["telemetry.report"]
+    A -->|"validate untrusted input"| S["reportVital service"]
+    S -->|"write webVital JSON event"| L["API logs"]
 ```
 
-## 4. Where in our code
+1. Observe browser experience during actual page use.
+2. Normalize route identity and validate the report.
+3. Record the measurement; use separate analysis to understand distributions.
+
+## 4. How do we use it in MiniTickets?
+
+The browser reports performance to the API, which logs it without query strings or user IDs. This reporting path is built, but a percentile dashboard and sampling pipeline are not. An untouched page may have no interaction measurement.
+
+## 5. Interview-ready answer
+
+“MiniTickets collects browser performance measurements rather than assuming server speed equals user experience. It reports content appearance, interaction responsiveness and layout stability through a validated endpoint and structured logs. The reports are untrusted and privacy-limited. We have collection, not a complete analytics product; useful conclusions would require representative populations and percentile analysis, with lab tools used to reproduce specific slow cases.”
+
+## 6. Important follow-up questions
+
+- **What does interaction responsiveness mean?** How long the browser takes to visibly respond after a qualifying interaction.
+- **Why might INP be absent?** The page needs qualifying interactions before an interaction metric can exist.
+- **Can a client report be trusted?** No. Validate and bound it; do not use it for authorization or critical accounting.
+- **Does a fast lab run prove field performance?** No. Real devices, networks and interactions vary.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Metrics and implementation
+
+LCP measures main content appearance; INP interaction responsiveness; CLS unexpected layout movement. TTFB/FCP are also reported. Reference good Core Web Vitals targets at the **75th percentile**: LCP ≤**2.5 s**, INP ≤**200 ms**, CLS ≤**0.1**; these are external guidance, not measured MiniTickets service guarantees.
+
+`apps/web/src/features/telemetry/hooks/use-web-vitals.ts` submits bounded values and normalized routes to `telemetry.report`. `packages/shared/src/schemas/web-vitals.ts` validates external input; `apps/api/src/services/telemetry.ts` logs `webVital` without query strings or user IDs. No analytics dashboard, sampling service or Lighthouse CI job is built.
+
+### Evidence and growth
+
+`pnpm demo:security` includes browser interaction to produce INP and validates the request boundary. This rewrite did not rerun it and claims no live AWS acceptance. Logs are not percentile analytics. Future work may sample ingestion, group suitable populations by route/device/network and add a metrics backend with explicit retention/privacy budgets. Lighthouse supplies reproducible lab evidence, not real-user field truth.
+
+### Code anchors
 
 - Anchor: `apps/api/src/services/telemetry.ts` — `reportVital`; follow the numbered comments at this boundary.
 - Anchor: `apps/web/src/features/telemetry/hooks/use-web-vitals.ts` — `report`; follow the numbered comments at this boundary.
 - Anchor: `packages/shared/src/schemas/web-vitals.ts` — `WebVitalInput`; follow the numbered comments at this boundary.
 
-`apps/web/src/features/telemetry/hooks/use-web-vitals.ts` reports bounded values and normalized routes to telemetry.report; `apps/api/src/services/telemetry.ts` logs webVital without query strings or user ids. Run `pnpm demo:security`; the browser test interacts to produce INP and checks request validation. No reporting dashboard or sampling service is built.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#web-vitals) · [explorer tour](../guides/infra-explorer.html?tour=security-layers)
 
-Run `pnpm demo:security` and inspect the asserted outcome described above.
-
-Failure thought experiment: Why no INP on a page never touched? It needs qualifying interactions. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#web-vitals) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
-
-## 7. Our settings and WHY
-
-Web Vitals measure field experience. LCP/INP/CLS plus TTFB/FCP are logged through a bounded normalized-route endpoint; no analytics dashboard, sampling pipeline or Lighthouse CI is built. Field data catches slow devices, real network conditions and long interactions.
-
-## 8. Trade-offs
-
-Logs are simple but not a percentile analytics product. Client reports are untrusted. Lighthouse is repeatable lab evidence, not field truth.
-
-## 9. Alternatives and when to choose them
-
-10x: sample ingestion and group by device/network. 100x: dedicated metrics pipeline, retention and privacy budgets.
-
-## 10. What breaks and how we notice
-
-Why no INP on a page never touched? It needs qualifying interactions.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Web Vitals measure field experience.
-- **Senior:** LCP measures the main content appearing, INP interaction responsiveness and CLS unexpected layout shifts. Use field measurements grouped by route/device and percentile, then reproduce slow cases in lab tools. A single fast laptop run is not a user population. Good Core Web Vitals target the 75th percentile: LCP ≤2.5 s, INP ≤200 ms and CLS ≤0.1.
-- **Lead:** 10x: sample ingestion and group by device/network. 100x: dedicated metrics pipeline, retention and privacy budgets.
-
-## 14. Follow-up questions with answers
-
-Why no INP on a page never touched? It needs qualifying interactions.
-
-Which metric measures interaction responsiveness? **INP.**
-
-## 15. Say it in 30 seconds
-
-LCP measures the main content appearing, INP interaction responsiveness and CLS unexpected layout shifts. Use field measurements grouped by route/device and percentile, then reproduce slow cases in lab tools. A single fast laptop run is not a user population. Good Core Web Vitals target the 75th percentile: LCP ≤2.5 s, INP ≤200 ms and CLS ≤0.1.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: sample ingestion and group by device/network. 100x: dedicated metrics pipeline, retention and privacy budgets.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=web-vitals#chapter=8&piece=web-task).
 
 ## Where it appears in the story
 
 - [app-story: 1c. Side path: browser vitals and accessibility](../app-story.md#1c-side-path-browser-vitals-and-accessibility)
+
+</details>

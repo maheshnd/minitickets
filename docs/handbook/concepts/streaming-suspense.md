@@ -3,141 +3,95 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Frontend · Status: ✅ built · Step doc: [22 events SSR](../../22-events-ssr.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**Streaming** sends one HTTP response in pieces: `<Suspense>` marks the part of the page that waits
-for data, so the server sends the rest (header, heading, a skeleton) at once and the finished part
-later in the **same** response.
+Streaming sends one page response in pieces. Suspense marks a part that can wait, allowing the rest of the page to arrive with a temporary placeholder.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A restaurant that brings bread and water as soon as you sit down and the main course when the
-kitchen is done. One visit to your table, not "wait at the door until everything is cooked".
+If MiniTickets search is slow, visitors can still see the heading and filters promptly. They should not stare at a blank page while the event list loads.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant W as Next.js server
-    participant A as api
-    B->>W: GET /events
-    W-->>B: chunk 1: shell + skeleton (template B:0)
-    W->>A: events.list
-    A-->>W: events
-    W-->>B: chunk 2: div hidden S:0 + swap script
-    Note over B: script moves S:0 into B:0's place
+flowchart LR
+page["EventsPage"] -->|"send heading, filters and fallback first"| browser["Browser"]
+    page -->|"await first events.search page"| api["MiniTickets API"]
+    api -->|"return results"| page
+    page -->|"stream list and replacement instruction"| browser
 ```
 
-## 4. Where in our code
+1. Render the data-independent page frame and list skeleton.
+2. Wait inside the list’s Suspense boundary.
+3. Send the finished list later in the same response.
+
+## 4. How do we use it in MiniTickets?
+
+The events page wraps `EventListWithServerData` in Suspense. It prefetches current search data and passes it to the client list. The events error boundary handles unexpected render failures. Rendering remains per request.
+
+## 5. Interview-ready answer
+
+“MiniTickets streams its events page so the shell can arrive before search results. Suspense supplies a list skeleton, then React sends the finished content in the same response. It improves perceived speed rather than query speed. Once headers are sent, later errors need logs and an error boundary because the HTTP status cannot be changed.”
+
+## 6. Important follow-up questions
+
+- **Is this a WebSocket connection?** No. It is one ordinary HTTP response delivered progressively.
+- **What if a proxy buffers the response?** The visitor loses the early-shell benefit; measure through the complete deployed path.
+- **What if JavaScript is disabled?** Historical local checks found streamed titles in HTML but the client replacement did not reveal them.
+- **Does a fast first byte prove a fast usable page?** No. Measure result arrival, layout stability and interaction too.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current boundary and rendering flow
+
+EventsPage awaits URL searchParams, validates filters and sends data-independent heading/filter content outside a list Suspense boundary. EventListWithServerData awaits prefetchEvents, now an infinite events.search prefetch, then renders HydrationBoundary and EventList. The fallback EventListSkeleton also serves the browser loading state. Explicit Suspense keeps the heading outside the waiting region; there is no route loading.tsx. force-dynamic keeps rendering per request.
+
+React can flush a placeholder/skeleton, then send hidden list content plus an instruction to replace it within the same HTTP response. Generated marker names such as B:0/S:0 are historical implementation observations, not a stable application API. Existing parent/child filter keys distinguish the form and list boundary so React does not confuse sibling identities when filters change.
+
+If render fails after response headers are sent, the status cannot change to 500. app/events/error.tsx handles the render error; logs and its diagnostic digest remain necessary because a 200 alone does not prove a successful page. Buffers in proxies, compression or a CDN can prevent early chunks from reaching users. Measure the entire path rather than only localhost.
+
+### Historical local measurements
+
+Step22 measured an isolated production build, originally using events.list. These checks were not rerun for this rewrite:
+
+| API speed | Shell + skeleton | List chunk |
+| --- | --- | --- |
+| Normal, roughly 2 ms | +21.9 ms | +23.1 ms |
+| Added 500 ms delay proxy | +22.2 ms | +531.0 ms |
+
+A curl run with the slow API recorded approximately 6 ms median TTFB over five runs and 513 ms full response. A smaller-than-result skeleton coincided with CLS 0.084 in one of three Lighthouse runs. These are historical observations, not production promises.
+
+The raw stream reader from Next's installed streaming guide can inspect chunks; a historical curl check looked for template B:0 and hidden S:0. With JavaScript disabled, titles were attached in HTML but the swap script did not reveal them. Next's handling of HTML-limited bots and metadata can differ; the recorded Lighthouse runs still received shell then list. Current Service Connect is built; deployed ALB/CDN streaming acceptance remains pending.
+
+### Alternatives
+
+Waiting for all content simplifies status handling and can reveal complete HTML without the replacement step, but delays the first response. loading.tsx provides a route-segment boundary; explicit Suspense gives finer placement. Static/cached HTML can avoid repeated waiting when privacy and freshness permit it, but current nonce HTML is private,no-store. Streaming improves arrival, not database execution time.
+
+### Source anchors
 
 - Anchor: `apps/web/src/app/events/page.tsx` · `EventsPage`: `<Suspense fallback={<EventListSkeleton />}>` around `EventListWithServerData`.
 - Anchor: `apps/web/src/features/events/components/event-list-skeleton.tsx` · `EventListSkeleton`: the fallback (also used by `EventList` when the browser fetches).
 - Anchor: `apps/web/src/app/events/error.tsx` · `EventsError`: the error boundary for anything that throws, including inside the streamed part.
 - Anchor: `apps/web/e2e/events.spec.ts` · "with JavaScript disabled": checks the streamed titles are in the page (attached, not visible).
 
-Step by step:
+### Related reading
 
-1. `EventsPage` itself does not wait for anything. It renders the heading and a `<Suspense>`.
-2. Inside it, `EventListWithServerData` is an **async** Server Component: it `await`s `prefetchEvents()`.
-   While it waits, React uses the fallback.
-3. React sends the first chunk: layout, heading, the skeleton, and a placeholder `<template id="B:0">`.
-4. When the data is back, React sends `<div hidden id="S:0">` with the real list, plus a tiny inline
-   script that moves it into the placeholder's spot and removes the skeleton.
-5. If `EventListWithServerData` throws, the nearest error boundary (`app/events/error.tsx`) takes
-   over. Once streaming has started the status code is already `200`; it cannot change to `500`.
-6. `export const dynamic = "force-dynamic"` keeps the page rendered per request (no build-time HTML).
-
-Measured on a production build (`docs/22`), with a stream-reading script:
-
-| API speed | First chunk (shell + skeleton) | List chunk |
-| --------- | ------------------------------ | ---------- |
-| normal (about 2 ms) | +21.9 ms | +23.1 ms |
-| 500 ms slower (delay proxy) | +22.2 ms | +531.0 ms |
-
-`curl` with the slow API: TTFB about 6 ms (median of 5 runs), full response about 513 ms.
-
-## 5. See it yourself
-
-Save the stream-reading script from the Next.js streaming guide
-(`apps/web/node_modules/next/dist/docs/01-app/02-guides/streaming.md`, "Observe raw chunks"), point
-it at `http://localhost:3000/events`, and run it with `node`. You see the shell chunk, then the list
-chunk with `hidden id="S:0"`.
-
-`curl -s localhost:3000/events | grep -o '<template id="B:0"\|hidden id="S:0"'` shows both markers.
-
-**Break it on purpose:** turn JavaScript off in DevTools and reload `/events`. The skeleton stays:
-the titles are in the HTML (View Source), but the swap script never runs.
-
-## 6. How it connects
-
-- **Uses ←** [server-client-components](server-client-components.md) (async Server Components),
-  [hydration](hydration.md) (the streamed chunk carries its part of the cache).
-- **Gives →** [csr-vs-ssr](csr-vs-ssr.md): SSR whose first byte does not wait for the API;
-  [ui-error-handling](ui-error-handling.md): `error.tsx` for errors in the streamed part.
-
-## 7. Our settings and WHY
-
-- **One boundary, around the list only.** The heading and layout need no data, so they are never held back.
-- **The fallback is the old skeleton**, so CSR (Step 21) and SSR look the same while waiting.
-- **No `loading.tsx`.** That file would make Next.js put the whole page behind one boundary,
-  including the heading. An explicit `<Suspense>` keeps the heading in the first chunk.
-
-## 8. Trade-offs
-
-- **Pros:** fast first byte even with a slow API; one request; the slow part does not block the rest.
-- **Cons:** the status code is fixed at `200` once the first chunk is out (a later error cannot
-  become a `500`); content arrives in a hidden `<div>` that needs JavaScript to appear; a skeleton
-  that is smaller than the real list still causes a layout shift (we saw CLS 0.084 in 1 of 3
-  Lighthouse runs); proxies or compression that buffer can undo streaming.
-
-## 9. Alternatives and when to choose them
-
-- **No Suspense (wait, then send everything):** simplest, correct status codes, works without
-  JavaScript; fine when the data is always fast.
-- **`loading.tsx`:** the same mechanism for a whole route segment, with one file.
-- **Static or cached HTML (later steps):** no waiting at all, if the data may be a little old.
-
-## 10. What breaks, and how we'd notice
-
-- **A buffering layer** (a proxy, a CDN, compression) holds chunks: TTFB jumps to the data time.
-  We'd see it with the stream script; not checked through CloudFront yet (SSR does not run on AWS yet).
-- **Errors after the first chunk** return `200` with the error boundary inside. Monitoring based on
-  status codes would miss them; the web server log has the error and its `digest`.
-- **No JavaScript:** the skeleton stays forever.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** The page frame shows at once; the list fills in when the data arrives, in the same response.
-- **Senior:** `<Suspense>` around an async Server Component that awaits the API. React flushes the
-  shell with a placeholder, then streams the list in a hidden div and a swap script. With the API
-  slowed by 500 ms, TTFB stayed around 6 ms and the list arrived at about 530 ms.
-- **Lead:** Place boundaries by data dependency and importance: keep above-the-fold, data-free parts
-  in the shell; match skeleton size to avoid layout shift; remember that streaming fixes the status
-  code early, so errors must be visible in logs, not just status metrics; check every proxy on the
-  path for buffering.
-
-## 14. Follow-up questions interviewers ask
-
-- *Is streaming the same as WebSockets?* No: it is one normal HTTP response, sent in pieces.
-- *Do bots get the stream?* Next.js treats "HTML-limited" bots (for example `Twitterbot`, and
-  `Chrome-Lighthouse`) differently: it waits for the metadata before streaming. Our Lighthouse runs
-  still received the shell first and the list after.
-- *What if the boundary throws?* The nearest error boundary renders in its place.
-
-## 15. Say it in 30 seconds
-
-"The events page wraps only the list in Suspense. The shell and a skeleton go out immediately, the
-list streams in the same response when the API answers. With a 500 ms slower API, the first byte
-still came in about 6 ms. The catch: status is fixed at 200 once streaming starts, and the list needs
-JavaScript to appear."
-
-## 16. Status
-
-✅ built (verified locally on a production build). Not yet checked through CloudFront and the ALB,
-because SSR does not run on AWS yet ([server-to-server-calls](server-to-server-calls.md)).
+- [22 events SSR](../../22-events-ssr.md)
+- [server-to-server-calls](server-to-server-calls.md)
+- [server-client-components](server-client-components.md)
+- [hydration](hydration.md)
+- [csr-vs-ssr](csr-vs-ssr.md)
+- [ui-error-handling](ui-error-handling.md)
+- [Open this piece in the city explorer](../guides/infra-explorer.html?concept=streaming-suspense#chapter=0&piece=laptop-web)
+- [App story: 10b. Reading events](../app-story.md#10b-reading-events)
 
 ## Where it appears in the story
 
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+
+</details>

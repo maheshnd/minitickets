@@ -4,109 +4,80 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Testing · Status: ✅ built · Step doc: [10 CI](../../10-ci.md)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-**Unit tests** check one small piece of logic in isolation, fast and without servers; ours are
-Vitest files named `*.test.ts` next to the code they test.
+## 1. What is it?
 
-## 2. Real-life comparison
+A unit test checks a small rule in isolation. It should run quickly and tell us which rule failed without needing a running application.
 
-Testing each light bulb on a bench before wiring the house. Quick, cheap, and if one fails you know
-exactly which bulb.
+## 2. Why do we need it?
 
-## 3. Picture it
+A malicious return URL can redirect a user away after login. Testing several dangerous URLs directly is faster and clearer than repeating an entire login journey for each case.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    v["vitest.config.mts<br/>include: apps/*/src/**/*.test.ts,<br/>packages/*/src/**/*.test.ts"] --> t1["shared: auth.test.ts"]
-    v --> t2["web: safe-next.test.ts"]
-    v --> t3["api: database.test.ts"]
-    v --> t4["api: init.test.ts, trust-proxy.test.ts"]
+    V["MiniTickets Vitest"] -->|"check email and password input rules"| S["Shared schema tests"]
+    V -->|"check unsafe return URLs"| U["getSafeNext tests"]
+    V -->|"check fresh, stale and failed cache paths"| C["Events service tests with fakes"]
+    S -->|"report precise rule failures"| Q["CI quality gate"]
+    U -->|"report precise rule failures"| Q
+    C -->|"report precise rule failures"| Q
 ```
 
-## 4. Where in our code
+1. Choose risky rules and representative edge cases.
+2. Control dependencies and time so outcomes are repeatable.
+3. Use real-store tests separately for guarantees a fake cannot demonstrate.
+
+## 4. How do we use it in MiniTickets?
+
+Vitest finds tests beside source files. Schemas, redirect protection, configuration parsing and service decisions have focused checks. Cache tests use fake dependencies and clocks; those checks demonstrate application decisions, not real Redis or database behavior.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses fast unit tests for rules that are easy to get subtly wrong: validation, redirects, configuration and cache decisions. Tests live beside the source, with controlled dependencies where useful. I judge them by the risks they cover and the failures they explain, rather than a coverage percentage. Actual transaction and network behavior need other tests.”
+
+## 6. Important follow-up questions
+
+- **What should stay out of a unit test?** Claims about real database locking, network reach or AWS permissions.
+- **Can fakes mislead us?** Yes. A fake can agree with our assumption while the real service behaves differently.
+- **What if a test is never discovered?** Check the filename pattern; our unit tests use .test.ts.
+- **Do you target a coverage number?** Prioritize risky rules and meaningful edge cases, then inspect gaps.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Configuration and examples
+
+`vitest.config.mts` selects `apps/*/src/**/*.test.ts` and `packages/*/src/**/*.test.ts`; e2e `*.spec.ts` is not selected. One root config keeps tests beside code. Root dependencies provide Vitest; this rewrite makes no version upgrade.
+
+Examples: `packages/shared/src/schemas/auth.test.ts` checks trimmed/lowercased email and mismatch on `confirmPassword`; `apps/web/src/features/auth/lib/safe-next.test.ts` covers open redirects, historically six cases including four attacks. Database config tests cover local/AWS settings, TLS and errors. tRPC init/proxy tests run real code in process. Events service tests fake queries/cache for hit, miss, errors and corrupt values; cache-query tests fake Redis and timers for keys, TTL and **100 ms** budgets.
+
+### Historical evidence and limits
+
+The original card’s seven files / 34 tests and older five-file answer are historical snapshots, superseded by later handbook evidence of **404 Vitest tests**. Its statement that services/queries are untested is obsolete: the listed service/query tests already use fakes. The original `EX` TTL reference describes an earlier cache version; current cache expiry uses millisecond budgets. Counts/speed were not rerun here. No coverage report is claimed.
+
+`pnpm test` runs the suite; `pnpm test safe-next` selects matching tests. Removing the protocol-relative-URL rejection would make its security case fail; no such edit was made. Jest is an alternative; real-store integration tests, potentially with Testcontainers, cover gaps that extensive mocking cannot establish.
+
+### Code anchors
 
 - Anchor: `vitest.config.mts` · `include`: which files are unit tests (e2e `*.spec.ts` are never picked up).
 - Anchor: `packages/shared/src/schemas/auth.test.ts` · `SignupInput`: trims/lowercases email; mismatch error on `confirmPassword`.
 - Anchor: `apps/web/src/features/auth/lib/safe-next.test.ts` · `getSafeNext`: 6 cases including 4 attacks.
-- Anchor: `apps/api/src/queries/events-cache.test.ts` · `getUpcomingFromCache`, `setUpcomingInCache`: fake Redis client; checks the key, the `EX` TTL and the 100 ms timeout (fake timers).
+- Anchor: `apps/api/src/queries/events-cache.test.ts` · `getUpcomingFromCache`, `setUpcomingInCache`: fake Redis client checks keys, millisecond expiry and the 100 ms timeout with fake timers.
 - Anchor: `apps/api/src/services/events.test.ts` · `listUpcomingEvents`: service test with in-memory fakes of the query layer and the cache layer (no Postgres, no Redis): hit, miss, Redis error, corrupt value.
 
-Our test files (7 files, 34 tests when I last ran `pnpm test`):
+### Related reading
 
-| File | What it checks |
-| ---- | -------------- |
-| `packages/shared/src/schemas/auth.test.ts` | Email normalisation; password mismatch path |
-| `apps/web/src/features/auth/lib/safe-next.test.ts` | Open-redirect protection |
-| `apps/api/src/config/database.test.ts` | Local vs AWS database settings, SSL on, clear errors |
-| `apps/api/src/trpc/init.test.ts` | Error mapping ([in-process-api-tests](in-process-api-tests.md)) |
-| `apps/api/src/config/trust-proxy.test.ts` | Real client IP behind proxies ([in-process-api-tests](in-process-api-tests.md)) |
-| `apps/api/src/services/events.test.ts` | `events.list` rules, and the cache-aside paths with fake cache and query layers ([cache-aside](cache-aside.md)) |
-| `apps/api/src/queries/events-cache.test.ts` | Cache key, `EX` TTL and the 100 ms timeout, with a fake Redis client |
+[in-process-api-tests](in-process-api-tests.md) · [cache-aside](cache-aside.md) · [testing-pyramid](testing-pyramid.md) · [ci-pipeline](ci-pipeline.md)
 
-## 5. See it yourself
-
-```bash
-pnpm test                 # all unit tests, about a quarter of a second here
-pnpm test safe-next       # one file
-```
-
-**Break it on purpose:** in `getSafeNext`, drop `!next.startsWith("//")`: the "protocol-relative
-URL" case fails with a clear diff.
-
-## 6. How it connects
-
-- **Uses ←** Vitest 5 (root `devDependencies`).
-- **Gives →** the fast layer of the [testing-pyramid](testing-pyramid.md); runs in the
-  [ci-pipeline](ci-pipeline.md) quality job.
-
-## 7. Our settings and WHY
-
-One root Vitest config for all packages; tests beside the code; pure functions and schemas first.
-WHY: fast enough to run on every save; easy to find the test for a file.
-
-## 8. Trade-offs
-
-- **Pros:** milliseconds; precise failures; no infrastructure.
-- **Cons:** services and queries aren't unit-tested (they need Postgres/Redis or mocks); no coverage
-  reporting.
-
-## 9. Alternatives and when to choose them
-
-- **Jest:** the older standard; Vitest is faster with ESM/TypeScript.
-- **Testing with mocks** for services: possible, but mocks can lie (explain-only card `mocking`).
-- **Integration tests with real stores** (Testcontainers): for queries and services.
-
-## 10. What breaks, and how we'd notice
-
-A test file named `*.spec.ts` under `src/`: Vitest ignores it (the pattern is `*.test.ts`), and it
-silently never runs.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Small automatic checks for small pieces of code.
-- **Senior:** Vitest with one root config that picks up `*.test.ts` in every package. We test pure
-  logic: schemas, the redirect guard, config parsing, plus error mapping and proxy handling through
-  in-process calls. They run in the quality job before anything slower.
-- **Lead:** Unit tests should cover rules that are easy to get subtly wrong (security checks, parsing,
-  mappings). For services I'd prefer integration tests against real Postgres and Redis over heavy
-  mocking.
-
-## 14. Follow-up questions interviewers ask
-
-- *What do you unit-test vs e2e-test?* Rules and edge cases in units; user journeys end to end.
-- *Coverage target?* Not a number; cover risky logic.
-
-## 15. Say it in 30 seconds
-
-"Vitest, one root config, tests next to the code as .test.ts. Five files today: shared schemas, the
-open-redirect guard, database config parsing, the error mapper and the trust-proxy logic. They run in
-well under a second and gate the CI quality job."
-
-## 16. Status
-
-✅ built.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=unit-tests#chapter=13&piece=github).
 
 ## Where it appears in the story
 
 - [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)
+
+</details>

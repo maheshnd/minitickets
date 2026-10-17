@@ -25,9 +25,141 @@ flowchart LR
 
 ---
 
-## 2026-10-16 · docs(handbook): shorten concept cards for interview revision
+## 2026-10-17 · docs(handbook): complete concise concept card format
 
 Commit: filled in by the next handbook commit
+
+Why: finish the remaining 116 cards so all 152 concepts have one short learning flow and interview answer, with technical reference folded away. Preserve built/partial/explain-only status and distinguish current implementation, historical local evidence and pending live acceptance.
+
+- `concepts/accessible-forms.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/app-router.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/arm64-graviton.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/authn-vs-authz.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/autoscaling.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/backups-dr.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/budget-alerts.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cache-filter-keys.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cache-invalidation.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cache-key-versioning.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cache-stampede.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cdn-caching.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/circuit-breaker.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/compression.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/config-validation.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/connection-pooling.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/container-hardening.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/correlation-ids.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cors.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/cost-switches.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/csp.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/csrf.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/db-check-constraints.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/docker-layer-caching.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/docker-multi-stage.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/door-checkin.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/drizzle-schema.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/e2e-tests.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/ecs-exec.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/encryption-at-rest.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/end-to-end-types.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/error-handling.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/explain-analyze.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/fail-fast.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/fargate-spot.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/fastify-app.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/feature-folders.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/graceful-degradation.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/graceful-shutdown.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/high-availability.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/http-status-codes.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/http-versions.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/hydration.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/image-scanning.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/immutable-image-tags.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/in-process-api-tests.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/indexing.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/infrastructure-as-code.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/inventory-gate.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/keyset-pagination.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/kms.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/layered-api.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/least-privilege.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/lighthouse-ci.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/live-seats.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/load-balancing-algorithms.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/log-redaction.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/metrics.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/migrations.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/monolith-vs-microservices.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/monorepo.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/next-data-cache.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/open-redirect.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/origin-protection.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/password-hashing.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/postgres-page-cache.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/protected-procedure.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/query-invalidation.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/rbac.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/rds-managed-password.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/regions-and-azs.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/release-guard.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/reminders.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/retry-policy.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/route-guard-proxy.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/rpc-vs-rest.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/same-origin-routing.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/scaling.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/search-races.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/secrets-management.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/seed-data.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/server-client-components.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/server-to-server-calls.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/service-connect.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/session-cookie.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/session-revocation.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/slo-error-budget.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/sql-injection.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/sql-vs-nosql.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/stale-while-revalidate.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/state-management.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/stateless-servers.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/static-checks.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/streaming-suspense.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/structured-logging.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/tailwind.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/tanstack-query.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/testing-pyramid.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/ticket-signing.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/tls-in-transit.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/tls-termination.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/tracing.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/trpc-client.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/trpc-context.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/trpc-middleware.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/trust-proxy.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/ttl.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/twelve-factor-config.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/ui-error-handling.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/unique-constraint-race.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/unit-tests.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/user-enumeration.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/validation-at-boundaries.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/virtualization.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/web-vitals.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `concepts/xss.md`: rewrite into seven sections with one labeled diagram, a short flow and four answered follow-ups; consolidate useful technical/source/operational detail in Advanced details.
+- `learning-path.md`: keep the six-part reading order, mark both rewrite batches complete and clarify stale or abbreviated answer goals.
+- `README.md`: describe the seven-section format for every concept, and separate card conventions from story-chapter conventions.
+- `CHANGELOG.md`: record this completed rewrite batch and fill the preceding card-revision entry’s actual commit hash.
+
+Documentation tooling: `scripts/check-concepts.ts` applies the seven-section, one-diagram, 350-word and metadata/reference checks to every concept card. Titles stay descriptive; a city nickname is no longer required. No application, infrastructure, test or runtime changes are part of this batch. The separately added `concepts-01/` handbook is untouched.
+
+Accuracy review: correct old catalogue/list hydration, migration and middleware descriptions against current source; distinguish current HTTPS ALB from inactive CloudFront; update runtime/schema/security references; preserve historical measurements without claiming new runtime tests. Cross-review also corrects Service Connect task sizes, distinguishes server SQL budgets from HTTP/network deadlines, and documents unbounded direct Redis calls and the absence of an overall shutdown deadline. Retain the existing indexing fragment used by `docs/23-events-index.md`.
+
+Validation: all 116 main sections contain 217–264 words and keep original titles/status, History, link targets and source-anchor paths; the original 36 cards and all `concepts-01/` files are untouched. All 158 Mermaid diagrams render (152 cards + six reading-path maps). Typecheck, lint and `git diff --check` pass; 25 isolated checker probes pass. Workspace `pnpm docs:check` reports only 28 missing History lines in `concepts-01/`, reproduced at starting commit `15663d7`; there are zero new errors and no concept-card failures. A disposable fixture supplying only those missing lines passes the complete check (152 cards / 141 anchor slugs / 331 places). Application tests and live AWS acceptance were not rerun.
+
+## 2026-10-16 · docs(handbook): shorten concept cards for interview revision
+
+Commit: 544b2bb
 
 Why: make the recorded 36-card interview batch understandable in one read and quick to revise, while preserving technical reference facts and machine-readable links. The other 116 cards remain the next batch.
 

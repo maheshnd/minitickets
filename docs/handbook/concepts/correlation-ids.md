@@ -4,79 +4,76 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-A validated UUID ties API, outbox and consumer logs to one booking. It is returned in x-correlation-id and copied in messages. SSR cached calls do not attach a misleading per-user id; correlation is not a timed trace.
+## 1. What is it?
 
-## 2. Real-life comparison
+A correlation ID is a shared label for work that belongs to one request. It lets us connect records written by different processes.
 
-A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
+## 2. Why do we need it?
 
-## 3. Picture it
+A booking succeeds but its email arrives late. One label helps us find that booking’s API, outbox and worker records without guessing from timestamps or customer details.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Booking correlation id"] --> n1
-    n1["API and worker JSON"] --> n2
-    n2["Logs Insights"] --> n3
-    n3["Queue/DLQ alarm"]
+    A["MiniTickets API"] -->|"validate or create correlationId"| P["Booking transaction and outbox"]
+    P -->|"copy identity in booking message"| W["Email worker"]
+    A -->|"write request records with identity"| L["Structured logs"]
+    W -->|"write matching identity"| L
+    L -->|"search one booking journey"| O["Owner investigation"]
 ```
 
-## 4. Where in our code
+1. Accept a valid request label or create a fresh one.
+2. Carry it through stored work and messages.
+3. Search records using that label and an appropriate time range.
+
+## 4. How do we use it in MiniTickets?
+
+The API returns its ID in a response header and stores it with asynchronous booking work. Worker helpers preserve it in logs. Server-rendered cached catalogue calls avoid assigning a misleading visitor-specific identity to shared data.
+
+## 5. Interview-ready answer
+
+“MiniTickets carries a validated correlation ID from the API through the outbox and worker message. That lets us investigate one booking across asynchronous boundaries using structured logs. It is a diagnostic label, not authorization or proof that work completed. It also is not a distributed trace: the label alone does not measure each causal step.”
+
+## 6. Important follow-up questions
+
+- **Why validate caller-provided IDs?** To reject malformed or unbounded input while keeping useful propagation.
+- **Can it identify a user securely?** No. It is not a credential or ownership check.
+- **Does it replace tracing?** No. Timed spans would add relationships and durations.
+- **Should we log the full message?** No. Useful identifiers do not justify exposing customer data.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Identity contract and evidence
+
+`apps/api/src/http/correlation-id.ts` validates a UUID from `x-correlation-id` or creates one; API responses return it. `packages/shared/src/schemas/jobs.ts` validates the message field; `apps/worker/src/correlation.ts` preserves/extracts identity. API/outbox/consumer JSON logs connect the same booking. SSR cached calls do not attach misleading per-user IDs.
+
+`infra/src/observability` defines four symptom alarms, dashboard and saved queries. Historical P2 local measurements were **115 ms request-to-email** and retry recovery around **10 s**; they are not AWS guarantees or new measurements. Runbook §3.12 provides Logs Insights/console steps. SNS email confirmation and live alarms remain manual acceptance. Unlike the old copied “proposed extension” line, correlation propagation itself is built; timed tracing is not.
+
+### Limits and growth
+
+Logs explain events; metrics show rates and traces time causal steps. Symptoms include API errors, old queue work, DLQ messages and worker invocation failures. Missing-data semantics and traffic-aware thresholds matter. Logging full messages can leak personal data. Higher traffic may justify error rates, p99 latency, sampling, SLO burn alerts and explicit retention/trace budgets; those later systems are not implied by correlation IDs.
+
+### Code anchors
 
 - Anchor: `apps/api/src/app.ts` — `statusCode`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/http/correlation-id.ts` — `CORRELATION_HEADER`; follow the numbered comments at this boundary.
 - Anchor: `apps/worker/src/correlation.ts` — `correlationIdOf`; follow the numbered comments at this boundary.
 - Anchor: `packages/shared/src/schemas/jobs.ts` — `CorrelationId`; follow the numbered comments at this boundary.
 
-`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#observability) · [explorer tour](../guides/infra-explorer.html?tour=failing-email)
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
-
-Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
-
-## 7. Our settings and WHY
-
-A validated UUID ties API, outbox and consumer logs to one booking. It is returned in x-correlation-id and copied in messages. SSR cached calls do not attach a misleading per-user id; correlation is not a timed trace. A user symptom spans asynchronous boundaries, not one process log.
-
-## 8. Trade-offs
-
-Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
-
-## 9. Alternatives and when to choose them
-
-10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 10. What breaks and how we notice
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A validated UUID ties API, outbox and consumer logs to one booking.
-- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 14. Follow-up questions with answers
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-Which signal explains a specific failed booking? **Correlated structured logs.**
-
-## 15. Say it in 30 seconds
-
-Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=correlation-ids#chapter=8&piece=logs).
 
 ## Where it appears in the story
 
 - [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)
+
+</details>

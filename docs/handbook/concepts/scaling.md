@@ -4,114 +4,76 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Reliability · Status: 🟡 partial (ready to scale out, runs 1 task) · Step doc: [17 ECS api](../../17-infra-ecs-api.md)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-**Vertical scaling** gives one server more CPU and memory; **horizontal scaling** adds more copies.
-Our api is stateless, so it can scale out, but today it runs one task.
+## 1. What is it?
 
-## 2. Real-life comparison
+Vertical scaling makes one application copy larger. Horizontal scaling runs more copies, spreading work that can be handled independently.
 
-Vertical: hire a faster cashier. Horizontal: open more tills. More tills only help if any cashier can
-serve any customer, i.e. no customer's details live in one cashier's head.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets may need more capacity for browsing during a sale. A larger task can do more work, while additional tasks can serve different requests—but neither automatically fixes one locked event row.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    alb["ALB"] --> t1["api task 1"]
-    alb -.->|"desiredCount 2+"| t2["api task 2 (planned)"]
-    t1 --> vk[("Valkey: sessions")]
-    t2 -.-> vk
-    t1 --> db[("Postgres")]
-    t2 -.-> db
+    L["MiniTickets ALB"] -->|"current: route to one API copy"| A["API task"]
+    L -->|"proposed scale-out: route independent work"| B["Additional API task"]
+    A -->|"share sessions"| R["Valkey"]
+    B -->|"proposed: share sessions"| R
+    A -->|"bounded pool and seat transactions"| P["Postgres"]
+    B -->|"proposed: additional pool, same seat authority"| P
 ```
 
-Any task can answer any request, because sessions live in Valkey, not in the task's memory.
+1. Measure whether compute or a shared dependency is limiting requests.
+2. Increase task size or add copies within connection and cost budgets.
+3. Load-test the resulting latency and failure behavior.
 
-## 4. Where in our code
+## 4. How do we use it in MiniTickets?
+
+The API uses shared sessions and can support additional copies, but current services run one task each. Every API task creates its own database pool. Scaling policies, reliable spare capacity and data-tier availability are separate work.
+
+## 5. Interview-ready answer
+
+“MiniTickets can scale independent API work horizontally because session authority is shared. Vertical scaling instead increases one task’s resources. I would first identify the bottleneck and budget total database connections. Adding tasks does not parallelize a hot event row or make a single database highly available; capacity changes need load and failure testing, not just a desired-count edit.”
+
+## 6. Important follow-up questions
+
+- **What limits horizontal growth?** Database capacity, connection totals, hot rows, downstream quotas and cost.
+- **Does horizontal scaling remove every single failure point?** No. Shared stores and routing remain dependencies.
+- **What breaks if local state becomes authoritative?** Different tasks can disagree or require fragile client affinity.
+- **When might larger tasks help?** When per-task CPU or memory is the actual measured bottleneck.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current sizes and connection budget
+
+`infra/src/compute/service.ts` sets API `desiredCount: 1`; web also has one copy. With Service Connect enabled in the current entry-enabled shape, API uses **512 CPU units / 1024 MiB**; web uses that size too. API without Service Connect and the separate migration task use **256 / 512**. `apps/api/src/db/client.ts` allows **10 Postgres connections per API task**, so N tasks can open up to **10 × N**. The small `db.t4g.micro` has a finite connection budget; exact deployed `max_connections` was not checked.
+
+Shared Valkey sessions and target-group routing support additional copies, but do not prove application/data HA. New tasks inherit intended groups/roles; capacity, health and downstream limits still need verification. Local nonauthoritative caches are acceptable; user authority or rate counters isolated per task can cause inconsistency.
+
+### Owner-only example and alternatives
+
+Historical owner exercise: `aws ecs update-service --profile ticketlite --cluster minitickets-dev --service minitickets-dev-api --desired-count 2`. This is an AWS write, not executed here; it creates drift and the next approved Pulumi deployment would restore committed count. Prefer reviewed infrastructure changes. Inspect separate `/minitickets/dev/api` log streams and sustained session behavior during an authorized exercise.
+
+Options include target tracking, scheduled scaling and RDS Proxy near connection limits. They do not eliminate hot-row serialization. The old Spot/public-IP estimates (**$0.003/$0.005 per hour**) are historical unverified figures, not current prices or linear-total-cost guarantees. Current status is partial; 2+ copies, automatic policies and a measured connection/availability budget remain future work.
+
+### Code anchors
 
 - Anchor: `infra/src/compute/service.ts` · `desiredCount: 1`: the number of api copies.
 
-What makes horizontal scaling possible, step by step:
+### Related reading
 
-1. Sessions are in Valkey (Phase 3 `stateless-servers` card), so no request depends on which task
-   served the previous one.
-2. The ALB target group spreads requests over all registered tasks.
-3. Each task has its own connection pool of up to 10 Postgres connections
-   (`apps/api/src/db/client.ts` → `pool`, Phase 3 `connection-pooling`). N tasks → up to 10·N
-   connections; `db.t4g.micro` has a limited `max_connections` (exact number not checked).
-4. Vertical: `cpu` and `memory` in `task.ts` (256 / 512 today).
+[ecs-service](ecs-service.md) · [target-groups](target-groups.md) · [high availability](high-availability.md)
 
-## 5. See it yourself
-
-```bash
-aws ecs update-service --profile ticketlite --cluster minitickets-dev --service minitickets-dev-api --desired-count 2
-```
-
-This changes the service outside Pulumi (the next `pulumi up` sets it back to 1). Log in, reload a few
-times: you stay logged in whichever task answers. Look at `aws logs tail /minitickets/dev/api` to see
-two stream names.
-
-## 6. How it connects
-
-- **Uses ←** [ecs-service](ecs-service.md), [target-groups](target-groups.md), Valkey sessions.
-- **Gives →** the base for [high availability](high-availability.md) and auto scaling (explain-only
-  card `autoscaling`, Phase 5).
-
-## 7. Our settings and WHY
-
-`desiredCount: 1` and the smallest size: dev traffic is near zero, and each task costs money every hour.
-
-## 8. Trade-offs
-
-- **Horizontal:** no single point of failure, scales far; needs stateless code and watches database
-  connection counts.
-- **Vertical:** no code changes; has a ceiling and a single point of failure.
-
-## 9. Alternatives and when to choose them
-
-- **Target tracking auto scaling** on CPU or ALB requests per target: variable traffic.
-- **Scheduled scaling:** predictable peaks.
-- **RDS Proxy:** when task count × pool size approaches the database's connection limit.
-
-## 10. What breaks, and how we'd notice
-
-- Too many connections: `remaining connection slots are reserved` errors from Postgres.
-- In-memory state added by mistake (a local cache, rate limit counters): inconsistent behaviour between
-  tasks.
-
-## 11. Reach / Allowed / Password
-
-New tasks wear the same security group and roles, so nothing changes.
-
-## 12. Cost
-
-Linear: each extra api task ≈ $0.003 an hour on Spot plus $0.005 for its public IP.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** We can run more copies of the api because it keeps no user data in memory.
-- **Senior:** Sessions in Valkey make the api stateless, the ALB spreads load, so scaling out is
-  changing `desiredCount`. The limit to watch is Postgres connections: 10 per task.
-- **Lead:** I'd scale on a metric tied to user experience (requests per target or p95 latency), cap
-  max tasks below the database connection budget, and put RDS Proxy in front before that budget runs
-  out.
-
-## 14. Follow-up questions interviewers ask
-
-- *What makes a service stateless?* No per-user state in process memory between requests.
-- *What is the first bottleneck when scaling the api?* Database connections and the database itself.
-
-## 15. Say it in 30 seconds
-
-"The api is stateless because sessions live in Valkey, so scaling out is just more tasks behind the
-ALB. Today it's one task to save money; the thing to watch when scaling is ten Postgres connections per
-task."
-
-## 16. Status
-
-🟡 partial. **To make it production-grade:** 2+ tasks, auto scaling, connection budget.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=scaling#chapter=8&piece=ecs).
 
 ## Where it appears in the story
 
 - [Infra story: 4. ECS: cluster, service, task definition, task, Spot](../infra-story.md#4-ecs-cluster-service-task-definition-task-spot)
+
+</details>

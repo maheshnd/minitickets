@@ -4,76 +4,72 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: 🟡 partial
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Canonical keys give equivalent filter inputs one identity. Venue is exact case-insensitive after trim; dates are UTC days; v3 keys include generation plus a 16-hex SHA-256 input hash.
+## 1. What is it?
 
-## 2. Real-life comparison
+A filter cache key names the exact question a cached result answers. Equivalent filters should share a key, while filters that change the result need different keys.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets visitors looking for different venues must not receive each other’s lists. At the same time, extra spaces or equivalent date formats should not cause needless duplicate cache entries.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Validated canonical input"] --> n1
-    n1["Complete public key"] --> n2
-    n2["Shared result"] --> n3
-    n3["TTL or eviction"]
+    I["MiniTickets list filters"] -->|"validate and normalize"| C["canonicalFilters"]
+    C -->|"hash complete normalized inputs"| K["upcomingKey"]
+    K -->|"read or save that public result"| R["Redis list cache"]
+    C -->|"apply same meaning to query"| P["Postgres event list"]
 ```
 
-## 4. Where in our code
+1. Validate filters and turn equivalent values into one representation.
+2. Use every result-changing input when naming the result.
+3. Apply the same meaning to the database query and cache lookup.
+
+## 4. How do we use it in MiniTickets?
+
+Legacy list filters normalize venue and UTC day ranges before hashing. Its key also includes payload version and catalogue generation. This is a public-list contract, not a way to mix authenticated user data into shared results. The card remains marked partial.
+
+## 5. Interview-ready answer
+
+“MiniTickets normalizes list filters before building the cache key, so equivalent questions reuse a result and different questions stay separate. The database query must interpret those filters identically. Hashing keeps the key bounded, but correctness comes from including every input and respecting public versus private data. I would investigate wrong results as a key-contract failure, not just clear the cache.”
+
+## 6. Important follow-up questions
+
+- **Why normalize first?** Equivalent input forms should not multiply entries or disagree with query behavior.
+- **What if a filter is omitted?** Different questions can collide semantically and return the wrong result.
+- **Does a hash hide secrets?** No. It is not encryption; avoid putting private data into public cache identities.
+- **Can one key still be a bottleneck?** Yes. Hot queries and shared generation reads can concentrate traffic.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current filter contract
+
+`apps/api/src/services/event-filters.ts` → `canonicalFilters` trims venue and uses exact case-insensitive matching; dates are UTC days. `apps/api/src/queries/events-cache.ts` uses a **16-hex-character SHA-256** input hash in `events:upcoming:v3:g<generation>:<hash>`. Include all result-changing fields; hashing cannot recover an omitted input.
+
+`apps/api/src/queries/sessions.ts` requires authoritative session-index membership; private pages are not public cache data. Shared Redis for sessions/results/quotas shares failure and eviction behavior. Public data can be rebuilt; missing session membership must fail closed, and quota eviction can reset allowance.
+
+### Verification, partial status and growth
+
+`pnpm test` covers canonical filter/key and session-eviction cases. The original status remains **🟡 partial**; this rewrite neither expands implementation nor claims live AWS acceptance. Dedicated Redis isolation remains explain-only. At higher load inspect cardinality, hot keys and eviction, then consider separate critical-store policies or measured sharding.
+
+### Code anchors
 
 - Anchor: `apps/api/src/services/event-filters.ts` — `canonicalFilters`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/event-filters.ts` normalizes filters; `queries/events-cache.ts` hashes complete inputs. `queries/sessions.ts` requires session-index membership and never caches private pages. Run `pnpm test` for canonical filter/key and session eviction cases. Dedicated Redis isolation is explain-only.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#hot-keys-privacy) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm test` and inspect the asserted outcome described above.
-
-Failure thought experiment: Is hashing a key encryption? No; do not put secrets into it assuming privacy. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#hot-keys-privacy) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-Canonical keys give equivalent filter inputs one identity. Venue is exact case-insensitive after trim; dates are UTC days; v3 keys include generation plus a 16-hex SHA-256 input hash. Missing a venue/date/user dimension can return wrong or private data.
-
-## 8. Trade-offs
-
-Hashing bounds key size but does not fix omitted input. One cache used for sessions/results/quotas shares failure and eviction behavior.
-
-## 9. Alternatives and when to choose them
-
-10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
-
-## 10. What breaks and how we notice
-
-Is hashing a key encryption? No; do not put secrets into it assuming privacy.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Canonical keys give equivalent filter inputs one identity.
-- **Senior:** A cache key must include every input that changes the result. Canonicalize dates/venue so equivalent filters share a key; keep authenticated data out of public keys. A very hot event or generation key still concentrates load. Redis eviction is acceptable for reconstructible public data, but sessions should fail closed and quotas are only advisory under eviction.
-- **Lead:** 10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
-
-## 14. Follow-up questions with answers
-
-Is hashing a key encryption? No; do not put secrets into it assuming privacy.
-
-What must a result cache key include? **All result-changing inputs.**
-
-## 15. Say it in 30 seconds
-
-A cache key must include every input that changes the result. Canonicalize dates/venue so equivalent filters share a key; keep authenticated data out of public keys. A very hot event or generation key still concentrates load. Redis eviction is acceptable for reconstructible public data, but sessions should fail closed and quotas are only advisory under eviction.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: hot-key and eviction metrics. 100x: separate security-critical stores/policies and shard only measured bottlenecks.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=cache-filter-keys#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

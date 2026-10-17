@@ -4,77 +4,75 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: DevOps & CI/CD · Status: ✅ built in repository; live acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release.
+## 1. What is it?
 
-## 2. Real-life comparison
+An immutable image tag names one fixed container image and cannot be overwritten. MiniTickets uses a Git commit identifier to connect a release to its source.
 
-A sealed package is built once, then checked at a gate before the manager installs that exact version.
+## 2. Why do we need it?
 
-## 3. Picture it
+If “the latest image” changes between approval and deployment, we may ship different code than the reviewer expected. A fixed release name makes deployment and rollback deliberate.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["CI tests"] --> n1
-    n1["Publish SHA once"] --> n2
-    n2["Approved CD plus migration"] --> n3
-    n3["Roll and smoke test"]
+    P["MiniTickets publish job"] -->|"build API, web and worker once per release"| E["ECR immutable SHA tags"]
+    E -->|"approved deploy selects existing images"| D["MiniTickets CD"]
+    D -->|"migrate then roll selected release"| A["Application services"]
+    D -->|"record selected release"| S["SSM image-tag"]
 ```
 
-## 4. Where in our code
+1. Publish release images under their commit tag.
+2. Deploy the selected published images rather than rebuilding them.
+3. Record the release and verify what actually runs.
+
+## 4. How do we use it in MiniTickets?
+
+The publish and deploy jobs are separate. An application rollback selects an existing tag while retaining current infrastructure code. Database changes, secrets and worker message formats must still be compatible; a fixed image does not freeze the whole environment.
+
+## 5. Interview-ready answer
+
+“MiniTickets publishes release images once under an immutable commit tag. Approved deployment reuses those images, making the release identifiable and allowing an explicit rollback choice. We keep application image rollback separate from infrastructure history. The important limit is compatibility: an older image must still understand the current database, configuration and messages.”
+
+## 6. Important follow-up questions
+
+- **Is a tag the same as a digest?** No. A digest identifies image content; immutability prevents our release tag being reassigned.
+- **Can we roll back any old image?** Only if it remains compatible with current data, secrets and required worker handlers.
+- **Why avoid rebuilding on deploy?** A rebuild can resolve different inputs and produce different bytes.
+- **Does this prove production works?** No. Deployment and live acceptance checks are still required.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Release contract and sources
+
+`.github/workflows/cd.yml` builds/pushes API/web/worker images in publish, resolves an existing release in deploy, then performs two-phase migration/rollout and smoke checks. `infra/src/image-tag.ts` reads the selected tag; `infra/src/release.ts` tracks infrastructure deployment history separately. Runbook §3.11–3.18 explains release acceptance. SSM `/minitickets/dev/image-tag` is written by CD; committed `infra/Pulumi.dev.yaml` defines environment shape.
+
+`scripts/push-images.sh` refuses a dirty tree and derives its local tag from `git rev-parse --short HEAD`. ECR `imageTagMutability: "IMMUTABLE"` rejects overwrite. Deployed tags are retained separately from latest-push order. Rollback must retain required worker handlers and compatible schema/config/secrets.
+
+### Trade-offs and acceptance
+
+Rolling delivery overlaps versions; blue/green adds a traffic switch and overlap cost while retaining migration risk. Future options include approval expiry, explicit rollback criteria, canary analysis and immutable release manifests. No publish, AWS write or live rollback was performed for this documentation work. The original `infra/index.ts` image-tag anchor is retained as historical navigation; current resolution is in `infra/src/image-tag.ts`.
+
+### Code anchors
 
 - Anchor: `scripts/push-images.sh` · step 3 and `TAG`: refuses a dirty tree; tag = `git rev-parse --short HEAD`.
 - Anchor: `infra/src/registry.ts` · `imageTagMutability: "IMMUTABLE"`: ECR refuses to overwrite a tag.
-- Anchor: `infra/index.ts` · `apiImageTag` / `webImageTag`: required, no `latest` default.
+- Anchor: `infra/index.ts` · historical entry-point navigation; current selected-release resolution is in `infra/src/image-tag.ts`, without a `latest` default.
 
-The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#delivery-rollback) · [explorer tour](../guides/infra-explorer.html?tour=deploy)
 
-The publish job in `.github/workflows/cd.yml` builds/pushes; its deploy job resolves release and runs two-phase deploy/migrate/smoke checks. `infra/src/image-tag.ts` reads the tag; `release.ts` tracks last deployed commit. See runbook §3.11–3.18. No publish, AWS write or live rollback was performed by this documentation work.
-
-Failure thought experiment: Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#delivery-rollback) and [explorer tour](../guides/infra-explorer.html?tour=deploy).
-
-## 7. Our settings and WHY
-
-One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release. Rebuilding on deploy can ship bytes that were never reviewed or tested.
-
-## 8. Trade-offs
-
-Rolling deployment overlaps versions. Blue/green gives a switchable target but costs overlap and still needs compatible migrations. Secrets/config are part of release compatibility.
-
-## 9. Alternatives and when to choose them
-
-10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
-
-## 10. What breaks and how we notice
-
-Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** One immutable SHA names the api/web/worker images built by publish. Deploy reuses them; deployed tags are retained separately from latest push order. An older app tag must have compatible schema and required worker handlers; SSM records the selected release.
-- **Senior:** Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
-- **Lead:** 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
-
-## 14. Follow-up questions with answers
-
-Should rollback run old Pulumi code? No; image rollback and infrastructure rollback are different risks.
-
-## 15. Say it in 30 seconds
-
-Publish API/web/worker images once with the git SHA after CI, then deploy that immutable release. The environment switches live in committed Pulumi YAML; deployed image tag lives in SSM and is written by CD. Migration runs before rollout. Roll back app images to a known tag while respecting current schema and current infrastructure.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: expired approvals and automated rollback criteria. 100x: canary analysis, immutable manifests and cross-service compatibility.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=immutable-image-tags#chapter=7&piece=ecr).
 
 ## Where it appears in the story
 
 - [Infra story: 12. ECR](../infra-story.md#12-ecr)
 - [Infra story: The deploy story](../infra-story.md#the-deploy-story)
+
+</details>

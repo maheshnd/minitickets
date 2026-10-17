@@ -3,30 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [02 errors](../../02-errors.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Services throw plain **business errors** (`NotFoundError`, `ConflictError`…); one middleware maps
-them to HTTP-style codes, one formatter decides what the client sees, and crashes are logged in full
-but answered with "Something went wrong".
+Central error handling turns internal failures into a consistent, safe API response. Business code describes the problem, while the request boundary chooses what clients see.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A call centre: the specialist writes "customer not found" on an internal form; the front-line agent
-translates it into a polite, standard answer; serious internal problems go into the incident log,
-and the caller only hears "we're having a problem, please try again".
+Duplicate signup should show a useful conflict message, but a database crash must not expose SQL or a stack trace. MiniTickets needs both clear feedback and detailed private diagnosis.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    svc["service<br/>throw new ConflictError"] --> em["errorMapper<br/>AppError → TRPCError(CONFLICT)"]
-    em --> fmt["errorFormatter<br/>message, httpStatus, fieldErrors"]
-    fmt --> client["client: 409"]
-    em --> log["onError → log<br/>warn (4xx) / error (500)"]
+service["MiniTickets service"] -->|"throw business AppError"| mapper["errorMapper"]
+    mapper -->|"mapped tRPC code"| formatter["errorFormatter"]
+    formatter -->|"safe status and field errors"| client["Web client"]
+    mapper -->|"server logging retains cause"| logs["API logs"]
 ```
 
-## 4. Where in our code
+1. Translate storage-specific failures at the data boundary.
+2. Map known business failures into a stable transport code.
+3. Format safe output and log unexpected failures for diagnosis.
+
+## 4. How do we use it in MiniTickets?
+
+Services throw AppError subclasses without HTTP imports. Middleware maps them; the formatter attaches field errors, hides internal messages and removes stacks. Plain Fastify routes have their own error handler with the same safe-output goal.
+
+## 5. Interview-ready answer
+
+“MiniTickets separates the meaning of a failure from its HTTP representation. Queries translate driver errors, services throw business errors, and one middleware maps them for clients. Unexpected crashes return a generic message while logs retain diagnostic context. That avoids leaking internals and gives the UI a consistent machine-readable contract.”
+
+## 6. Important follow-up questions
+
+- **What if a business mistake is thrown as plain Error?** It looks like an unexpected server failure and loses its useful client classification.
+- **Why hide stack traces?** They can expose paths, implementation details or sensitive information.
+- **Does a generic client response mean poor observability?** No. Keep detailed causes and correlation in controlled server logs.
+- **Why not throw transport errors in every service?** It would couple business code to tRPC and make another transport harder to support.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current AppError kinds also cover TOO_MANY_REQUESTS and SERVICE_UNAVAILABLE. RateLimitedError carries retryAfterSeconds; the middleware sets Retry-After and the formatter includes retry metadata. Unexpected errors remain generic with no client stack. Existing historical local curl/crash observations below were not rerun, and log redaction still applies to private diagnostic data.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/errors.ts` · `AppError`, `NotFoundError`, `ConflictError`, `ForbiddenError`, `UnauthorizedError`: no tRPC or Fastify imports.
 - Anchor: `apps/api/src/trpc/init.ts` · `errorFormatter`, `errorMapper`: the shape sent to clients, and the mapping.
@@ -48,7 +73,7 @@ Step by step:
 7. Queries translate driver errors into `AppError`s (`23505` → `ConflictError` in
    `queries/users.ts`), so services never see Postgres codes.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 Recorded against a local api instance:
 
@@ -69,13 +94,7 @@ The unit test `apps/api/src/trpc/init.test.ts` checks the mapping without HTTP.
 **Break it on purpose:** in `errorFormatter`, return `shape` unchanged. A 500 now sends the raw
 message to the client, and in development a stack trace with file paths.
 
-## 6. How it connects
-
-- **Uses ←** [trpc-middleware](trpc-middleware.md), [structured-logging](structured-logging.md).
-- **Gives →** a stable error contract for [ui-error-handling](ui-error-handling.md); status codes
-  in [http-status-codes](http-status-codes.md).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 | Rule | Why |
 | ---- | --- |
@@ -84,52 +103,42 @@ message to the client, and in development a stack trace with file paths.
 | 500 → generic message; stack dropped | Internals (SQL, paths, secrets in messages) never leak. |
 | Log 500 at `error` with cause, 4xx at `warn` | Crashes stand out; caller mistakes don't spam alerts. |
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** consistent client contract; safe by default; services stay clean.
 - **Cons:** another indirection to learn; an unexpected error with a useful message still becomes
   generic (by design).
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Throw `TRPCError` directly in services:** less code, couples services to tRPC.
 - **Result types** (`{ ok, error }` returned, never thrown): explicit, more verbose.
 - **RFC 9457 Problem Details:** standard JSON error format for REST APIs.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - A new `AppErrorKind` without a `codeByKind` entry: TypeScript fails (`Record<AppErrorKind, …>`).
 - A service throwing a plain `Error` for a user mistake: user sees "Something went wrong", logs
   show a crash. Logs at `error` level make it visible.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** The server turns its problems into clear, safe messages, and hides technical details.
-- **Senior:** Services throw `AppError` subclasses with no HTTP knowledge. `errorMapper` maps kind →
-  tRPC code; `errorFormatter` adds Zod field errors, replaces 500 messages with a generic one and
-  strips stacks; `onError` logs crashes with the cause. Queries translate driver errors like
-  `23505` into `ConflictError`.
-- **Lead:** Separate "what went wrong" (domain), "how to say it" (transport) and "what to record"
-  (logs). That keeps the contract stable, avoids leaks, and lets us alert on 5xx only. Next: error
-  codes clients can rely on beyond HTTP status, and correlation ids in every error log.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why not send the real message for 500s?* It can contain SQL, paths or secrets.
 - *Where are validation errors handled?* tRPC's `.input()` throws a `ZodError`; the formatter turns
   it into 400 + `fieldErrors`.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"Services throw small business errors like ConflictError, with no HTTP knowledge. One tRPC middleware
-maps them to codes like CONFLICT, and one formatter decides what the client sees: field errors for
-bad input, a generic message for any crash, never a stack. Crashes are logged in full on the server."
+- [trpc-middleware](trpc-middleware.md)
+- [structured-logging](structured-logging.md)
+- [ui-error-handling](ui-error-handling.md)
+- [http-status-codes](http-status-codes.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=error-handling#chapter=0&piece=laptop-api).
 
 ## Where it appears in the story
 
 - [App story: 6. Middleware: errorMapper and protectedProcedure](../app-story.md#6-middleware-errormapper-and-protectedprocedure)
 - [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)
+
+</details>

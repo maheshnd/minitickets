@@ -3,34 +3,56 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: DevOps & CI/CD · Status: ✅ built · Step doc: [11 docker](../../11-docker.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Each Dockerfile has several **stages**: early ones install everything and build; the final one copies
-in only the built output and production dependencies, so the image we run is small.
+A multi-stage Docker build uses separate build environments and copies only the required result into the final image. Build tools can stay outside the image we actually run.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Cooking in a big kitchen with every tool, then packing only the finished meal into a lunch box. You
-don't ship the oven.
+MiniTickets needs TypeScript and package tooling to build, but the deployed API only needs its compiled program and runtime dependencies. Shipping the whole workshop would add size and unnecessary software.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    base["base<br/>node slim + pnpm"] --> deps["deps<br/>all dependencies"]
-    deps --> build["build<br/>esbuild / next build"]
-    deps --> prod["prod (api)<br/>prod deps only"]
-    build --> runtime["runtime<br/>output + prod deps"]
-    prod --> runtime
+    source["MiniTickets source and package files"] -->|"install and compile"| build["Dependency and build stages"]
+    build -->|"copy JS, production dependencies and migrations"| api["API production runtime"]
+    build -->|"copy standalone server and static assets"| web["Next standalone runtime"]
+    build -->|"copy bundled handlers"| worker["Lambda worker runtime"]
 ```
 
-## 4. Where in our code
+1. Install build dependencies in an early stage.
+2. Compile and prepare the production artifacts.
+3. Copy only required artifacts into a fresh runtime stage.
+
+## 4. How do we use it in MiniTickets?
+
+API builds separate production dependencies; web uses Next standalone plus static/public files; worker copies bundled handlers into the Lambda base. API/web runtime patches are intentionally newer than their build toolchain. Native password hashing needs compatible OS and CPU binaries.
+
+## 5. Interview-ready answer
+
+“MiniTickets builds in stages and ships selected production artifacts into fresh runtime images. The API includes compiled code, production dependencies and migrations; web uses standalone output plus its assets. This reduces unnecessary tooling and makes dependencies explicit, but missing traced files or incompatible native modules can still break startup.”
+
+## 6. Important follow-up questions
+
+- **Why copy static files separately?** Next standalone does not include all static/public assets automatically.
+- **Does multi-stage guarantee a secure image?** No. Runtime dependencies and base images still need updates and scans.
+- **What if a runtime dependency is omitted?** Startup can fail even though compilation passed.
+- **Why does the base OS matter?** Native modules need compatible libraries, such as glibc for our password-hashing binary.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/Dockerfile` · stages `base`, `deps`, `build`, `prod`, `runtime`.
 - Anchor: `apps/web/Dockerfile` · stages `base`, `deps`, `build`, `runtime`.
 - Anchor: `apps/web/next.config.ts` · `output: "standalone"`, `outputFileTracingRoot`.
-- Anchor: `apps/worker/Dockerfile` · stages `base`, `deps`, `build`, `runtime`: the runtime stage is AWS's Lambda base image plus ONE bundled file (S1c).
+- Anchor: `apps/worker/Dockerfile` · stages `base`, `deps`, `build`, `runtime`: the runtime stage is AWS's Lambda base image plus bundled handler files (S1c).
 
 Step by step (api):
 
@@ -40,7 +62,7 @@ Step by step (api):
    (runtime dependencies stay external; `@minitickets/shared` is bundled in).
 4. `prod`: `pnpm --filter @minitickets/api --prod deploy --legacy /prod/api` → `node_modules` with
    production dependencies only.
-5. `runtime`: a fresh `node:24.13.0-slim`; copies `package.json`, prod `node_modules`, `dist/`,
+5. `runtime`: a fresh `node:24.22.0-bookworm-slim`; copies `package.json`, prod `node_modules`, `dist/`,
    `drizzle/`; adds the RDS CA bundle ([tls-in-transit](tls-in-transit.md)); `USER node`; exec-form
    `CMD`.
 
@@ -49,7 +71,16 @@ Web: `next build` with `output: "standalone"` traces the files the server really
 `.next/static` and `public/`, which standalone leaves out on purpose.
 `outputFileTracingRoot` is the repo root so tracing finds files from `packages/shared`.
 
-## 5. See it yourself
+### Configuration and design
+
+| Choice | Why |
+| ------ | --- |
+| `slim` (Debian), not Alpine | `@node-rs/argon2`'s prebuilt binary needs glibc. |
+| Exact Node version | Build toolchain remains Node 24.13.0; API/web runtime is patched Node 24.22.0. |
+| esbuild bundle for the api | Production runs `node`, no tsx or TypeScript at runtime. |
+| Next standalone | Ships only traced files instead of the whole `node_modules`. |
+
+### Checks and troubleshooting
 
 ```bash
 docker build -f apps/api/Dockerfile -t mt-api .
@@ -65,69 +96,44 @@ listed dependency, although esbuild already bundled it.) I am not quoting image 
 `docker images` showed different numbers for the local and the ECR-tagged images, and I have not
 checked whether they are compressed or unpacked sizes.
 
-**Break it on purpose:** make the api runtime stage `FROM deps` instead of a fresh image. It still
+**Isolated thought experiment (not performed):** make the api runtime stage `FROM deps` instead of a fresh image. It still
 runs, but now contains every dev tool and the whole source.
 
-## 6. How it connects
+- Missing static files in the web image: pages without CSS/JS (the e2e tests against the image
+  would catch it).
+- A runtime dependency marked as dev: the api crashes at start with "Cannot find module".
 
-- **Uses ←** [monorepo](monorepo.md) (filtered installs), [docker-layer-caching](docker-layer-caching.md).
-- **Gives →** small images for [ecr](ecr.md) and [fargate](fargate.md) (faster pulls);
-  [container-hardening](container-hardening.md); the [ci-pipeline](ci-pipeline.md) docker job.
+- *What does `pnpm deploy` do?* Copies a package with only its production dependencies into a
+  folder, ready to ship.
+- *Why is `.next/static` copied separately?* Standalone leaves it out because it's meant for a CDN.
 
-## 7. Our settings and WHY
-
-| Choice | Why |
-| ------ | --- |
-| `slim` (Debian), not Alpine | `@node-rs/argon2`'s prebuilt binary needs glibc. |
-| Exact Node version | Same Node on laptop, CI and AWS. |
-| esbuild bundle for the api | Production runs `node`, no tsx or TypeScript at runtime. |
-| Next standalone | Ships only traced files instead of the whole `node_modules`. |
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** small, reproducible images; dev tools never reach production.
 - **Cons:** longer, more complex Dockerfiles; standalone and native modules need care (tracing roots,
   glibc).
-
-## 9. Alternatives and when to choose them
 
 - **Distroless runtime** (`gcr.io/distroless/nodejs`): even smaller, no shell (harder to debug, no
   ECS Exec shell).
 - **Buildpacks / Nixpacks:** no Dockerfile to maintain, less control.
 - **Single-stage:** fine for prototypes only.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-- Missing static files in the web image: pages without CSS/JS (the e2e tests against the image
-  would catch it).
-- A runtime dependency marked as dev: the api crashes at start with "Cannot find module".
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** We build in a big image and ship only the result in a small one.
-- **Senior:** The api has five stages: base, deps, build (esbuild bundle), prod (`pnpm deploy --prod`)
+The api has five stages: base, deps, build (esbuild bundle), prod (`pnpm deploy --prod`)
   and a fresh slim runtime with only `dist`, prod `node_modules` and migrations. The web uses Next's
   standalone output plus static files. Slim Debian because the native argon2 binary needs glibc.
-- **Lead:** Multi-stage builds cut size and attack surface and make builds cacheable. Next I'd pin
-  base images by digest and scan them in CI, and consider distroless if we give up shell access.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *What does `pnpm deploy` do?* Copies a package with only its production dependencies into a
-  folder, ready to ship.
-- *Why is `.next/static` copied separately?* Standalone leaves it out because it's meant for a CDN.
+- **Uses ←** [monorepo](monorepo.md) (filtered installs), [docker-layer-caching](docker-layer-caching.md).
+- **Gives →** small images for [ecr](ecr.md) and [fargate](fargate.md) (faster pulls);
+  [container-hardening](container-hardening.md); the [ci-pipeline](ci-pipeline.md) docker job.
 
-## 15. Say it in 30 seconds
-
-"Both images are multi-stage. The api installs everything, bundles with esbuild, makes a
-production-only node_modules with pnpm deploy, and the final slim image has just that plus the
-migrations. The web uses Next's standalone output plus static files. Slim Debian, because the
-argon2 native binary needs glibc."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=docker-multi-stage#chapter=0&piece=laptop-api).
 
 ## Where it appears in the story
 
 - [App story: 15. Docker](../app-story.md#15-docker)
+
+</details>

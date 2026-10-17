@@ -3,126 +3,90 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built · Step doc: [05 database](../../05-database.md), [11 docker](../../11-docker.md), [17 ECS api](../../17-infra-ecs-api.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-A **migration** is a committed SQL file that changes the database; we generate it from the Drizzle
-schema and apply it with a separate one-off job, never from inside the api at startup.
+A migration is a versioned database change saved as SQL. A runner applies pending changes and records which ones have already completed.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Renovation work orders, numbered and kept in a binder. Each order is done once, ticked off, and
-done before the new furniture (new code) moves in. One crew does it, not every tenant at once.
+New MiniTickets code may require a new column. Updating containers before that column exists breaks requests, while letting every task run migrations at startup creates competing migration attempts.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    schema["schema/users.ts"] -->|"db:generate"| sql["drizzle/0000_*.sql<br/>(committed)"]
-    sql --> local["local: db:migrate<br/>(drizzle-kit)"]
-    sql --> img["api image<br/>./drizzle + dist/migrate.js"]
-    img --> compose["compose: migrate service"]
-    img --> ecs["AWS: pnpm infra:migrate<br/>one-off ECS task"]
+schema["Drizzle schema change"] -->|"generate and review"| sql["Committed migration SQL"]
+    sql -->|"ships with new API image"| runner["Dedicated migration task"]
+    runner -->|"apply pending files"| db["Postgres"]
+    db -->|"successful exit gates release"| rollout["CD rolls applications"]
 ```
 
-## 4. Where in our code
+1. Generate and commit a new migration file.
+2. Run the new image’s migration task before application rollout.
+3. Proceed only after it succeeds, keeping old and new code compatible during overlap.
+
+## 4. How do we use it in MiniTickets?
+
+Local tooling, Compose and CI apply the same committed SQL. Current approved CD uses a dedicated on-demand Fargate migration recipe before rolling services. The API does not migrate during normal startup. Live AWS deployment acceptance remains pending.
+
+## 5. Interview-ready answer
+
+“MiniTickets ships reviewed SQL migrations with the API image. Delivery first runs the new image’s dedicated migration task and requires success before rolling applications. The migration journal prevents ordinary reruns from reapplying completed files. Schema and code still overlap during deployment, so additive changes and a deliberate removal sequence matter more than simply having a runner.”
+
+## 6. Important follow-up questions
+
+- **Why not edit an old migration?** Existing databases already recorded it, while fresh databases would see the edit and drift.
+- **What if a migration fails?** Stop the rollout, inspect its exit reason and logs, then repair or roll forward.
+- **Does rolling back the image reverse the schema?** No. The older image must remain compatible with the applied schema.
+- **Why avoid Spot for migrations?** Regular capacity reduces interruption risk; it does not make migration design immune to failure.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Sources and applied state
+
+`apps/api/drizzle.config.ts` configures drizzle-kit input/output. Schema changes generate new SQL and snapshots under apps/api/drizzle and drizzle/meta; review and commit them together. Editing an already-applied file creates drift between old and fresh databases, so add a new migration instead. Drizzle tracks applied files in drizzle.__drizzle_migrations. Ordinary reruns skip completed work; interruption/error handling still requires diagnosis rather than assuming every operation is safe to retry blindly.
+
+Local db:generate/db:migrate use the development CLI. The runtime runner `apps/api/src/db/migrate.ts` calls the Drizzle migration API with migrationsFolder ./drizzle. SQL files and dist/migrate.js ship inside the API image; drizzle-kit itself is not required in that runtime image. CI applies migrations before browser tests. Compose's migrate service runs once, and API depends on service_completed_successfully.
+
+### Current approved delivery
+
+CD phase A points the dedicated migration task at the new API SHA while running applications retain the existing release. scripts/run-migrations.sh reads migrationTaskDefinitionArn, cluster, subnets and API security group from outputs, runs one on-demand FARGATE task, waits for stop, prints its migration log stream and propagates its exit code. It uses node dist/migrate.js. Missing container exit status is failure and can indicate image/secret startup problems. It runs with public networking and API's group for database access. AWS-changing execution remains an owner/CD operation; this rewrite ran none.
+
+Only successful migration permits phase B to update release state and roll applications. Earlier shared API-task command overrides, manually ungated updates and one-row migration-journal counts were historical and are no longer the current delivery design. The dedicated migration image is separate so schema can change before the running app image. Live AWS acceptance remains pending.
+
+### Failure and compatibility
+
+Missing relations usually require inspecting whether the intended migration ran. A failed migration stops rollout and requires logs plus stopped reason; Compose will not start dependent API. On-demand capacity avoids Spot interruption risk, not every possible failure. Old and new application tasks overlap during rolling release, so schema changes must remain compatible with both.
+
+Prefer a new roll-forward migration over assuming an older image undoes schema. Expand/contract adds a compatible shape, deploys, backfills and removes old shape only after all readers stop using it; that discipline is a design requirement for destructive changes. Startup migrations with a lock are an alternative, but add startup coupling/race complexity. No rollback-script or restore drill is claimed by this runner.
+
+### Source anchors
 
 - Anchor: `apps/api/drizzle.config.ts` · `defineConfig`: where `drizzle-kit` reads the schema and writes SQL (local tool).
 - Anchor: `apps/api/src/db/migrate.ts` · `migrate(drizzle(pool), { migrationsFolder: "./drizzle" })`: the production runner (no drizzle-kit).
 - Anchor: `docker-compose.yml` · service `migrate`: runs once before the api (`service_completed_successfully`).
 - Anchor: `scripts/run-migrations.sh` · `aws ecs run-task … node dist/migrate.js`: the same on AWS.
 
-Step by step:
+### Related reading
 
-1. Change `db/schema/*.ts`, run `pnpm --filter @minitickets/api db:generate`: a new SQL file in
-   `apps/api/drizzle/` plus a snapshot in `drizzle/meta/`. Commit them.
-2. Locally: `pnpm --filter @minitickets/api db:migrate` (drizzle-kit, uses `DATABASE_URL`).
-3. CI e2e job: `drizzle-kit migrate` against the service-container Postgres.
-4. Docker image: `./drizzle` and `dist/migrate.js` travel **with** the code that needs them.
-5. Compose: `migrate` runs `node dist/migrate.js`; the api starts only after it exits 0.
-6. AWS: `pnpm infra:migrate` runs the api's task definition once with the command overridden, on
-   on-demand Fargate (not Spot), waits, prints the logs and exits with the container's exit code.
-7. Drizzle records applied migrations in the database, so reruns apply nothing
-   ([idempotency](idempotency.md)).
-
-## 5. See it yourself
-
-```bash
-pnpm --filter @minitickets/api db:migrate      # second run: nothing new to apply
-docker exec minitickets-postgres-1 psql -U minitickets -d minitickets \
-  -c 'select * from drizzle.__drizzle_migrations'
-```
-
-On the owner's laptop this shows one row (`id` 1, the SHA-256 `hash` of
-`0000_first_northstar.sql`, `created_at` as epoch milliseconds): one migration, applied once.
-
-**Break it on purpose:** edit an already-applied SQL file. Existing databases never see the
-change (it is recorded as done), while fresh ones do: environments drift. Always add a new file.
-
-## 6. How it connects
-
-- **Uses ←** [drizzle-schema](drizzle-schema.md), [config-validation](config-validation.md)
-  (`DatabaseEnvSchema`), [task-definition](task-definition.md) on AWS.
-- **Gives →** the tables the api needs; [zero-downtime-deploys](zero-downtime-deploys.md) depend
-  on migrations being backward compatible.
-
-## 7. Our settings and WHY
-
-| Choice | Why |
-| ------ | --- |
-| Migrations, not `drizzle-kit push` | Reviewed, repeatable SQL in git. |
-| Separate one-off job | Several api tasks starting together would race each other. |
-| `migrate.ts` instead of drizzle-kit in prod | drizzle-kit is a dev tool, not in the production image. |
-| On-demand Fargate | A migration must not be interrupted halfway. |
-
-## 8. Trade-offs
-
-- **Pros:** reproducible; same SQL everywhere; failures stop deploys (compose) or are visible
-  (script exit code).
-- **Cons:** on AWS the migration is a manual step, not gated before the service update; no
-  expand-and-contract discipline yet; one migration so far, no rollback scripts.
-
-## 9. Alternatives and when to choose them
-
-- **Migrate on api startup with a lock:** simpler, slows startup, risky with many tasks.
-- **Dedicated CD migration task**: phase A points it at the new API SHA, it must exit 0 before phase B rolls services. Expand/contract protects overlapping versions.
-- **Expand and contract:** add, deploy, backfill, then remove (explain-only card
-  `expand-contract-migrations`, Phase 5).
-
-## 10. What breaks, and how we'd notice
-
-- Forgot to migrate on AWS: `relation "users" does not exist` in the api logs; signup 500s.
-- A migration fails: `pnpm infra:migrate` exits non-zero with the last log lines; compose never
-  starts the api.
-- Breaking change during a rolling deploy: old tasks fail against the new schema.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Database changes are saved as numbered SQL files and applied once, in order.
-- **Senior:** Drizzle generates SQL from the schema; we commit it and ship it in the api image.
-  `migrate.ts` applies pending files and records them; compose runs it as a one-off service before
-  the api, and on AWS `pnpm infra:migrate` runs the same image as a one-off on-demand ECS task.
-- **Lead:** The risk is coupling schema changes to code deploys. I'd gate migrations in CD before
-  the service update and require expand-and-contract so old and new code both work during the
-  rollout.
-
-## 14. Follow-up questions interviewers ask
-
-- *Why not run migrations at app start?* Races between tasks, slower starts, and a failed migration
-  takes the app down.
-- *How do you roll back?* Prefer roll-forward with a new migration; destructive changes only after
-  the code no longer uses the old shape.
-
-## 15. Say it in 30 seconds
-
-"Migrations are SQL files generated from the Drizzle schema and committed. They ship inside the api
-image with a small runner. Compose runs it as a one-off before the api; on AWS a script runs the same
-task definition once on on-demand Fargate. Drizzle records what ran, so reruns are safe."
-
-## 16. Status
-
-✅ built.
+- [05 database](../../05-database.md)
+- [11 docker](../../11-docker.md)
+- [17 ECS api](../../17-infra-ecs-api.md)
+- [idempotency](idempotency.md)
+- [drizzle-schema](drizzle-schema.md)
+- [config-validation](config-validation.md)
+- [task-definition](task-definition.md)
+- [zero-downtime-deploys](zero-downtime-deploys.md)
+- [Open this piece in the city explorer](../guides/infra-explorer.html?concept=migrations#chapter=8&piece=migration-task)
+- [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)
 
 ## Where it appears in the story
 
 - [App story: 10. Postgres and Redis](../app-story.md#10-postgres-and-redis)
+
+</details>

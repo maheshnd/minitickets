@@ -3,32 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built · Step doc: [06 signup api](../../06-signup-api.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Signup does **not** ask "does this email exist?" before inserting; it inserts and lets Postgres's
-**unique constraint** reject the duplicate atomically, because check-then-insert has a race.
+A unique constraint prevents two stored rows from sharing a value that must be distinct. It resolves concurrent inserts where a separate “does it exist?” check cannot.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Two people ask a receptionist "is room 12 free?", both hear "yes", both walk in. A lock on the door
-(the constraint) means only the first one gets in, however close together they arrive.
+Two MiniTickets signups can ask whether one email is available at the same moment. Both may hear yes; only the database can decide who actually stores that email.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
-sequenceDiagram
-    participant A as signup A
-    participant B as signup B (same email)
-    participant PG as Postgres (UNIQUE email)
-    A->>PG: INSERT ... bob@x.com
-    B->>PG: INSERT ... bob@x.com
-    PG-->>A: ok, new row
-    PG-->>B: error 23505 unique_violation
-    Note over B: queries/users.ts → ConflictError → 409
+flowchart LR
+first["Signup A: normalized email"] -->|"INSERT user"| unique["Postgres users_email_unique"]
+    second["Signup B: same email"] -->|"concurrent INSERT"| unique
+    unique -->|"one insert succeeds"| account["One stored account"]
+    unique -->|"other insert: 23505"| error["Query maps ConflictError to 409"]
 ```
 
-## 4. Where in our code
+1. Normalize the email and prepare the new user.
+2. Insert directly with the unique constraint present.
+3. Translate the losing insert into a clear conflict response.
+
+## 4. How do we use it in MiniTickets?
+
+Signup trims and lowercases email, hashes the password and calls the user query. The query recognises the driver’s unique-violation code and throws a business conflict. Booking uses a separate per-user idempotency uniqueness rule.
+
+## 5. Interview-ready answer
+
+“MiniTickets relies on a database unique constraint for signup rather than check-then-insert. Two concurrent requests can both pass a preliminary lookup, but only one can store the normalized email. The query layer maps the unique violation to a conflict response. This protects the invariant across writers without locking the whole table.”
+
+## 6. Important follow-up questions
+
+- **Could an application precheck still help?** It may improve feedback, but the database constraint must remain authoritative.
+- **Why not lock the whole users table?** It would reduce unrelated concurrency; the unique index already coordinates conflicting values.
+- **What does duplicate signup reveal?** The email has an account; that enumeration trade-off needs an explicit product policy.
+- **What if another unique field is added?** Map the violated constraint precisely so its failure is not mislabeled as duplicate email.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+queries/users.ts checks SQLSTATE 23505 both directly and through a wrapped cause. Input normalization makes email case variants conflict. Password hashing happens before insert, so duplicate requests still pay that computation cost. Historical local concurrent evidence was one 200 and one 409. Alternatives include ON CONFLICT handling or serializable transactions for invariants not expressible as simple uniqueness.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/services/auth.ts` · `signup`: hash, then insert straight away (the comment explains the race).
 - Anchor: `apps/api/src/queries/users.ts` · `create`, `isUniqueViolation`: translate `23505` into `ConflictError("Email already registered")`.
@@ -45,7 +68,7 @@ Step by step:
 5. It throws `ConflictError`; anything else is rethrown untouched (a real 500).
 6. The UI shows the 409 under the email field ([ui-error-handling](ui-error-handling.md)).
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 e2e: `signup.spec.ts` "same email in a different case shows 409 under the email field".
 
@@ -63,60 +86,44 @@ for i in 1 2; do curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:4000
 **Break it on purpose:** replace the insert with "`findByEmail`, then insert if missing" and remove
 `.unique()`. Sequential tests still pass, but parallel requests create two rows with one email.
 
-## 6. How it connects
-
-- **Uses ←** [drizzle-schema](drizzle-schema.md), [indexing](indexing.md) (the constraint is backed
-  by a unique index).
-- **Gives →** correct data under concurrency; 409 for [ui-error-handling](ui-error-handling.md);
-  the reason mutations don't retry ([retry-policy](retry-policy.md)).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 Let the database enforce the rule; translate the error in the query layer. WHY: only the database
 sees all writers at once; services stay free of Postgres codes.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** correct under any concurrency; one round-trip instead of two.
 - **Cons:** we spend an argon2 hash (slow on purpose) before learning it's a duplicate; the 409
   reveals that an email has an account ([user-enumeration](user-enumeration.md)).
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **`INSERT … ON CONFLICT DO NOTHING RETURNING`:** no exception; check whether a row came back.
 - **Transaction with `SERIALIZABLE`:** for rules a constraint can't express.
 - **Advisory locks:** for "only one at a time" jobs, not row uniqueness.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - Removing the constraint in a migration: duplicates silently appear.
 - Another unique column later: `isUniqueViolation` doesn't say which one; the message would be wrong
   (check the constraint name then).
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** The database itself refuses a second account with the same email.
-- **Senior:** We insert directly and rely on the unique constraint; Postgres's unique index makes
-  the check and the insert one atomic step, so of two concurrent signups one gets `23505`, which the
-  query layer turns into `ConflictError` → 409. Check-then-insert would let both through.
-- **Lead:** Invariants belong in the database when concurrency is possible; application checks are
-  for nice messages only. The same pattern applies to stock, seats or usernames.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *What's a race condition?* The result depends on timing between concurrent actions.
 - *Why not lock the table?* Kills concurrency; the unique index already does the job.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"Signup doesn't check whether the email exists first, because two requests could both see 'free'
-and both insert. We insert directly; the unique constraint lets exactly one win, and the query layer
-turns Postgres's 23505 into a ConflictError, which becomes a 409 under the email field."
+- [drizzle-schema](drizzle-schema.md)
+- [indexing](indexing.md)
+- [retry-policy](retry-policy.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=unique-constraint-race#chapter=24&piece=code-store).
 
 ## Where it appears in the story
 
 - [App story: 8. The service](../app-story.md#8-the-service)
+
+</details>

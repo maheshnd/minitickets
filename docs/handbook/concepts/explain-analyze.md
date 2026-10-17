@@ -3,75 +3,72 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built in repository; live acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-EXPLAIN shows a plan; ANALYZE executes the statement and reports timing/rows. BUFFERS separates page hits/reads. The isolated search demo now executes EXPLAIN ANALYZE at 10k rows and checks selective trigram-index use; do not ANALYZE writes on production casually.
+EXPLAIN shows how Postgres plans to run a query. EXPLAIN ANALYZE actually runs it and reports what happened, including timing and row counts.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A catalogue with a bookmark: each question and position has its own identity, and only the visible page lies open.
+MiniTickets may have an index yet still search slowly. We need evidence of scans, sorting and estimation errors before adding more indexes or another cache.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Contains predicate"] --> n1
-    n1["Matching index"] --> n2
-    n2["Ordered cursor pair"] --> n3
-    n3["Next bounded page"]
+query["MiniTickets events.search SQL"] -->|"EXPLAIN asks for plan"| plan["Estimated execution steps"]
+    query -->|"EXPLAIN ANALYZE runs query"| actual["Measured rows and timing"]
+    actual -->|"compare estimates and buffers"| decision["Tune query, index or data assumptions"]
 ```
 
-## 4. Where in our code
+1. Inspect the estimated plan for a representative query.
+2. Run a controlled read with ANALYZE when execution is appropriate.
+3. Compare estimated rows, actual work and buffer activity.
 
+## 4. How do we use it in MiniTickets?
 
+The isolated search demo exercises a 10k-event dataset and checks selective trigram-index use. Broad or short search terms can sensibly choose a scan. Production cache sizing and live query performance were not benchmarked for this rewrite.
 
-`apps/api/src/queries/event-search.ts` escapes LIKE metacharacters and uses composite cursor boundaries. Migration `apps/api/drizzle/0008_lethal_amazoness.sql` adds search indexes. `pnpm demo:search` measures 10k rows, index plans and page boundaries including timestamp ties.
+## 5. Interview-ready answer
 
-## 5. See it yourself
+“I use EXPLAIN to understand a proposed plan and ANALYZE to compare it with real execution. In MiniTickets that checks whether search benefits from the intended index and how many rows each step handles. I also inspect buffers and representative inputs; a warm run or one selective term does not describe every production request.”
 
-`apps/api/src/queries/event-search.ts` escapes LIKE metacharacters and uses composite cursor boundaries. Migration `apps/api/drizzle/0008_lethal_amazoness.sql` adds search indexes. `pnpm demo:search` measures 10k rows, index plans and page boundaries including timestamp ties.
+## 6. Important follow-up questions
 
-Failure thought experiment: Why carry id with time? It breaks ties so rows sharing a timestamp are not skipped.
+- **Does ANALYZE execute writes too?** Yes. Never treat it as a harmless description of an UPDATE or DELETE.
+- **Why compare estimated and actual rows?** Large gaps can reveal stale statistics or assumptions that lead to poor plans.
+- **Does a buffer read prove physical disk access?** No. The operating system may satisfy it from its own cache.
+- **What if a sequential scan is chosen?** Check selectivity and table size before assuming the planner is wrong.
 
-## 6. How it connects
+## 7. Advanced details
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#indexes-pagination) and [explorer tour](../guides/infra-explorer.html?tour=search).
+<details>
+<summary>Technical reference</summary>
 
-## 7. Our settings and WHY
+### Current implementation
 
-EXPLAIN shows a plan; ANALYZE executes the statement and reports timing/rows. BUFFERS separates page hits/reads. The isolated search demo now executes EXPLAIN ANALYZE at 10k rows and checks selective trigram-index use; do not ANALYZE writes on production casually. Deep OFFSET discards earlier rows repeatedly.
+EXPLAIN is descriptive; EXPLAIN ANALYZE executes the statement. Add BUFFERS to distinguish database buffer hits/reads, remembering OS caching. `pnpm demo:search` is an isolated demo with representative data; its earlier measured evidence is not a production benchmark. Deep offsets, GIN write cost and stable-but-not-snapshot keyset traversal remain relevant query-plan context.
 
-## 8. Trade-offs
+### Technical limits and diagnosis
 
-GIN adds write/storage cost and short/unselective terms can favor a scan. Keyset cannot jump to arbitrary page 200; snapshot semantics need more design.
+EXPLAIN describes the estimated plan. EXPLAIN ANALYZE executes the statement, including mutations: never treat it as a harmless description of an UPDATE or DELETE. BUFFERS distinguishes shared hits/reads, but an OS page-cache hit can satisfy a reported database read. Warm and controlled cold runs answer different questions.
 
-## 9. Alternatives and when to choose them
+The current literal contains query and tuple cursor use the indexes from migration 0008. Historical demo:search executes EXPLAIN ANALYZE against 10k isolated rows and checks selective trigram-index use plus timestamp-tie traversal. It is not a production benchmark or a fresh measurement in this rewrite.
 
-10x: inspect real selectivity and buffers. 100x: retention/partitioning or full-text relevance when product needs it.
+Inspect representative estimated/actual selectivity, rows, sort work and buffers. Broad/short terms can favour scanning; GIN has write/storage cost. Deep OFFSET discards growing prefixes. Keyset cannot jump arbitrarily and does not supply snapshot semantics. Later partitioning, retention or search relevance changes need product and traffic evidence.
 
-## 10. What breaks and how we notice
+### Related reading
 
-Why carry id with time? It breaks ties so rows sharing a timestamp are not skipped.
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#indexes-pagination)
+- [explorer tour](../guides/infra-explorer.html?tour=search)
+- [App story: 10b. Reading events](../app-story.md#10b-reading-events)
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** EXPLAIN shows a plan; ANALYZE executes the statement and reports timing/rows. BUFFERS separates page hits/reads. The isolated search demo now executes EXPLAIN ANALYZE at 10k rows and checks selective trigram-index use; do not ANALYZE writes on production casually.
-- **Senior:** Choose an index for the predicate and order. Trigram GIN helps contains search; B-tree on starts_at/id supports stable traversal. Keyset asks for rows after the last pair, avoiding a growing OFFSET scan. A stable cutoff prevents time drift but is not a database snapshot: inserts and edits can still change later pages.
-- **Lead:** 10x: inspect real selectivity and buffers. 100x: retention/partitioning or full-text relevance when product needs it.
-
-## 14. Follow-up questions with answers
-
-Why carry id with time? It breaks ties so rows sharing a timestamp are not skipped.
-
-## 15. Say it in 30 seconds
-
-Choose an index for the predicate and order. Trigram GIN helps contains search; B-tree on starts_at/id supports stable traversal. Keyset asks for rows after the last pair, avoiding a growing OFFSET scan. A stable cutoff prevents time drift but is not a database snapshot: inserts and edits can still change later pages.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: inspect real selectivity and buffers. 100x: retention/partitioning or full-text relevance when product needs it.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=explain-analyze#chapter=24&piece=code-query).
 
 ## Where it appears in the story
 
 - [App story: 10b. Reading events](../app-story.md#10b-reading-events)
+
+</details>

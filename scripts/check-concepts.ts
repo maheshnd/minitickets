@@ -5,7 +5,7 @@
 //
 // What it checks:
 //   1. Every `@concept: <slug>` anchor in the code has a card: docs/handbook/concepts/<slug>.md.
-//   2. Every "- Anchor: `<file>`" line in a card's "Where in our code" section points to a file
+//   2. Every "- Anchor: `<file>`" line in a card's Advanced details points to a file
 //      that exists AND holds an anchor for that card's slug.
 //   3. Every file that holds an anchor is listed in its card (so cards never miss a place).
 //   4. concept-map.md links to every card.
@@ -85,20 +85,12 @@ function findAnchors(): Map<string, Set<string>> {
 }
 
 // 5. Cards keep their machine-readable anchors, including in folded source notes.
-//    Read the whole card so both the original and interview formats work during the two batches.
+//    Read the whole card so folded reference notes still participate in source checks.
 function cardAnchorFiles(cardText: string): string[] {
   return [...cardText.matchAll(/^- Anchor: `([^`]+)`/gm)].map((match) => match[1]);
 }
 
-// 6. The interview batch is explicit: old cards remain valid until their own rewrite.
-const INTERVIEW_CARDS = [
-  "vpc", "subnets", "route-tables", "security-groups", "execution-vs-task-role", "secrets-manager",
-  "alb", "target-groups", "health-checks", "ecs-cluster", "ecs-service", "task-definition", "fargate",
-  "ecr", "rds-postgres", "elasticache-valkey", "cloudfront", "sqs", "dead-letter-queue", "sns",
-  "aws-lambda", "dynamodb", "presigned-urls", "ses-email", "cloudwatch-logs", "alerting", "outbox",
-  "idempotency", "row-locks", "cache-aside", "rate-limiting", "sessions-vs-jwt", "ci-pipeline",
-  "cd-oidc", "zero-downtime-deploys", "csr-vs-ssr",
-];
+// 6. Every concept card now uses the same short learning format, including explain-only topics.
 const INTERVIEW_HEADINGS = [
   "What is it?", "Why do we need it?", "How does it work?", "How do we use it in MiniTickets?",
   "Interview-ready answer", "Important follow-up questions", "Advanced details",
@@ -115,13 +107,11 @@ function checkInterviewCards(cardSlugs: string[]) {
     ...[...glossary.matchAll(/^#+ (.*)/gm)].map(match => headingId(match[1])),
     ...[...glossary.matchAll(/<a id="([^"]+)"/g)].map(match => match[1]),
   ]);
-  for (const slug of new Set([...INTERVIEW_CARDS, ...cardSlugs.filter(slug =>
-    /<!-- interview-card: v[12] -->/.test(readFileSync(path.join(CARDS, `${slug}.md`), "utf8")))])) {
+  for (const slug of cardSlugs) {
     const name = `concepts/${slug}.md`;
-    if (!cardSlugs.includes(slug)) { problems.push(`${name}: missing interview card`); continue; }
     const text = readFileSync(path.join(CARDS, `${slug}.md`), "utf8");
     if (!text.includes("<!-- interview-card: v2 -->")) problems.push(`${name}: missing v2 interview format marker`);
-    if (!/^# .+: .+/m.test(text)) problems.push(`${name}: title needs a city nickname after a colon`);
+    if (!/^# \S.+/m.test(text)) problems.push(`${name}: missing concept title`);
     if (!/^Area: .+ · Status: /m.test(text)) problems.push(`${name}: missing area/status line`);
     // 6a. Keep the seven learning sections visible and all reference notes in one closed fold.
     const visible = text.replace(/<details>[\s\S]*?<\/details>/g, "");
@@ -169,6 +159,9 @@ function checkInterviewCards(cardSlugs: string[]) {
     }
     // 6d. Count sections 1–6 only. Reference material has no cap so facts need not be discarded.
     const main = expected.slice(0, 6).map(heading => sections.get(heading) ?? "").join("\n");
+    if (/^Area: .* · Status: (?:📖|📋)/m.test(text) && !/\b(?:not built|not implemented|explain-only|proposed)\b/i.test(main)) {
+      problems.push(`${name}: make planned/explain-only status explicit in the learning sections`);
+    }
     const prose = main.replace(/```[\s\S]*?```/g, "");
     const words = prose.match(/[\p{L}\p{N}][^\s]*/gu)?.length ?? 0;
     if (words > 350) problems.push(`${name}: ${words} first-read words; maximum 350 (diagram excluded)`);
@@ -589,7 +582,7 @@ function main() {
     // Check 3: every file that holds this anchor is listed in the card.
     for (const file of anchors.get(slug) ?? []) {
       if (!listed.includes(file)) {
-        problems.push(`${cardFile}: "Where in our code" is missing the line: - Anchor: \`${file}\``);
+        problems.push(`${cardFile}: Advanced details is missing the line: - Anchor: \`${file}\``);
       }
     }
   }

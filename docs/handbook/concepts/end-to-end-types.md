@@ -3,27 +3,54 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The web app imports the **type** of the api's router (`import type { AppRouter }`), so every call's
-input and output is checked by TypeScript, and no server code ever reaches the browser.
+End-to-end types let client code use the API’s input and output contract during compilation. A type-only import carries that description without shipping the API implementation.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A plug and a socket made from the same drawing. If the factory changes the socket, the plug no
-longer fits on the drawing board, before anything is shipped.
+If MiniTickets renames a profile field, the web app should fail its checks before release. Copying the same interface into two projects would let those definitions drift.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    router["api: appRouter<br/>(runtime code)"] -->|"typeof"| type["type AppRouter"]
-    type -->|"import type<br/>(erased at build)"| client["web: createTRPCClient<br/>typed by AppRouter"]
-    client --> calls["trpc.auth.me ... typed"]
+router["API appRouter"] -->|"typeof defines contract"| type["AppRouter type"]
+    type -->|"import type; erased from output"| client["Web tRPC client"]
+    client -->|"checked procedure calls"| hooks["MiniTickets feature hooks"]
 ```
 
-## 4. Where in our code
+1. Infer the router type from the server definition.
+2. Import it through the package’s type-only export.
+3. Check web calls and field access against that shared contract.
+
+## 4. How do we use it in MiniTickets?
+
+Both browser and web-server tRPC clients use `AppRouter`. Shared schemas define external shapes. The API package is a development dependency for web typechecking; web still communicates over HTTP and does not execute server business code.
+
+## 5. Interview-ready answer
+
+“MiniTickets shares the API router’s type with its web clients, so input or output changes surface as compiler errors. Type-only imports are removed from emitted code and keep API implementation out of browser bundles. This improves integration checks, but runtime validation and backward-compatible deployment still matter because types do not govern old running clients.”
+
+## 6. Important follow-up questions
+
+- **Does import type make a network request?** No. It affects compilation only; the tRPC client performs the actual HTTP call.
+- **Does this validate arbitrary JSON?** No. The server must still validate external inputs and outputs.
+- **What if someone imports appRouter at runtime?** It crosses our layer boundary and can pull server dependencies into web code.
+- **What about clients in another language?** A generated client from OpenAPI or another language-neutral schema may fit better.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current package export exposes router types, and `import type` is erased. AppRouter traversal also requires the type-only Fastify cookie augmentation in context.ts. No runtime API import is allowed in web. Field-rename examples below are learning thought experiments, not edits or checks executed for this rewrite.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/trpc/router.ts` · `export type AppRouter = typeof appRouter`.
 - Anchor: `apps/web/src/lib/trpc/client.ts` · `import type { AppRouter } from "@minitickets/api/router"`.
@@ -43,7 +70,7 @@ Step by step:
 `apps/api/src/trpc/context.ts` has `import type {} from "@fastify/cookie"` for the same reason: the
 web type-checks `context.ts` through `AppRouter` and needs the cookie types.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 pnpm typecheck     # passes
@@ -53,63 +80,47 @@ pnpm typecheck     # passes
 `joinedAt`. `pnpm typecheck` now fails in `apps/web/.../profile-card.tsx`
 (`profile.data.createdAt` does not exist). Nothing ran; the compiler caught it.
 
-## 6. How it connects
-
-- **Uses ←** [rpc-vs-rest](rpc-vs-rest.md) (the router), [monorepo](monorepo.md) (workspace
-  packages).
-- **Gives →** typed hooks in [feature-folders](feature-folders.md); refactors with confidence;
-  [static-checks](static-checks.md) in CI enforce it.
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 Types only, through a `types`-only export and `import type`. WHY: the browser must never bundle
 server code (it would leak internals and break the build); the rule is also in `CLAUDE.md`.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** compile-time contract; autocomplete; zero runtime cost.
 - **Cons:** both apps must be in one repo (or share a package); types say nothing about **deploy
   timing**: an old browser tab can still send an old shape.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **OpenAPI + generated client:** for separate repos or other languages.
 - **GraphQL codegen:** same idea from a GraphQL schema.
 - **Shared Zod schemas only** (no tRPC): types for inputs and outputs, hand-written fetch calls.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - A runtime import from the api in the web (`import { appRouter }`): server code in the bundle; the
   build may fail on Node-only modules. Code review and the `CLAUDE.md` rule guard it.
 - Type drift between deployed versions: not caught by types; needs backward-compatible changes.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** If the api changes, the web app's code stops compiling until it's fixed.
-- **Senior:** The api exports `type AppRouter = typeof appRouter`; the web imports it with
-  `import type` through a types-only package export, so the client is fully typed and no server code
-  ships. A renamed field breaks `pnpm typecheck` in CI.
-- **Lead:** Compile-time contracts remove a class of integration bugs but not deploy-time skew.
-  Pair them with additive changes and, if the client base grows beyond our own web app, a generated
-  OpenAPI spec.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *What is `import type`?* An import that exists only for the type checker and is removed from the
   output.
 - *Does this replace runtime validation?* No: the server still validates every input with Zod.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"The api exports only the type of its router. The web imports it with import type, so every call is
-typed and no server code reaches the browser. Rename a field in the api and the web stops compiling
-in CI. Runtime validation still happens on the server."
+- [rpc-vs-rest](rpc-vs-rest.md)
+- [monorepo](monorepo.md)
+- [feature-folders](feature-folders.md)
+- [static-checks](static-checks.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=end-to-end-types#chapter=24&piece=code-trpc).
 
 ## Where it appears in the story
 
 - [App story: 3. The tRPC client](../app-story.md#3-the-trpc-client)
 - [App story: 12. Monorepo and shared types](../app-story.md#12-monorepo-and-shared-types)
+
+</details>

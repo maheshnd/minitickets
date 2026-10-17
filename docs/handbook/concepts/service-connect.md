@@ -3,85 +3,74 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: AWS Compute · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Service Connect uses a shared Cloud Map namespace and ECS sidecars for private api/web names. App ports stay 4000/3000; proxy ingress is 14000/13000 with source SG rules. Fresh tasks learn endpoints; loopback forwarded headers are untrusted.
+Service Connect lets ECS applications find and call each other using private names. Small helper containers carry those calls between tasks even when task addresses change.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Road signs find the right building, guards allow the right door and staff badges allow specific service actions.
+When MiniTickets web renders events, it must find api. Hard-coded task addresses would break after replacements; sending a neighbour request through the public website adds an unnecessary path.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Browser HTTPS ALB"] --> n1
-    n1["Target SG and task ENI"] --> n2
-    n2["API private route"] --> n3
-    n3["DB SG and credentials"]
+web["web container"] -->|"http://api:4000"| sender["web Service Connect proxy"]
+    sender -->|"api SG: 14000 from web SG"| receiver["api Service Connect proxy"]
+    receiver -->|"local connection on 4000"| api["api container"]
+    names["minitickets.internal registry"] -->|"supplies service endpoints"| sender
 ```
 
-## 4. Where in our code
+1. ECS registers the services in a shared name registry.
+2. Web calls the short api name; its proxy selects a destination.
+3. The receiving proxy passes the request to the API container.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-`infra/src/network.ts` defines routes; `security.ts` allows ALB→web/API and API→Postgres/Valkey. `compute/service-connect.ts` defines namespace aliases. API_INTERNAL_URL is for web server code; browser tRPC uses same-origin ALB routing. Read `infra/src/compute/service-connect.ts` and follow the private-name console tour.
+Web uses private api calls for server rendering. API uses the reverse private web path for signed cache revalidation. Browsers keep using the public ALB. Direct ALB traffic has its own application ports and does not traverse these receiving proxy ports.
 
-## 5. See it yourself
+## 5. Interview-ready answer
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+“Service Connect gives MiniTickets stable private application names backed by ECS-managed proxies and a shared registry. Web can call api without knowing task addresses, and api can call web for revalidation. Discovery, network permission and application authentication are separate checks. Existing tasks may need replacement to learn newly introduced endpoints.”
 
-Failure thought experiment: Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks. Do not change a live stack to demonstrate it.
+## 6. Important follow-up questions
 
-## 6. How it connects
+- **Can browser JavaScript call api by this name?** No. The alias belongs to the task-side private discovery path.
+- **What if a name exists but calls time out?** Check proxy readiness, routes and caller-to-proxy security-group rules.
+- **Does the private path authenticate revalidation?** No. The web endpoint still checks its signed request.
+- **Why separate ALB and proxy ports?** It preserves the public request path and its client-IP trust assumptions.
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#network-boundaries) and [explorer tour](../guides/infra-explorer.html?tour=database-reach).
+## 7. Advanced details
 
-## 7. Our settings and WHY
+<details>
+<summary>Technical reference</summary>
 
-Service Connect uses a shared Cloud Map namespace and ECS sidecars for private api/web names. App ports stay 4000/3000; proxy ingress is 14000/13000 with source SG rules. Fresh tasks learn endpoints; loopback forwarded headers are untrusted. A valid password cannot repair a missing route or blocked SG.
+### Current implementation
 
-## 8. Trade-offs
+Built source: `infra/src/compute/service-connect.ts` → `createServiceConnect` creates Cloud Map HTTP namespace `minitickets.internal`, API proxy 14000 from web SG, and web proxy 13000 from API SG. Application aliases remain api:4000/web:3000. No Route 53 DNS namespace is created. Fresh tasks learn endpoints; adding web initially can require one API redeployment. The loopback proxy path must not make arbitrary forwarded headers trusted. Live AWS acceptance remains pending.
 
-Public ECS task IPs avoid NAT in this small design but require strict inbound SGs. Private subnets with NAT/endpoints change cost and reach.
+### Technical limits and diagnosis
 
-## 9. Alternatives and when to choose them
+The Cloud Map HTTP namespace is a proxy service registry, not a Route 53 private DNS zone. Each task has an ENI (network interface). Fresh tasks learn the service endpoints; web waits for API creation, and introducing web initially can require one API redeployment. The ALB calls application ports directly, separate from the private proxy ingress path. Proxy loopback forwarded headers are untrusted.
 
-10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+For private call failures, inspect alias registration, proxy health, task age, routes and source-group rules separately. Routes provide reach, security groups permit network sources/ports, and application credentials protect application operations. AWS API calls use scoped IAM grants. Security groups are stateful; subnet NACLs are stateless. No AWS endpoint needs inbound task security-group rules merely because an outside-VPC Lambda calls it.
 
-## 10. What breaks and how we notice
+Public dev tasks avoid NAT but need strict inbound rules. Private tasks require deliberate outbound NAT/endpoints. Map real egress and proxy trust before adding segmentation, IPv6 or flow logs. This is a built integration; earlier proposed-feature text was obsolete.
 
-Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
+### Related reading
 
-## 11. Reach / Allowed / Password
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#network-boundaries)
+- [explorer tour](../guides/infra-explorer.html?tour=database-reach)
+- [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached)
+- [infra-story: 4b. Private service discovery and asynchronous workers](../infra-story.md#4b-private-service-discovery-and-asynchronous-workers)
 
-Prove the network path separately from the scoped IAM action and the runtime credential. [Every IAM badge](../guides/infra-build-along.md#every-iam-badge-who--what--attached) shows trust, permissions and attachment. No AWS endpoint needs an inbound SG simply because a non-VPC Lambda calls it.
-
-## 12. Cost
-
-Existing resource/usage costs are detailed in the corresponding infra guide chapter. No new resources were deployed by this documentation change. Historical phase costs are illustrative snapshots, not a current quote; inspect billing and current regional pricing before a capacity decision.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Service Connect uses a shared Cloud Map namespace and ECS sidecars for private api/web names.
-- **Senior:** First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
-- **Lead:** 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
-
-## 14. Follow-up questions with answers
-
-Can browser JS call the Service Connect hostname? No; it is private service discovery for tasks.
-
-Which control is stateful? **Security group.**
-
-## 15. Say it in 30 seconds
-
-First prove reach: address, route, subnet and listener. Then prove allowed: SG source/port and IAM for service APIs. Finally prove credentials. SGs are stateful; NACLs are subnet-level/stateless. An ENI is the task’s network interface. Service Connect gives web/api private names and ports without exposing internal traffic through a public browser URL.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: map all egress and proxy trust. 100x: segmentation, IPv6/endpoints and flow logs after a concrete need.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=service-connect#chapter=11&piece=namespace).
 
 ## Where it appears in the story
 
 - [infra-story: 4b. Private service discovery and asynchronous workers](../infra-story.md#4b-private-service-discovery-and-asynchronous-workers)
+
+</details>

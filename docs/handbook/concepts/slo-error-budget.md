@@ -4,79 +4,70 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Observability · Status: 📖 explain-only
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Explain-only: a user-outcome SLI and target/window would define an error budget, with multi-window burn alerts; no production SLO or automated release-budget policy exists.
+## 1. What is it?
 
-## 2. Real-life comparison
+A service-level objective (SLO) would set a reliability target over a time window. Its error budget would be the amount of failure allowed within that target.
 
-A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
+## 2. Why do we need it?
 
-## 3. Picture it
+MiniTickets can show a low server-error count while confirmations arrive too late. A useful objective would measure the buyer’s outcome and tell the team when reliability needs priority over more releases.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["User outcome SLI"] --> n1
-    n1["Target over window"] --> n2
-    n2["Error budget"] --> n3
-    n3["Multi-window burn alert"]
+    O["MiniTickets booking or email outcome"] -->|"proposed: count valid good and total events"| I["User-outcome indicator"]
+    I -->|"proposed: compare with target and window"| S["Service-level objective"]
+    S -->|"proposed: calculate permitted and consumed failures"| B["Error budget"]
+    B -->|"proposed: sustained rapid use triggers response"| A["Burn-rate alert and release decision"]
 ```
 
-## 4. Where in our code
+1. Define a measurable user outcome and which events count.
+2. Choose a target and time window with the business.
+3. Track budget use and respond to sustained rapid consumption.
 
-Not in our app as an anchored feature. The proposed or observational location is explained below; it must not be mistaken for a deployed resource.
+## 4. How do we use it in MiniTickets?
 
-WHERE IN MINITICKETS: proposed apps/api/src/tracing.ts loaded before server modules, ADOT sidecar in API task, Lambda tracing config and narrowly scoped X-Ray write IAM. Propagate W3C traceparent through the message envelope. Proposed CloudWatch SLI for booking success/latency and email delay; logs remain current evidence. No OTel collector, tracing grants or SLO resource is built.
+SLOs and automated budget-based release policy are explain-only. MiniTickets has correlated logs and managed symptom alarms today. A future booking-success, booking-latency or email-delay objective would need explicit denominators and evidence from representative traffic.
 
+## 5. Interview-ready answer
 
-Existing integration point: `apps/api/src/http/correlation-id.ts`.
+“MiniTickets does not claim a production SLO. A useful design would measure valid user outcomes, set a target over a window and treat permitted failures as an error budget. Sustained fast consumption would trigger investigation or release restraint. I would define exclusions and test the alert behavior first; raw server errors or a fast development demo do not establish business reliability.”
 
-## 5. See it yourself
+## 6. Important follow-up questions
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
+- **What is an SLI?** A service-level indicator: the measured outcome used to judge the target.
+- **Does 99.5 percent mean no failures?** No. As an example, it permits 0.5 percent of valid events to miss the objective.
+- **Why measure budget burn?** It shows how quickly current failures are consuming the allowance.
+- **Can ALB errors define booking success alone?** No. Business rejection, delayed work and missing outcomes need explicit treatment.
 
-Failure thought experiment: Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective. Do not change a live stack to demonstrate it.
+## 7. Advanced details
 
-## 6. How it connects
+<details>
+<summary>Technical reference</summary>
 
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#tracing-slos) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
+### Proposed metrics and current boundaries
 
-## 7. Our settings and WHY
+Existing integration point: `apps/api/src/http/correlation-id.ts`, current logs and managed symptom alarms. A proposed CloudWatch user-outcome SLI would cover booking success/latency or email delay. No production SLO resource, multi-window burn alert, release-budget policy or runnable feature demo is built. The **99.5% / 0.5%** example is arithmetic, not an adopted MiniTickets target.
 
-Explain-only: a user-outcome SLI and target/window would define an error budget, with multi-window burn alerts; no production SLO or automated release-budget policy exists. Average latency and raw error counts can hide a failing user journey.
+Define eligible events, exclusions, denominator, target/window and how late asynchronous outcomes are counted. Alert on sustained rapid budget burn across appropriate windows rather than harmless short noise. A dev app without representative traffic cannot establish a meaningful production objective.
 
-## 8. Trade-offs
+### Related tracing proposal and trade-offs
 
-Sampling loses individual traces; sidecars cost CPU/memory and collector operations. ALB errors alone do not fully describe business success. Use a business metric where needed.
+The old card also described proposed timed tracing: a new `apps/api/src/tracing.ts` before server modules, ADOT sidecar, Lambda tracing, narrowly scoped X-Ray writes and W3C `traceparent` in messages. None is built. Spans would add causal timing; sampling loses individual traces, consumes resources and needs privacy/cost limits. It does not replace complete business-outcome measurement.
 
-## 9. Alternatives and when to choose them
+Future work may test alert calculations, correlate field evidence, sample tracing deliberately and tie release policy to agreed budgets. ALB counts and averages alone may hide a failing journey. No live objective, deployment or budget-policy execution is claimed.
 
-10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+### Related reading
 
-## 10. What breaks and how we notice
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#tracing-slos) · [explorer tour](../guides/infra-explorer.html?tour=failing-email)
 
-Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Explain-only: a user-outcome SLI and target/window would define an error budget, with multi-window burn alerts; no production SLO or automated release-budget policy exists..
-- **Senior:** Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
-- **Lead:** 10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
-
-## 14. Follow-up questions with answers
-
-Does 99.5% mean zero failures? No; it allows 0.5% of valid events to miss the objective.
-
-What is an SLI? **A measured user outcome ratio.**
-
-## 15. Say it in 30 seconds
-
-Traces form a tree of timed spans linked by trace context. An SLI measures a user outcome; an SLO sets a target/window; an error budget is the permitted failure fraction. Alert on sustained fast budget burn, not a brief harmless blip. A dev app without real traffic cannot demonstrate a meaningful production SLO.
-
-## 16. Status and production work
-
-Explain-only: no feature deployment exists. 10x: define denominator/exclusions and test alerts. 100x: sampled distributed spans, cost/PII limits and release policies tied to budget.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=slo-error-budget#chapter=19&piece=dashboard).
 
 ## Where it appears in the story
 
 - [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)
+
+</details>

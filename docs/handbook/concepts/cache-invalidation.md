@@ -4,77 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Invalidation makes old cached results unreachable after a write. Read the generation before SQL, commit before INCR, then notify the web cache; a slow refill remains in its old generation.
+## 1. What is it?
 
-## 2. Real-life comparison
+Cache invalidation stops serving copies that no longer reflect a committed change. MiniTickets changes the catalogue generation so new readers use new keys.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+## 2. Why do we need it?
 
-## 3. Picture it
+An administrator adds an event while an older list query is still running. Simply deleting the cache allows that slow query to refill it with the old list.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Commit event"] --> n1
-    n1["Increment generation"] --> n2
-    n2["New readers use new key"] --> n3
-    n3["Old refill expires"]
+    W["MiniTickets event or booking service"] -->|"commit database change first"| P["Postgres"]
+    P -->|"commit succeeds"| W
+    W -->|"then increment catalogue generation"| R["Redis generation"]
+    R -->|"new readers choose new keys"| N["Current list cache"]
+    O["Earlier in-flight list reader"] -->|"captured earlier generation; fills old key"| E["Old key expires"]
 ```
 
-## 4. Where in our code
+1. A reader captures the generation before its database query.
+2. A writer commits, then advances the generation.
+3. Later readers choose the new generation even if an earlier query finishes late.
+
+## 4. How do we use it in MiniTickets?
+
+Event and booking services invalidate legacy list results after successful writes, then notify the Next data cache. Failure is logged rather than undoing a committed change. Browser queries have their own refresh rules, so open tabs do not all update instantly.
+
+## 5. Interview-ready answer
+
+“MiniTickets prevents a slow old query from repopulating the current list by including a generation in cache keys. Readers capture that generation before reading the database; writers commit before advancing it. A late reader can only fill its old generation. This handles an important race, but invalidation can still fail and independent browser or server caches need their own freshness rules.”
+
+## 6. Important follow-up questions
+
+- **Why not delete one key?** An already-running old reader can refill it afterward.
+- **Why capture generation before SQL?** Capturing it afterward could label old rows as the new generation.
+- **What if invalidation fails?** Keep the committed write, log the problem and rely on bounded cache age while recovering.
+- **Does this refresh every tab?** No. Browser queries refetch under their own policy.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Implementation and ordering
+
+`apps/api/src/services/events.ts` invalidates after event creation and exposes `invalidateEventLists` for committed booking changes. `apps/api/src/queries/events-cache.ts` builds generation/filter keys and increments generation; `apps/api/src/queries/web-cache.ts` calls signed Next revalidation. Capture generation before SQL, commit before `INCR`, then notify web. The old card’s service/query `invalidateUpcomingList` naming should be read at its actual query-layer boundary.
+
+`pnpm demo:stampede` and invalidation unit cases cover late refill and failure locally. No new execution/live acceptance is claimed. TTL bounds stale data after an invalidation failure; invalidation errors do not undo already-committed events/bookings.
+
+### Trade-offs and growth
+
+Old generations temporarily increase key count until expiry. Redis, Next data and browser caches have separate clocks; one invalidation is not an instantaneous whole-system refresh. Watch failure logs and key churn. Outbox-driven invalidation and explicit freshness objectives are future options, not current guarantees.
+
+### Code anchors
 
 - Anchor: `apps/api/src/queries/events-cache.ts` — `upcomingKey`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/services/events.ts` — `listUpcomingEvents`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/events.ts` → `invalidateUpcomingList` runs after event creation. `queries/events-cache.ts` builds generation/filter keys. `queries/web-cache.ts` calls signed Next revalidation. Run `pnpm demo:stampede`; inspect cache invalidation unit tests for late refill and failure.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#cache-invalidation) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm demo:stampede` and inspect the asserted outcome described above.
-
-Failure thought experiment: Why read generation before SQL? Reading after SQL could place old rows in the new generation. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#cache-invalidation) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-Invalidation makes old cached results unreachable after a write. Read the generation before SQL, commit before INCR, then notify the web cache; a slow refill remains in its old generation. DEL alone allows an in-flight old reader to repopulate the same key.
-
-## 8. Trade-offs
-
-Generation keys increase transient cardinality. Redis and Next/browser caches have separate stale windows; one invalidation does not instantly refresh every tab.
-
-## 9. Alternatives and when to choose them
-
-10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
-
-## 10. What breaks and how we notice
-
-Why read generation before SQL? Reading after SQL could place old rows in the new generation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Invalidation makes old cached results unreachable after a write.
-- **Senior:** Commit the write, then increment a cache generation. A reader captures the generation before its database read and stores only under that generation. A slow pre-write reader can fill its old key, but new readers use the new generation. TTL bounds stale data if invalidation fails; errors are logged instead of undoing a committed event.
-- **Lead:** 10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
-
-## 14. Follow-up questions with answers
-
-Why read generation before SQL? Reading after SQL could place old rows in the new generation.
-
-Which order protects against stale refill? **Read generation before database.**
-
-## 15. Say it in 30 seconds
-
-Commit the write, then increment a cache generation. A reader captures the generation before its database read and stores only under that generation. A slow pre-write reader can fill its old key, but new readers use the new generation. TTL bounds stale data if invalidation fails; errors are logged instead of undoing a committed event.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: watch invalidation failures/key churn. 100x: outbox-driven invalidation and explicit freshness SLOs.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=cache-invalidation#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

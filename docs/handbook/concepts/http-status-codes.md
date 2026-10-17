@@ -3,29 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [02 errors](../../02-errors.md), [05 database](../../05-database.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The **method** says what the request wants (GET reads, POST changes) and the **status code** says
-how it went (2xx ok, 4xx your mistake, 5xx our problem); we map every business error to one status.
+An HTTP method describes the requested operation; a status describes its outcome. Standard codes help clients and monitoring distinguish success, invalid requests and server failures.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Parcel tracking codes: "delivered", "wrong address" (your fault), "depot closed" (their fault).
-Everyone understands the code without reading the note.
+MiniTickets must distinguish an expired login from a duplicate signup or unavailable service. The interface and retry logic need a stable signal beyond changeable message text.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    k["AppError kind"] --> m["codeByKind"]
-    m --> t["tRPC code"]
-    t --> h["HTTP status<br/>400 401 403 404 409"]
-    z["ZodError"] --> b["400"]
-    c["crash"] --> s["500"]
+request["MiniTickets API request"] -->|"valid operation succeeds"| ok["200: result"]
+    request -->|"known business failure"| map["AppError to tRPC mapping"]
+    map -->|"caller can act on classification"| client["400 / 401 / 403 / 409 / 429"]
+    request -->|"unexpected or unavailable dependency"| failure["500 or explicit 503"]
 ```
 
-## 4. Where in our code
+1. Use the method required by the procedure.
+2. Classify the result at the API boundary.
+3. Let clients interpret the status together with the structured response.
+
+## 4. How do we use it in MiniTickets?
+
+TRPC reads use GET and mutations POST. Validation uses 400, missing identity 401, denied access 403 and conflicts 409. Rate limits use 429; explicit unavailability and failed readiness can use 503. Crashes use 500.
+
+## 5. Interview-ready answer
+
+“MiniTickets treats HTTP status as part of its operational contract. Expected client problems get meaningful 4xx codes, while unexpected failures become 500 and explicit unavailability can be 503. The UI and retry policy read those codes. I still check individual results in a batch, because one envelope can contain different procedure outcomes.”
+
+## 6. Important follow-up questions
+
+- **How do 401 and 403 differ?** 401 means valid authentication is needed; 403 means the caller is not allowed to perform the operation.
+- **Does a 5xx prove nothing committed?** No. The client may have lost an operation’s outcome; durable intent identity matters for safe retries.
+- **Should every failure return 200?** No. It hides useful transport-level failure signals from clients and monitoring.
+- **Does POST always mean unsafe retry?** POST is not inherently idempotent, but a designed operation can use a durable idempotency key.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current code maps TOO_MANY_REQUESTS to 429 with Retry-After and SERVICE_UNAVAILABLE to 503; `/ready` is not the only possible 503 anymore. Existing status examples below are historical local observations, not fresh acceptance checks. Optional CloudFront restricts methods on page behaviours; current entry is direct ALB.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/trpc/init.ts` · `codeByKind`: business error kind → tRPC code (tRPC picks the HTTP status).
 - Anchor: `apps/api/src/app.ts` · `/ready`: 200 or 503.
@@ -48,7 +74,7 @@ Our table (tRPC code → HTTP status from responses recorded against a local api
 Methods: tRPC queries are `GET`, mutations `POST` ([trpc-client](trpc-client.md)); health routes
 are `GET`. CloudFront allows only `GET`/`HEAD` on page paths ([cloudfront](cloudfront.md)).
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' localhost:4000/trpc/account.profile     # 401
@@ -61,61 +87,44 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:4000/ready                   
 message moves from under the Email field to the generic form error, because the UI looks for 409
 ([ui-error-handling](ui-error-handling.md)), and the e2e signup test fails.
 
-## 6. How it connects
-
-- **Uses ←** [error-handling](error-handling.md).
-- **Gives →** the contract for [ui-error-handling](ui-error-handling.md) and
-  [retry-policy](retry-policy.md) (never retry 4xx); ALB and ECS health checks read 200 vs not
-  ([health-checks](health-checks.md)).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 401 for "who are you?" (no session, wrong login), 403 reserved for "I know you, but no". 409 for
 duplicate email (the request was fine, it conflicts with data). 503 only for readiness, so load
 balancers can tell "not ready" from "broken".
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** standard meaning for clients, proxies and monitoring; retries can be safe by status.
 - **Cons:** some cases are debatable (401 vs 400 for a wrong password; we use 401 like most APIs).
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Always 200 with an error object** (some RPC styles): hides failures from monitoring; avoid.
 - **422 Unprocessable Content** for validation: some APIs use it; tRPC uses 400.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - A user mistake returned as 500: alerts fire for nothing, retries waste effort. Logs at `error`
   level show it.
 - A 200 for a failure: monitoring misses it entirely.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** The api answers with standard codes: 2xx fine, 4xx you sent something wrong, 5xx we
-  had a problem.
-- **Senior:** Business errors map through `codeByKind`: 401 no session or wrong login, 404 not
-  found, 409 duplicate email; Zod failures are 400; crashes 500; `/ready` 503. Queries are GET and
-  mutations POST, and the UI and retry rules depend on these codes.
-- **Lead:** Status codes are an operational contract: dashboards, alerts, retries and CDNs all read
-  them. Getting 4xx vs 5xx right is what makes error-rate alerts trustworthy.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *401 vs 403?* 401: we don't know who you are. 403: we know, and you may not.
 - *Which methods are idempotent?* GET, PUT, DELETE (and HEAD, OPTIONS); POST is not
   ([idempotency](idempotency.md)).
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"Queries are GET, mutations POST. Business errors map to statuses in one table: 401 for no session
-or wrong login, 404, 409 for a duplicate email; bad input is 400, crashes 500, and /ready returns
-503 when a data store is down. The UI and the retry rules depend on those codes."
+- [error-handling](error-handling.md)
+- [retry-policy](retry-policy.md)
+- [health-checks](health-checks.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=http-status-codes#chapter=0&piece=laptop-api).
 
 ## Where it appears in the story
 
 - [App story: 11. The error path back to the UI](../app-story.md#11-the-error-path-back-to-the-ui)
+
+</details>

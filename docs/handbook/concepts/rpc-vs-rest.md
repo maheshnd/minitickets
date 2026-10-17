@@ -3,29 +3,54 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**REST** models the API as resources and HTTP verbs (`GET /users/42`); **RPC** models it as named
-functions (`auth.login(...)`). We use **tRPC**, an RPC style where the client calls server functions
-with full TypeScript types and no schema file in between.
+RPC describes an API as named operations such as login. REST describes it through resources and HTTP methods, such as reading or updating a user.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-REST is a library catalogue: you ask for "book 42" or "all books by X" using fixed rules. RPC is
-asking the librarian to do a named job: "renew my loans". Both work; RPC fits when the same team
-owns both sides and the jobs are actions, not just records.
+MiniTickets has one TypeScript web app and API maintained together. Calling typed operations fits that setup without maintaining a separate public API specification.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    web["web: trpc.auth.login.mutationOptions()"] -->|"POST /trpc/auth.login"| router["appRouter"]
-    router --> auth["auth: signup, login,<br/>logout, me"]
-    router --> account["account: profile"]
+hook["useLogin"] -->|"typed auth.login mutation"| client["tRPC HTTP client"]
+    client -->|"POST /trpc/auth.login"| router["MiniTickets appRouter"]
+    router -->|"validate input and call service"| login["Auth procedure"]
 ```
 
-## 4. Where in our code
+1. Choose the named API procedure.
+2. Serialize its validated input into the HTTP request.
+3. Return its typed result or a structured error.
+
+## 4. How do we use it in MiniTickets?
+
+Feature routers group auth, account, events, bookings and other operations. Queries read; mutations change data. Web imports only the router’s type, while the API still validates external values at runtime.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses tRPC because one team owns both TypeScript ends in a monorepo. Calls look like named operations, but still travel over HTTP with methods and status codes. Shared types make refactoring easier. For public or multi-language clients I would consider a language-neutral contract, and preserve compatibility across separately deployed versions.”
+
+## 6. Important follow-up questions
+
+- **Is every HTTP API REST?** No. tRPC uses HTTP, but addresses procedures rather than a resource-oriented contract.
+- **Do types replace validation?** No. Network inputs remain untrusted and are checked by shared schemas.
+- **What if an old browser tab calls a changed procedure?** Compilation cannot protect already deployed code; use additive changes and deprecation.
+- **When prefer REST with OpenAPI?** When public clients, other languages or independently owned consumers need a published contract.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Router feature examples below started with auth/account; current appRouter includes later features too. tRPC v11 uses plain JSON without an OpenAPI generation step here. Queries use GET and mutations POST with the configured links; a wrong method can return 405. Alternatives remain REST/OpenAPI, GraphQL, gRPC or an adapter when requirements justify them.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/trpc/router.ts` · `appRouter`: one key per feature, `auth` and `account`.
 
@@ -41,7 +66,7 @@ Step by step:
 5. The web app gets the types from `type AppRouter`, not from a generated file
    ([end-to-end-types](end-to-end-types.md)).
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 curl -s localhost:4000/trpc/auth.me          # a query is a plain GET: {"result":{"data":null}}
@@ -53,64 +78,47 @@ curl -s -X POST localhost:4000/trpc/auth.logout -H 'content-type: application/js
 tRPC answers `405` with `"Unsupported POST-request to query procedure at path \"auth.me\""`
 (recorded against a local api): the method is part of the contract.
 
-## 6. How it connects
-
-- **Uses ←** [fastify-app](fastify-app.md) (`fastifyTRPCPlugin`).
-- **Gives →** [end-to-end-types](end-to-end-types.md), [trpc-client](trpc-client.md); the router
-  is also the "one api, split by feature" of [monolith-vs-microservices](monolith-vs-microservices.md).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 tRPC v11 with no transformer (plain JSON) and no OpenAPI. WHY: the only client is our own web app in
 the same repo, so shared types beat a published contract; JSON keeps curl readable.
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** no schema or codegen step; rename a procedure and TypeScript shows every caller; inputs
   validated by Zod at the edge.
 - **Cons:** tied to TypeScript on both sides; not a public, language-neutral API; HTTP caching and
   URLs are less "pretty" than REST; batch URLs are hard to read in logs.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **REST + OpenAPI:** public APIs, many client languages, HTTP caching by URL.
 - **GraphQL:** many clients needing different shapes of the same data (explain-only card `graphql`).
 - **gRPC:** service-to-service, binary, streaming (explain-only card `grpc`).
 - **tRPC + OpenAPI adapter:** if a third party ever needs our API.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - A breaking change to a procedure: the web app fails `pnpm typecheck` in CI, because both live in
   one repo. With a separately deployed web and api, an old browser tab could still call the old
   shape during a deploy.
 - Using the wrong method (POST for a query): tRPC answers an error.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** The web app calls server functions by name, with types.
-- **Senior:** tRPC over HTTP: queries are GETs, mutations POSTs, grouped by feature in `appRouter`.
-  The web imports only the router's type, so changes show up as compile errors. Errors still map to
-  HTTP status codes.
-- **Lead:** RPC fits one team owning both ends in one repo; REST or GraphQL fit public or multi-client
-  APIs. I'd revisit if we add a mobile app or third parties, and I'd keep procedures backward
-  compatible during rolling deploys because browsers can run old code.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Is tRPC REST?* No: it uses HTTP, but URLs are procedure names, not resources.
 - *How do you version it?* Add new procedures and deprecate old ones; avoid breaking shapes.
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"We use tRPC: the web app calls api functions like auth.login with full types and no codegen. On the
-wire it's HTTP, queries as GET and mutations as POST, and errors keep their HTTP status. It's right
-because one team owns both sides in one repo; for public clients I'd use REST with OpenAPI."
+- [fastify-app](fastify-app.md)
+- [monolith-vs-microservices](monolith-vs-microservices.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=rpc-vs-rest#chapter=24&piece=code-trpc).
 
 ## Where it appears in the story
 
 - [App story: 3. The tRPC client](../app-story.md#3-the-trpc-client)
 - [App story: 12. Monorepo and shared types](../app-story.md#12-monorepo-and-shared-types)
+
+</details>

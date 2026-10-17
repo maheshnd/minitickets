@@ -3,77 +3,77 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Data · Status: ✅ built in repository; live AWS acceptance is separate
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-The pg pool caps simultaneous sessions at 10 per API instance, acquisition/connect at 2 s and statements at 5 s. Each row-lock waiter holds a connection; scaling tasks multiplies pools.
+A connection pool keeps a limited set of database connections open and reuses them. Requests borrow a connection instead of opening a new session every time.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Two clerks cannot promise the same last seat: one holds the ledger until the reservation is recorded.
+MiniTickets cannot give every waiting buyer an unlimited database session. A small shared pool saves connection setup and puts a limit on one API process’s database demand.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["HTTP request"] --> n1
-    n1["Pool wait budget"] --> n2
-    n2["SQL budget"] --> n3
-    n3["Downstream budget"]
+requests["MiniTickets API requests"] -->|"wait within acquisition budget"| pool["pg connection pool"]
+    pool -->|"lend available connection"| db["Postgres query or transaction"]
+    db -->|"finish and release connection"| pool
+    pool -->|"no connection before deadline"| error["Controlled request failure"]
 ```
 
-## 4. Where in our code
+1. Reuse an idle connection or wait for one within the allowed budget.
+2. Execute the SQL or transaction on that connection.
+3. Release it for the next request, including after failure.
+
+## 4. How do we use it in MiniTickets?
+
+Each API process has a bounded pg pool and separate limits for acquiring a connection and executing SQL. A booking waiting for a row lock still occupies its connection. Adding API tasks multiplies the total potential connections.
+
+## 5. Interview-ready answer
+
+“MiniTickets reuses a bounded connection pool instead of opening a database session per request. Acquisition and SQL execution have separate time budgets, and lock waits still occupy connections. I size the total across all API instances and migrations. Raising the pool can move overload into Postgres rather than increase useful throughput.”
+
+## 6. Important follow-up questions
+
+- **Does a statement timeout bound pool waiting?** No. Waiting to acquire a connection has its own limit.
+- **What if all connections wait on one event row?** Other requests queue behind occupied connections; inspect contention before increasing the pool.
+- **Does a timeout prove no booking committed?** No. Resolve ambiguous outcomes using the same durable intent identity.
+- **When consider an external pooler?** When connection pressure and process scale justify it; transaction behaviour must remain compatible.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current implementation
+
+Current db/client.ts uses max 10, connectionTimeoutMillis 2000 and statement_timeout 5000. Idle connection errors are logged; the pool drops broken idle connections and can reconnect later. Server shutdown closes the pool. SDK budgets and selected list-cache limits are separate; general Redis calls have retry settings without a hard command deadline. Circuit breakers, bulkheads and end-to-end deadlines remain design choices, not built pooling features.
+
+### Technical limits and diagnosis
+
+A lock waiter still occupies its connection. More API tasks multiply possible sessions, including pressure alongside migration and other clients. An acquisition budget bounds waiting for a connection; statement timeout includes SQL and row-lock waiting. Neither proves an ambiguous operation did not commit. Keep booking intent identity and reconcile outcomes.
+
+Unbounded waits tie up scarce connections and prolong shutdown. Separate stage limits do not replace an overall request deadline; server-side statement cancellation does not bound every network reply. Historical demo:outbox includes silent-queue timeout behaviour locally; this rewrite did not rerun it.
+
+The proposed breaker in services/outbox.ts would wrap delivery with closed/open/half-open behaviour and leave durable work pending. It is explain-only and can hide recovery or reject useful probes if badly tuned. Pool occupancy/queue metrics, per-dependency bulkheads, adaptive limits and end-to-end deadlines are growth options, not deployed pooling guarantees.
+
+### Source anchors
 
 - Anchor: `apps/api/src/db/client.ts` — `pool`; follow the numbered comments at this boundary.
 
-`apps/api/src/db/client.ts` sets 2 s connect/acquisition and 5 s statements. `apps/api/src/queues/jobs.ts` bounds SDK connection/request time; Redis adapters bound operations. Run `pnpm demo:outbox` for a silent queue timeout. A breaker is explain-only: proposed state in services/outbox.ts around delivery, with half-open probes and durable rows left pending.
+### Related reading
 
-## 5. See it yourself
+- [current system](../00-big-picture.md)
+- [scenario](../guides/interview-scenarios.md#timeouts-pools)
+- [explorer tour](../guides/infra-explorer.html?tour=sale-day)
+- [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
 
-Run `pnpm demo:outbox` and inspect the asserted outcome described above.
-
-Failure thought experiment: Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#timeouts-pools) and [explorer tour](../guides/infra-explorer.html?tour=sale-day).
-
-## 7. Our settings and WHY
-
-The pg pool caps simultaneous sessions at 10 per API instance, acquisition/connect at 2 s and statements at 5 s. Each row-lock waiter holds a connection; scaling tasks multiplies pools. Unbounded waits keep scarce connections and shutdowns occupied.
-
-## 8. Trade-offs
-
-Timeouts need an overall deadline, not independent budgets longer than the request. Circuit breakers can reject useful probes or hide recovery if poorly tuned.
-
-## 9. Alternatives and when to choose them
-
-10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
-
-## 10. What breaks and how we notice
-
-Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** The pg pool caps simultaneous sessions at 10 per API instance, acquisition/connect at 2 s and statements at 5 s.
-- **Senior:** An acquisition timeout bounds waiting for a connection; a statement timeout bounds SQL execution including lock wait. Network timeouts bound downstream calls. None proves an operation did not commit. A circuit breaker can stop repeated calls to an unhealthy dependency, but critical durable work still needs an eventual retry path.
-- **Lead:** 10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
-
-## 14. Follow-up questions with answers
-
-Does a timeout prove rollback? No; retry with idempotency and reconcile ambiguous results.
-
-Does a statement timeout limit pool wait? **No; acquisition has a separate timeout.**
-
-## 15. Say it in 30 seconds
-
-An acquisition timeout bounds waiting for a connection; a statement timeout bounds SQL execution including lock wait. Network timeouts bound downstream calls. None proves an operation did not commit. A circuit breaker can stop repeated calls to an unhealthy dependency, but critical durable work still needs an eventual retry path.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: pool occupancy/queue metrics. 100x: per-dependency bulkheads, adaptive limits and end-to-end deadlines.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=connection-pooling#chapter=0&piece=laptop-postgres).
 
 ## Where it appears in the story
 
 - [app-story: 9b. A booking reaches its transaction](../app-story.md#9b-a-booking-reaches-its-transaction)
+
+</details>

@@ -4,77 +4,75 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Observability · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Metrics aggregate symptoms over time; structured logs explain events. Current alarms/dashboard use managed metrics, and browser vitals are JSON logs. Dedicated field-percentile analytics, tracing and SLOs are explain-only.
+## 1. What is it?
 
-## 2. Real-life comparison
+A metric summarizes measurements over time, such as error count or queued work. It helps answer “how widespread is the problem?” rather than explaining one request.
 
-A receipt number follows one purchase through every desk; an alarm points at the desk where work is stuck.
+## 2. Why do we need it?
 
-## 3. Picture it
+One failed confirmation may be isolated. A growing queue age shows that many buyers could be waiting, even if the website still responds normally.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Booking correlation id"] --> n1
-    n1["API and worker JSON"] --> n2
-    n2["Logs Insights"] --> n3
-    n3["Queue/DLQ alarm"]
+    Q["MiniTickets email queues"] -->|"report backlog and age"| M["Managed CloudWatch metrics"]
+    A["MiniTickets ALB and worker"] -->|"report server and invocation errors"| M
+    M -->|"show trends"| D["Dashboard"]
+    M -->|"evaluate symptom rules"| R["Four configured alarms"]
 ```
 
-## 4. Where in our code
+1. Collect measurements with known meanings and time windows.
+2. Aggregate them into useful trends and warning rules.
+3. Use logs to investigate the individual events behind a symptom.
+
+## 4. How do we use it in MiniTickets?
+
+The dashboard and four alarms use managed service metrics. Browser performance measurements currently arrive as JSON logs; dedicated field-percentile analytics is not built. Live dashboard, notification and AWS acceptance checks remain separate from local evidence.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses metrics to see system symptoms across time: old queue work, dead letters, worker invocation failures and server errors. Dashboards show trends and alarms flag configured thresholds. Logs explain particular requests. We distinguish what is measured today from future analytics: a browser performance log does not automatically create reliable percentile reports or a service-level objective.”
+
+## 6. Important follow-up questions
+
+- **Why not use only logs?** Logs explain individual events; aggregate measurements reveal rates, trends and backlog.
+- **Can averages hide failures?** Yes. Tail latency and the fraction of affected users may tell a different story.
+- **Does missing data mean healthy?** Not always; the alarm must deliberately define how silence affects state.
+- **Should user IDs be metric labels?** Usually avoid unbounded identifiers; they increase series count and privacy risk.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Built measurements and references
+
+`infra/src/compute/cluster.ts` configures cluster monitoring; `infra/src/observability/dashboard-body.ts` builds dashboard graphs. Four configured symptom alarms observe queue age, DLQ visible count, worker Lambda Errors and combined ALB/target 5xx. Logs Insights/saved queries support investigation; correlation propagation is in `apps/api/src/http/correlation-id.ts` and worker log helpers.
+
+Browser vitals are structured JSON events, not a built field-percentile backend. Dedicated analytics, tracing and SLOs remain explain-only. ALB errors alone cannot establish business booking success. Counters need denominators and windows before they become meaningful error rates.
+
+### Evidence and operational limits
+
+Historical P2 local timings: **115 ms request-to-email**, retry recovery around **10 s**. They neither prove current AWS metrics nor define service targets. Runbook §3.12 provides deployment checks; SNS subscription confirmation/live alarm delivery remain acceptance work. The original proposed-extension sentence did not describe the already-built managed dashboard correctly.
+
+At higher traffic, consider error-rate/p99 analysis, sampling and deliberate metric cardinality, retention and cost budgets. SLO burn-rate alerting and trace sampling are future designs, not consequences of having a dashboard. Validate incoming correlation IDs and avoid logging full customer messages while investigating metrics.
+
+### Code anchors
 
 - Anchor: `infra/src/compute/cluster.ts` — `cluster`; follow the numbered comments at this boundary.
 - Anchor: `infra/src/observability/dashboard-body.ts` — `graph`; follow the numbered comments at this boundary.
 
-`apps/api/src/http/correlation-id.ts`, worker correlation and JSON loggers preserve identity. `infra/src/observability` defines four alarms, dashboard and saved queries. P2 measured request-to-email 115 ms and retry recovery around 10 s locally. Runbook §3.12 supplies exact Logs Insights/console steps; SNS email confirmation/live alarms remain manual.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#observability) · [explorer tour](../guides/infra-explorer.html?tour=failing-email)
 
-Use the linked scenario and tour to trace the existing integration point. This proposed extension has no runnable feature demo.
-
-Failure thought experiment: Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#observability) and [explorer tour](../guides/infra-explorer.html?tour=failing-email).
-
-## 7. Our settings and WHY
-
-Metrics aggregate symptoms over time; structured logs explain events. Current alarms/dashboard use managed metrics, and browser vitals are JSON logs. Dedicated field-percentile analytics, tracing and SLOs are explain-only. A user symptom spans asynchronous boundaries, not one process log.
-
-## 8. Trade-offs
-
-Correlation is not a timed trace. Logging full messages leaks PII. Fixed thresholds are simple but need traffic-aware tuning and retention cost planning.
-
-## 9. Alternatives and when to choose them
-
-10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 10. What breaks and how we notice
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Metrics aggregate symptoms over time; structured logs explain events.
-- **Senior:** Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-- **Lead:** 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
-
-## 14. Follow-up questions with answers
-
-Why validate client correlation ids? Prevent log injection and unbounded junk while preserving useful propagation.
-
-Which signal explains a specific failed booking? **Correlated structured logs.**
-
-## 15. Say it in 30 seconds
-
-Use a validated correlation id across request, outbox and worker. Logs explain events, metrics show rates and traces time causal steps. Alarm on symptoms: API errors, old queue work, DLQ messages and worker failures. Missing data semantics matter; do not page on every idle CPU wobble.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: error rates/p99 and sampling. 100x: SLO burn-rate alerting and trace sampling with explicit budgets.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=metrics#chapter=19&piece=dashboard).
 
 ## Where it appears in the story
 
 - [infra-story: 9b. Follow a booking through symptoms](../infra-story.md#9b-follow-a-booking-through-symptoms)
+
+</details>

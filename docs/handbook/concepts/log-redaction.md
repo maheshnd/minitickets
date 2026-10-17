@@ -3,27 +3,50 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built · Step doc: [02 errors](../../02-errors.md), [06 signup api](../../06-signup-api.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-Fastify's logger replaces `password`, `confirmPassword` and `passwordHash` with `"[Redacted]"` if
-they ever appear in a log line, and we never log request bodies in the first place.
+Log redaction removes selected sensitive values before logs are written. It is a safety net alongside choosing not to log private data in the first place.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-A CCTV system that blurs the keypad automatically, so even if a camera points at it, the PIN never
-ends up in the recordings.
+Debugging a MiniTickets login failure should not create a permanent copy of the password. Logs may be readable by people and systems that do not need the original request data.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    obj["log object<br/>{ input: { password: 'hunter2' } }"] --> pino["pino redact<br/>paths: password, *.password, *.*.password"]
-    pino --> line["{ input: { password: '[Redacted]' } }"]
-    line --> out["stdout → CloudWatch Logs"]
+    call["API structured log call"] -->|"inspect configured field paths"| redact["Fastify logger redaction"]
+    redact -->|"replace matching values with Redacted"| stdout["Standard output"]
+    stdout -->|"collect application logs on AWS"| logs["CloudWatch Logs"]
 ```
 
-## 4. Where in our code
+1. Log only the fields needed to diagnose the operation.
+2. Apply configured redaction before writing structured records.
+3. Control access and retention for the resulting logs too.
+
+## 4. How do we use it in MiniTickets?
+
+Our logger censors password, confirmation and password-hash fields at three configured nesting depths. Request bodies are not logged. New token names and secrets embedded in plain text are outside that automatic coverage.
+
+## 5. Interview-ready answer
+
+“MiniTickets avoids logging request bodies and redacts known password fields in structured logs. That protects common accidental object logging, but it is not a scanner for every secret. I review new fields and prefer explicit safe identifiers. Logs are another data store, so access, retention and incident handling matter as well.”
+
+## 6. Important follow-up questions
+
+- **Does it catch a password inside a sentence?** No. The configured paths apply to structured fields, not arbitrary text.
+- **Are emails automatically redacted?** No. Their handling needs a deliberate privacy policy.
+- **What if we add resetToken?** Review and update logging rules before exposing the new field.
+- **Why not log whole requests temporarily?** Temporary debugging can still copy credentials and personal data into durable logs.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source references
 
 - Anchor: `apps/api/src/app.ts` · `Fastify({ logger: { redact: { paths, censor: "[Redacted]" } } })`.
 
@@ -38,7 +61,12 @@ Step by step:
 5. Logs go to stdout; on AWS to CloudWatch Logs, where anyone with log access could read them
    ([cloudwatch-logs](cloudwatch-logs.md)).
 
-## 5. See it yourself
+### Configuration and design
+
+Explicit paths at three depths with a clear censor string. WHY: pino's redaction works on known
+paths (it is fast because it doesn't scan everything), so we list where these fields could appear.
+
+### Checks and troubleshooting
 
 During my checks for this handbook I ran a local api instance on another port, signed up and logged
 in several times, and searched its log file for the passwords used: **0 matches**.
@@ -51,62 +79,41 @@ grep -c "correct-horse" /tmp/api.log     # 0
 kill %1                                  # stop only the job you started
 ```
 
-**Break it on purpose:** add `request.log.info({ body: request.body })` in a route. The body is
+**Isolated thought experiment (not performed):** add `request.log.info({ body: request.body })` in a route. The body is
 logged, but `body.password` shows `"[Redacted]"` (one level deep, `*.password`). A field four
 levels deep would not be covered.
 
-## 6. How it connects
+A new sensitive field (`resetToken`) not in the list. Nothing alerts; review new fields against the
+redact list.
 
-- **Uses ←** [structured-logging](structured-logging.md).
-- **Gives →** safe [cloudwatch-logs](cloudwatch-logs.md); supports [password-hashing](password-hashing.md)
-  (the hash never leaks either).
+- *Why not log the request body for debugging?* It contains passwords and personal data.
+- *What about personal data like emails?* Not redacted today; a privacy review would decide.
 
-## 7. Our settings and WHY
-
-Explicit paths at three depths with a clear censor string. WHY: pino's redaction works on known
-paths (it is fast because it doesn't scan everything), so we list where these fields could appear.
-
-## 8. Trade-offs
+### Trade-offs and alternatives
 
 - **Pros:** cheap, automatic, survives careless log calls.
 - **Cons:** only listed names and depths; new secrets (tokens, API keys) must be added; it doesn't
   catch secrets inside free-text messages.
 
-## 9. Alternatives and when to choose them
-
 - **Allow-list logging:** log only chosen fields, never whole objects.
 - **Log pipeline scrubbing** (Fluent Bit filters, CloudWatch data protection policies): a second
   net after the app.
 
-## 10. What breaks, and how we'd notice
+### Further technical context
 
-A new sensitive field (`resetToken`) not in the list. Nothing alerts; review new fields against the
-redact list.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Passwords are blanked out if they ever reach the logs.
-- **Senior:** pino's `redact` in the Fastify logger censors `password`, `confirmPassword` and
+pino's `redact` in the Fastify logger censors `password`, `confirmPassword` and
   `passwordHash` at three depths; we don't log bodies, and 500 details stay server-side only.
-- **Lead:** Logs are a data store with wide access and long retention; treat them as such. Prefer
-  never logging sensitive data, keep a redact list as a net, and add pipeline-level scrubbing and
-  access controls for production.
 
-## 14. Follow-up questions interviewers ask
+### Related reading
 
-- *Why not log the request body for debugging?* It contains passwords and personal data.
-- *What about personal data like emails?* Not redacted today; a privacy review would decide.
+- **Uses ←** [structured-logging](structured-logging.md).
+- **Gives →** safe [cloudwatch-logs](cloudwatch-logs.md); supports [password-hashing](password-hashing.md)
+  (the hash never leaks either).
 
-## 15. Say it in 30 seconds
-
-"Fastify's pino logger redacts password, confirmPassword and passwordHash at three nesting depths,
-and we never log request bodies. I checked a local run's logs after real logins: no passwords. New
-secret fields have to be added to the list."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=log-redaction#chapter=8&piece=logs).
 
 ## Where it appears in the story
 
 - [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)
+
+</details>

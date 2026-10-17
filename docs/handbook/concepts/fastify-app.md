@@ -3,27 +3,55 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: API · Status: ✅ built · Step doc: [01 setup](../../01-setup.md), [02 errors](../../02-errors.md)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-`buildApp()` creates and configures the Fastify server (plugins, routes, tRPC) **without** opening a
-port; `server.ts` is the only file that calls `listen` and handles shutdown.
+Fastify is the HTTP server around MiniTickets’ API. Building its routes and plugins is separate from starting the process that listens for network requests.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Building a car in the factory versus driving it on the road. Tests can inspect and start the car in
-the factory (in-process) without taking it onto the motorway (a real port).
+Tests need to exercise request behaviour without fighting over a port. Operations also need one clear place for startup, shutdown and process failures.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    server["server.ts"] -->|"await buildApp()"| build["app.ts buildApp()<br/>logger, trustProxy, cors,<br/>cookie, routes, tRPC"]
-    server -->|"app.listen(PORT, HOST)"| port[":4000"]
-    test["tests"] -.->|"app.inject() (no port)"| build
+process["server.ts"] -->|"await buildApp"| app["Configured Fastify app"]
+    process -->|"listen on configured host and port"| network["HTTP requests"]
+    tests["In-process tests"] -->|"inject a request without a listening port"| app
+    network -->|"routes /trpc calls"| app
 ```
 
-## 4. Where in our code
+1. Build the logger, plugins, policies and routes.
+2. The process entry point opens the configured listening socket.
+3. On shutdown, stop accepting work and close owned resources.
+
+## 4. How do we use it in MiniTickets?
+
+`buildApp` registers browser-access rules, cookies, error handling, health routes and tRPC. `server.ts` owns listening and signals. Small focused tests use Fastify injection; importing the full application still requires valid environment configuration.
+
+## 5. Interview-ready answer
+
+“MiniTickets separates application composition from process lifecycle. Fastify setup lives in buildApp, while server.ts listens and handles signals. That makes request behaviour testable without a real port and keeps operational ownership obvious. It does not remove configuration dependencies or network deployment requirements, such as listening on a reachable container interface.”
+
+## 6. Important follow-up questions
+
+- **What if the configured port is occupied?** Startup logs the failure and exits; use a separate free test port.
+- **What if a container binds only localhost?** External health checks and ALB calls cannot reach it even if an internal probe works.
+- **What does inject test?** It simulates an HTTP request inside Fastify without opening a network listener.
+- **Why does plugin order matter?** Routes need the expected registered features and scope; an incorrect order can omit behaviour.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Current reading notes
+
+Current app also enforces mutation admission and correlated logging. Host/port, trustProxy, CORS, cookies, health checks and tRPC remain configured at this boundary. The old same-port collision exercise below is a thought experiment only: never start a test server on owner ports 3000/4000 or stop an owner process.
+
+### Implementation reference
 
 - Anchor: `apps/api/src/app.ts` · `buildApp`: the whole configuration, in order.
 - Anchor: `apps/api/src/server.ts` · `app.listen`: starts the server; exits with code 1 if the port is taken.
@@ -45,7 +73,7 @@ Step by step (inside `buildApp`):
 Production runs the esbuild bundle `node dist/server.js` (`apps/api/build.mjs`); development runs
 `tsx watch` on the TypeScript.
 
-## 5. See it yourself
+### Inspection and historical evidence
 
 ```bash
 pnpm --filter @minitickets/api dev          # or your running pnpm dev
@@ -59,13 +87,7 @@ and calls `app.inject(...)` ([in-process-api-tests](in-process-api-tests.md)).
 (`PORT=4000 pnpm --filter @minitickets/api start` while `pnpm dev` runs). `listen` fails with
 `EADDRINUSE`, the error is logged, and the process exits 1.
 
-## 6. How it connects
-
-- **Uses ←** [config-validation](config-validation.md) (`env`), the pool and Redis client.
-- **Gives →** the HTTP entry point for [trpc-context](trpc-context.md) and every procedure; the
-  target of the ALB on AWS ([target-groups](target-groups.md)).
-
-## 7. Our settings and WHY
+### Settings and reasoning
 
 | Setting | Value | Why |
 | ------- | ----- | --- |
@@ -73,20 +95,20 @@ and calls `app.inject(...)` ([in-process-api-tests](in-process-api-tests.md)).
 | `PORT` | 4000 | Fixed in `.env`, Dockerfile, task definition and target group. |
 | Fastify 5 | `^5.12.5` | Fast, schema-friendly, good logging (pino) built in. |
 
-## 8. Trade-offs
+### Trade-offs
 
 - **Pros:** testable without a network; one obvious entry point; plugins keep each concern small.
 - **Cons:** `buildApp` is async and imports `env` (which validates at import), so even a test that
   imports `app.ts` needs valid env vars. Our in-process tests avoid `app.ts` for this reason.
 
-## 9. Alternatives and when to choose them
+### Alternatives and scaling
 
 - **Express:** huge ecosystem, slower, weaker typing.
 - **Hono:** tiny, runs on edge runtimes too.
 - **NestJS:** batteries-included structure with dependency injection; heavier.
 - **Next.js route handlers only:** one deployable, but the api would share the web app's lifecycle.
 
-## 10. What breaks, and how we'd notice
+### Failure diagnosis
 
 - Port taken: exits 1 at start (logged).
 - A plugin registered after routes that need it: routes miss the feature; Fastify's encapsulation
@@ -94,32 +116,22 @@ and calls `app.inject(...)` ([in-process-api-tests](in-process-api-tests.md)).
 - `HOST=127.0.0.1` in a container: health checks fail; ECS replaces the task. The Dockerfile sets
   `0.0.0.0`.
 
-## 13. Interview answers at 3 levels
-
-- **Simple:** One file builds the server, another starts it.
-- **Senior:** `buildApp` registers the logger with redaction, `trustProxy`, CORS, cookies, the error
-  handler, health routes and the tRPC plugin; `server.ts` listens and owns signals. Tests can use
-  `inject` without a port.
-- **Lead:** Separating composition from process concerns (ports, signals) keeps the app testable and
-  lets the same app run under different hosts. Next step would be making config injectable so even
-  `buildApp` can be tested without real env vars.
-
-## 14. Follow-up questions interviewers ask
+### Further questions
 
 - *Why Fastify over Express?* Built-in structured logging, faster, plugin encapsulation, Fastify 5
   is actively maintained.
 - *What does `inject` do?* Simulates an HTTP request in memory (light-my-request).
 
-## 15. Say it in 30 seconds
+### Related reading
 
-"app.ts builds the Fastify app: JSON logger with redaction, trustProxy, CORS, cookies, error handler,
-health routes, and tRPC mounted at /trpc. server.ts only listens and handles shutdown signals. That
-split keeps the app testable without a real port."
+- [config-validation](config-validation.md)
+- [trpc-context](trpc-context.md)
+- [target-groups](target-groups.md)
 
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=fastify-app#chapter=0&piece=laptop-api).
 
 ## Where it appears in the story
 
 - [App story: 4. Fastify: CORS, trustProxy, cookie](../app-story.md#4-fastify-cors-trustproxy-cookie)
+
+</details>

@@ -4,76 +4,74 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Testing · Status: ✅ built in repository; live acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM.
+## 1. What is it?
 
-## 2. Real-life comparison
+An end-to-end test drives the browser through a real user journey. It checks whether the interface and the services behind it work together.
 
-A stopwatch on a real visitor’s journey answers different questions from a rehearsed practice lap.
+## 2. Why do we need it?
 
-## 3. Picture it
+A login procedure can pass its tests while the form sends the wrong input or loses the session cookie. A browser journey can catch that broken connection.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Semantic UI"] --> n1
-    n1["Automated axe scan"] --> n2
-    n2["Keyboard task"] --> n3
-    n3["Human review"]
+    P["MiniTickets Playwright"] -->|"use page controls as a visitor"| W["Web UI"]
+    W -->|"send real requests and cookies"| A["MiniTickets API"]
+    A -->|"exercise configured stores"| S["Isolated test data"]
+    W -->|"assert visible result and behavior"| R["Playwright report"]
 ```
 
-## 4. Where in our code
+1. Create isolated users and data for the journey.
+2. Drive the browser through the intended flow.
+3. Inspect reports on failure and state exactly which flows passed.
+
+## 4. How do we use it in MiniTickets?
+
+Playwright checks UI and network behavior. Phase demos use isolated data and ports; security checks use a production-mode web build and include accessibility scans. A targeted local run does not establish the whole suite or deployed AWS behavior.
+
+## 5. Interview-ready answer
+
+“MiniTickets uses browser tests to check the connections a user actually depends on: controls, requests, cookies and visible results. We isolate test accounts and phase data so runs are repeatable. Browser checks complement fast rule tests and real-store concurrency tests. A green targeted run is scoped evidence, not proof of every journey or live cloud permissions.”
+
+## 6. Important follow-up questions
+
+- **Why isolate test accounts?** Shared mutable accounts make tests influence each other and become flaky.
+- **Should every edge case use a browser?** No. Small rule tests usually explain those failures faster.
+- **What if only one phase passed?** Report that phase and its count, rather than claiming the whole suite passed.
+- **Can an emulator prove email delivery?** No. Real service permissions and delivery need live acceptance.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Configuration and recorded evidence
+
+`apps/web/playwright.config.ts` takes `E2E_BASE_URL` or localhost:3000; its `webServer` starts servers only in CI. `apps/web/e2e/login.spec.ts` uses `runId` / `beforeAll` to create a fresh account through signup. Owner servers must not be replaced; isolated phase demos choose their own ports/data.
+
+Historical evidence: **404 Vitest tests**, **24 production-mode local e2e** in `pnpm demo:security`, plus isolated `demo:search`, `demo:sale`, `demo:outbox`. Security includes CSP, vitals and three axe scans; an isolated inverted-origin mutation demonstrated relevant tests fail. D1 covered **144 offline tour navigations without screenshots**. None is a fresh run or full-suite/AWS deployment claim from this rewrite.
+
+### Limits and growth
+
+Browser tests cover real UI/network boundaries but do not establish IAM, ALB proxy behavior, SES delivery or CloudFront policy. Real-store demos provide row-lock/transaction evidence; mocks cannot substitute for it. Favor stable fixtures, owned flake repair and measured phase outcomes. Future options include contract tests, production canaries, risk-based gates and representative assistive-technology review beyond automated accessibility checks.
+
+### Code anchors
 
 - Anchor: `apps/web/playwright.config.ts` · `baseURL` (`E2E_BASE_URL` or localhost:3000), `webServer` (CI only).
 - Anchor: `apps/web/e2e/login.spec.ts` · `runId`, `beforeAll`: fresh account through the signup page.
 
-Vitest currently has 404 tests. `pnpm demo:security` passed 24 production e2e; `demo:search`, `demo:sale`, `demo:outbox` isolate scale/failure. Security used one isolated inverted-origin mutation to prove important tests fail. D1 tested 144 offline tour navigations without screenshots. No full-suite or AWS deployment claim is implied.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#accessibility) · [explorer tour](../guides/infra-explorer.html?tour=security-layers)
 
-Vitest currently has 404 tests. `pnpm demo:security` passed 24 production e2e; `demo:search`, `demo:sale`, `demo:outbox` isolate scale/failure. Security used one isolated inverted-origin mutation to prove important tests fail. D1 tested 144 offline tour navigations without screenshots. No full-suite or AWS deployment claim is implied.
-
-Failure thought experiment: Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#accessibility) and [explorer tour](../guides/infra-explorer.html?tour=security-layers).
-
-## 7. Our settings and WHY
-
-Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM. Different failure modes need different evidence; test count alone is not confidence.
-
-## 8. Trade-offs
-
-Overmocked SQL cannot prove row locks; broad slow suites can hide targeted failures. Avoid repeating every test after comment-only docs edits unless source behavior changes.
-
-## 9. Alternatives and when to choose them
-
-10x: stable fixtures and flake ownership. 100x: contract tests, production canaries and measured risk-based gates.
-
-## 10. What breaks and how we notice
-
-Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Playwright checks real UI and network boundaries. Phase demos use isolated data and non-owner ports; security runs production web with CSP/vitals/three axe scans. A scoped green run is not a full-suite result or proof of AWS IAM.
-- **Senior:** Unit-test pure policy and failure decisions, integration-test real transaction/concurrency invariants and browser-test user-visible flows. A demo should print measurable counts rather than only success text. Emulators exercise SDK contracts but cannot prove IAM, ALB proxy behavior, SES delivery or CloudFront policy. Keep those as explicit live acceptance.
-- **Lead:** 10x: stable fixtures and flake ownership. 100x: contract tests, production canaries and measured risk-based gates.
-
-## 14. Follow-up questions with answers
-
-Does local green mean IAM correct? No; only AWS evaluates the deployed policies.
-
-## 15. Say it in 30 seconds
-
-Unit-test pure policy and failure decisions, integration-test real transaction/concurrency invariants and browser-test user-visible flows. A demo should print measurable counts rather than only success text. Emulators exercise SDK contracts but cannot prove IAM, ALB proxy behavior, SES delivery or CloudFront policy. Keep those as explicit live acceptance.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: component-level semantic conventions. 100x: representative assistive-technology testing across critical journeys.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=e2e-tests#chapter=13&piece=github).
 
 ## Where it appears in the story
 
 - [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)
 - [App story: 16. CI](../app-story.md#16-ci)
+
+</details>

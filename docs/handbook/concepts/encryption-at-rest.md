@@ -3,109 +3,79 @@
 History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Auth & Security · Status: ✅ built · Step doc: [14 data](../../14-infra-data.md) (section 3.8)
+<!-- interview-card: v2 -->
 
-## 1. In one line
+## 1. What is it?
 
-**Encryption at rest** means data is stored encrypted on disk and in backups, so a stolen disk or
-snapshot is unreadable without the key.
+Encryption at rest stores data in a form that needs a key to read. It protects stored media and backups, rather than deciding which application users may query them.
 
-## 2. Real-life comparison
+## 2. Why do we need it?
 
-Keeping documents in a locked filing cabinet, not just in a locked room. If someone carries the
-cabinet out, they still cannot read the papers.
+A copied MiniTickets database disk or backup should not reveal customer records by itself. Encryption adds protection even if someone gains access to stored media.
 
-## 3. Picture it
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    rds[("RDS disk, backups,<br/>snapshots")] -->|"storageEncrypted"| k1["AWS-managed KMS key"]
-    vk[("Valkey disk,<br/>swap, backups")] -->|"atRestEncryptionEnabled"| k2["AWS key"]
-    sm["Secrets Manager values"] --> k3["aws/secretsmanager"]
+    pg["MiniTickets RDS storage and backups"] -->|"encrypted before storage"| key["AWS encryption key"]
+    cache["Valkey stored data"] -->|"encrypted before storage"| key
+    safe["Secrets Manager values"] -->|"encrypted before storage"| key
 ```
 
-## 4. Where in our code
+1. Enable the storage service encryption setting.
+2. The service encrypts writes and decrypts authorized reads.
+3. Protect access to both the running service and its keys.
+
+## 4. How do we use it in MiniTickets?
+
+RDS storage and Valkey data written to disk are encrypted. Secrets Manager encrypts its values. Our query code does not perform this storage encryption; database access and TLS remain separate protections.
+
+## 5. Interview-ready answer
+
+“MiniTickets encrypts database storage, backups and cache storage using AWS service support. This protects stored copies, but it does not stop a valid database query returning sensitive data. I treat encryption, permissions and transport security as separate controls, and plan any migration from unencrypted storage before changing infrastructure.”
+
+## 6. Important follow-up questions
+
+- **Does it prevent SQL injection leaks?** No. The running database decrypts data for queries it accepts.
+- **Can an unencrypted RDS instance just flip a switch?** The documented path uses an encrypted snapshot copy and restore.
+- **When use field encryption?** When particular values need protection beyond ordinary database access.
+- **What if a key becomes unavailable?** Data access or recovery may fail; key lifecycle belongs in the recovery plan.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Source anchors
 
 - Anchor: `infra/src/data/postgres.ts` · `storageEncrypted: true`: disk, backups and snapshots encrypted.
 - Anchor: `infra/src/data/cache.ts` · `atRestEncryptionEnabled: true`: data Valkey writes to disk is encrypted.
 
-Step by step:
+### Storage settings and scope
 
-1. Both settings are given at creation. They **cannot be turned on later** without rebuilding the
-   database or cache (comments at both settings).
-2. No key is named, so AWS's default keys are used ([kms](kms.md)).
-3. Secrets Manager always encrypts secret values.
-4. Encryption and decryption are transparent: the api's code does nothing different.
+`infra/src/data/postgres.ts` → `createPostgres` enables storageEncrypted, covering RDS disk, logs, backups and snapshots. `infra/src/data/cache.ts` → `createCache` enables atRestEncryptionEnabled for Valkey data written to storage. Secrets Manager always encrypts secret values. We configure default service keys rather than customer-managed ones; application query code does not manually decrypt storage.
 
-## 5. See it yourself
+Encryption protects stored media, not data returned through valid queries or stolen credentials. TLS protects a different boundary. Customer-managed keys add key-policy/lifecycle control; field encryption is a separate design for values even database administrators should not read. No such field-encryption design is built.
 
-```bash
-aws rds describe-db-instances --profile ticketlite --db-instance-identifier minitickets-dev-db --query "DBInstances[0].StorageEncrypted"
-aws elasticache describe-replication-groups --profile ticketlite --replication-group-id minitickets-dev-valkey --query "ReplicationGroups[0].AtRestEncryptionEnabled"
-```
+### Migration and read-only inspection
 
-Both should print `true`.
+For existing unencrypted RDS, use the documented encrypted snapshot-copy and restore path, not an in-place flag flip. Our node-based Valkey replication group also enables at-rest encryption only at creation; the documented migration uses backup, restore into an encrypted group and endpoint cutover. These are owner operations, not steps performed by this rewrite. [RDS encryption](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.html) and [ElastiCache at-rest encryption](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/at-rest-encryption.html) document these boundaries.
 
-## 6. How it connects
+Metadata checks: `aws rds describe-db-instances --profile ticketlite --db-instance-identifier minitickets-dev-db --query "DBInstances[0].StorageEncrypted"` and `aws elasticache describe-replication-groups --profile ticketlite --replication-group-id minitickets-dev-valkey --query "ReplicationGroups[0].AtRestEncryptionEnabled"`. The code sets both true; live values were not read here.
 
-- **Uses ←** [KMS](kms.md).
-- **Gives →** protection for [RDS](rds-postgres.md) data and [backups](backups-dr.md), and for the
-  [Valkey](elasticache-valkey.md) node's disk.
+No customer-managed key fee is configured; service costs remain. The old card's free/no-performance-cost claims were not measurements. AWS notes encryption can affect cache operations, so benchmark the real workload when making performance claims.
 
-## 7. Our settings and WHY
+### Preserved references
 
-On for both, because it is free, required by most compliance standards, and impossible to add later
-without a rebuild.
+- [kms](kms.md)
+- [RDS](rds-postgres.md)
+- [backups](backups-dr.md)
+- [Valkey](elasticache-valkey.md)
 
-## 8. Trade-offs
-
-- **Pros:** stolen media is useless; required for audits.
-- **Cons:** it does not protect against anyone who can query the running database (the api, a stolen
-  password). It protects the disk, not the data's users.
-
-## 9. Alternatives and when to choose them
-
-- **Customer-managed keys:** control and audit of the key itself.
-- **Application-level (field) encryption:** very sensitive fields (for example tax ids) that even DB
-  admins must not read.
-
-## 10. What breaks, and how we'd notice
-
-- Forgetting it at creation: a migration to a new encrypted instance (snapshot → copy encrypted →
-  restore) later.
-
-## 11. Reach / Allowed / Password
-
-Not a connection. With customer-managed keys, KMS permissions would become an **Allowed** question.
-
-## 12. Cost
-
-Free with AWS-managed keys; no measurable performance cost for us.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** Our database and cache are encrypted on disk.
-- **Senior:** `storageEncrypted` on RDS (covering backups and snapshots) and `atRestEncryptionEnabled`
-  on Valkey, both with default AWS keys, both set at creation because they cannot be enabled later in
-  place.
-- **Lead:** At-rest encryption is table stakes; the real protection of data is access control,
-  TLS, and least privilege. I'd add customer-managed keys only when key control or cross-account
-  sharing is required.
-
-## 14. Follow-up questions interviewers ask
-
-- *Does at-rest encryption stop SQL injection leaks?* No; the database decrypts for any valid query.
-- *Can you encrypt an existing unencrypted RDS?* Only via an encrypted copy of a snapshot and a restore.
-
-## 15. Say it in 30 seconds
-
-"RDS storage, backups and snapshots, and the Valkey node's disk are encrypted with AWS-managed keys,
-set at creation because it can't be added later. It protects stolen media, not data that a valid
-query can read."
-
-## 16. Status
-
-✅ built.
+[Open this piece in the city explorer](../guides/infra-explorer.html?concept=encryption-at-rest#chapter=5&piece=rds).
 
 ## Where it appears in the story
 
 - [Infra story: 7. RDS Postgres](../infra-story.md#7-rds-postgres)
+
+</details>

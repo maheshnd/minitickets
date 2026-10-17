@@ -4,77 +4,73 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Performance & Caching · Status: ✅ built in repository; live AWS acceptance is separate
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-A stampede is many callers rebuilding the same missing result. One promise per process plus a Redis owner-token lease and double-check coalesce work; bounded wait can still fall back.
+## 1. What is it?
 
-## 2. Real-life comparison
+A cache stampede happens when many requests rebuild the same missing value at once. Sharing that work protects the database during a burst.
 
-A dated catalogue at the ticket office: many readers can share it, but the clerk must know when a newer edition exists.
+## 2. Why do we need it?
 
-## 3. Picture it
+If a popular MiniTickets list expires just before many visitors arrive, every request could run the same SQL. A cache meant to reduce work would suddenly send a surge to Postgres.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    n0["Concurrent cache misses"] --> n1
-    n1["Single-flight and lease"] --> n2
-    n2["Double-check then rebuild"] --> n3
-    n3["One cached result"]
+    A["Concurrent MiniTickets list misses"] -->|"share one promise per process"| S["singleFlight"]
+    S -->|"take short owner-token lease"| R["Redis rebuild lock"]
+    R -->|"recheck cache before rebuilding"| C["Existing result or Postgres read"]
+    C -->|"save result for waiting readers"| V["Redis list cache"]
 ```
 
-## 4. Where in our code
+1. Share in-process work for the same missing result.
+2. Use a temporary Redis lease across API processes.
+3. Recheck after acquiring it, rebuild if needed, and release only your own lease.
+
+## 4. How do we use it in MiniTickets?
+
+The list service combines `singleFlight` with a Redis owner-token lock. Waiting is bounded; a slow or failed cache can still lead to database fallback. This coordination reduces repeated public reads, but it is not a correctness lock for scarce seats.
+
+## 5. Interview-ready answer
+
+“MiniTickets coalesces concurrent list rebuilds inside one process and uses a short Redis lease across processes. After taking the lease, it checks the cache again because another request may already have filled it. Release verifies ownership. This reduces stampedes, but expiry or bounded fallback can still produce duplicate rebuilds; that is acceptable for public reads, never for booking ownership.”
+
+## 6. Important follow-up questions
+
+- **Why recheck after taking the lock?** The previous holder may have filled the cache while this request waited.
+- **Why use an owner token?** An expired old holder must not delete a newer holder’s lease.
+- **What if a rebuild exceeds the lease?** Another rebuild may start; the design tolerates that for read copies.
+- **Could this guard ticket sales?** No. Durable database rules must decide seats.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Implementation and historical evidence
+
+`apps/api/src/services/single-flight.ts` shares one promise per key and cleans it up on both success and error. `apps/api/src/queries/events-cache.ts` uses `SET NX PX` with a **5-second lease** and Lua compare/delete ownership checks. The cache is checked again after acquisition. Waiting is bounded and can fall back to Postgres.
+
+Historical `pnpm demo:stampede` measured **100 concurrent requests as one DB query**, including two instances after the double-check fix. This is recorded local evidence, not a universal guarantee, fresh run or AWS acceptance. A slow rebuild, eviction or expired lease can still duplicate SQL.
+
+### Trade-offs and future work
+
+The lock protects efficiency, not seat correctness. Future options include TTL jitter, refresh telemetry, stale serving, bounded rebuild queues and measured hot-key partitioning. Track database fallback and contention before adding complexity.
+
+### Code anchors
 
 - Anchor: `apps/api/src/queries/events-cache.ts` — `upcomingKey`; follow the numbered comments at this boundary.
 - Anchor: `apps/api/src/services/single-flight.ts` — `singleFlight`; follow the numbered comments at this boundary.
 
-`apps/api/src/services/single-flight.ts` shares a promise with cleanup on both success/error. `queries/events-cache.ts` uses SET NX PX and Lua compare/delete. `pnpm demo:stampede` previously measured 100 concurrent requests as 1 DB query, including two instances after the double-check fix.
+### Related reading
 
-## 5. See it yourself
+[current system](../00-big-picture.md) · [scenario](../guides/interview-scenarios.md#cache-stampede) · [explorer tour](../guides/infra-explorer.html?tour=search)
 
-Run `pnpm demo:stampede` and inspect the asserted outcome described above.
-
-Failure thought experiment: Why random owner token? A late old holder must not delete a newer lease. Do not change a live stack to demonstrate it.
-
-## 6. How it connects
-
-Uses the [current system](../00-big-picture.md); gives a concrete decision to the [scenario](../guides/interview-scenarios.md#cache-stampede) and [explorer tour](../guides/infra-explorer.html?tour=search).
-
-## 7. Our settings and WHY
-
-A stampede is many callers rebuilding the same missing result. One promise per process plus a Redis owner-token lease and double-check coalesce work; bounded wait can still fall back. A fast cache can amplify database load when many entries expire together.
-
-## 8. Trade-offs
-
-The 5 s lease and bounded wait permit duplicate rebuilds if slow or evicted. That is acceptable for public reads, never scarce-seat correctness.
-
-## 9. Alternatives and when to choose them
-
-10x: TTL jitter and refresh metrics. 100x: hot-key partitioning, stale serving and bounded rebuild queues.
-
-## 10. What breaks and how we notice
-
-Why random owner token? A late old holder must not delete a newer lease.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** A stampede is many callers rebuilding the same missing result.
-- **Senior:** Use single-flight inside one process and a short distributed rebuild lock across processes. Recheck the cache after taking the lock: another holder may have filled it while this request waited. Release only with the owner token. Bound waiting and fall back to Postgres so a broken cache does not hang the request.
-- **Lead:** 10x: TTL jitter and refresh metrics. 100x: hot-key partitioning, stale serving and bounded rebuild queues.
-
-## 14. Follow-up questions with answers
-
-Why random owner token? A late old holder must not delete a newer lease.
-
-What must happen after acquiring a rebuild lock? **Recheck the cache.**
-
-## 15. Say it in 30 seconds
-
-Use single-flight inside one process and a short distributed rebuild lock across processes. Recheck the cache after taking the lock: another holder may have filled it while this request waited. Release only with the owner token. Bound waiting and fall back to Postgres so a broken cache does not hang the request.
-
-## 16. Status and production work
-
-Repository implementation and local evidence are described above. Live AWS/CI execution remains owner acceptance. 10x: TTL jitter and refresh metrics. 100x: hot-key partitioning, stale serving and bounded rebuild queues.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=cache-stampede#chapter=5&piece=valkey).
 
 ## Where it appears in the story
 
 - [app-story: 10c. Public list caches and freshness](../app-story.md#10c-public-list-caches-and-freshness)
+
+</details>

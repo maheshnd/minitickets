@@ -4,102 +4,75 @@ History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
 
 Area: Testing · Status: ✅ built · Step doc: [02 errors](../../02-errors.md), [19 CloudFront](../../19-infra-cloudfront.md)
 
-## 1. In one line
+<!-- interview-card: v2 -->
 
-Some api tests call tRPC procedures as plain functions (`createCallerFactory`) or send fake HTTP
-requests in memory (`app.inject`), so they test real api code without opening a port.
+## 1. What is it?
 
-## 2. Real-life comparison
+An in-process API test runs real request-handling code inside the test process. It can call procedures or simulate HTTP without opening a network port.
 
-Testing a car engine on a stand in the workshop: real engine, real fuel, but no road, traffic or
-driver.
+## 2. Why do we need it?
 
-## 3. Picture it
+A spoofed forwarded IP might bypass a login limit. We can give Fastify crafted proxy headers and check the chosen client IP without starting the whole stack.
+
+## 3. How does it work?
 
 ```mermaid
 flowchart LR
-    t1["init.test.ts"] -->|"createCallerFactory(testRouter)"| mw["publicProcedure<br/>+ errorMapper"]
-    t2["trust-proxy.test.ts"] -->|"app.inject({ headers, remoteAddress })"| f["tiny Fastify app<br/>trustProxyHops(n)"]
+    T["MiniTickets init.test.ts"] -->|"call procedure with createCallerFactory"| M["Real tRPC error middleware"]
+    P["MiniTickets trust-proxy.test.ts"] -->|"inject headers and remoteAddress"| F["Fastify with trustProxyHops"]
+    M -->|"assert mapped error code"| A["Vitest assertions"]
+    F -->|"assert trusted client identity"| A
 ```
 
-## 4. Where in our code
+1. Build a small router or Fastify app around the real boundary.
+2. Send controlled inputs, including failure and spoofing cases.
+3. Assert outputs without confusing this with a real network or store test.
+
+## 4. How do we use it in MiniTickets?
+
+The tRPC tests use real error-mapping middleware. Proxy tests use Fastify’s in-memory request injection with the real trust policy. These targeted tests avoid modules that require environment variables and databases at import time.
+
+## 5. Interview-ready answer
+
+“MiniTickets exercises real API boundaries without listening on a port. One test calls procedures through the actual error middleware; another injects HTTP requests with controlled proxy headers into Fastify. This is fast and gives precise failures. It does not prove database behavior, TLS or load-balancer configuration, so those require separate evidence.”
+
+## 6. Important follow-up questions
+
+- **What does request injection cover?** Fastify routing and hooks without a real socket.
+- **Why avoid mocking the middleware?** We want to test its actual mapping or trust decision.
+- **Can these tests import the whole app?** That currently requires valid environment configuration; the focused tests avoid that dependency.
+- **What would improve broader coverage?** Injectable configuration and real-store integration tests, without replacing these focused checks.
+
+## 7. Advanced details
+
+<details>
+<summary>Technical reference</summary>
+
+### Exact test paths and commands
+
+`apps/api/src/trpc/init.test.ts` builds a tiny router on real `publicProcedure`, throws service-like errors and checks tRPC codes using `createCallerFactory(testRouter)({} as Context)`. Empty context works only because those procedures never read it.
+
+`apps/api/src/config/trust-proxy.test.ts` builds a small Fastify app with real `trustProxyHops`; `app.inject` supplies `remoteAddress: "10.0.0.37"` and `X-Forwarded-For` representing proxy hops. Neither imports `app.ts` or `env.ts`, so no stores/env setup is needed. `pnpm test init.test trust-proxy` selects these tests.
+
+### Failure cases and alternatives
+
+Changing the trust comparison from `< hops` to `<= hops` would admit spoofed `6.6.6.6`; the existing spoofing test should fail. Importing the full app without environment values fails loudly with invalid-environment errors. No mutation was performed here.
+
+These tests do not establish real Postgres/Redis paths. Real-store tests cover that boundary; a listening-server test such as Supertest adds socket behavior at setup cost. Injectable `buildApp(config)` remains a possible improvement, not a current complete-app testing guarantee.
+
+### Code anchors
 
 - Anchor: `apps/api/src/trpc/init.test.ts` · `createCallerFactory(testRouter)({} as Context)`: procedures called like functions.
 - Anchor: `apps/api/src/config/trust-proxy.test.ts` · `whoAmI`: `app.inject` with a fake `remoteAddress` and `X-Forwarded-For`.
 
-Step by step:
+### Related reading
 
-1. `init.test.ts` builds a tiny router whose procedures throw like services would, on the **real**
-   `publicProcedure` (so the real `errorMapper` runs), and checks the resulting tRPC codes.
-2. The context is `{}`: those procedures never read it.
-3. `trust-proxy.test.ts` builds a Fastify app with the real `trustProxyHops`, then
-   `app.inject({ remoteAddress: "10.0.0.37", headers })` simulates the ALB connecting, with the
-   header CloudFront and the ALB would write.
-4. Neither imports `app.ts` or `env.ts`, so no env vars, database or Redis are needed.
+[fastify-app](fastify-app.md) · [trpc-middleware](trpc-middleware.md) · [trust-proxy](trust-proxy.md) · [testing-pyramid](testing-pyramid.md)
 
-## 5. See it yourself
-
-```bash
-pnpm test init.test trust-proxy
-```
-
-**Break it on purpose:** change `trustProxyHops` to `return (_a, hop) => hop <= hops`. The "fake
-X-Forwarded-For is never used" test fails: the spoofed `6.6.6.6` becomes `request.ip`.
-
-## 6. How it connects
-
-- **Uses ←** [fastify-app](fastify-app.md) ("build apart from listen" idea),
-  [trpc-middleware](trpc-middleware.md), [trust-proxy](trust-proxy.md).
-- **Gives →** the middle layer of the [testing-pyramid](testing-pyramid.md).
-
-## 7. Our settings and WHY
-
-Test real code paths in memory; avoid importing modules that validate env at import. WHY: realistic
-and fast, with no setup.
-
-## 8. Trade-offs
-
-- **Pros:** real middleware and Fastify behaviour; no ports, no flakiness.
-- **Cons:** procedures that need Postgres or Redis aren't covered this way yet; `app.ts` can't be
-  imported without env vars.
-
-## 9. Alternatives and when to choose them
-
-- **Supertest** against a listening server: closer to production, slower.
-- **Real-store integration tests** in CI (the e2e job already has Postgres and Redis services).
-- **Injectable config** so `buildApp(config)` can be tested whole.
-
-## 10. What breaks, and how we'd notice
-
-A test that imports `app.ts` fails at import with "Invalid environment variables" unless env vars are
-set: confusing, but loud.
-
-## 13. Interview answers at 3 levels
-
-- **Simple:** We test the api's real code without starting a server.
-- **Senior:** `createCallerFactory` runs procedures through the real middleware chain to test
-  error mapping; `app.inject` simulates requests from the ALB with crafted `X-Forwarded-For` to test
-  `trustProxy`, including spoofing. No env, no ports.
-- **Lead:** In-process tests give most of the confidence of HTTP tests at unit-test speed. I'd make
-  config injectable so the full app can be tested this way, and add real-database integration tests
-  for queries.
-
-## 14. Follow-up questions interviewers ask
-
-- *What does `inject` simulate?* A full HTTP request through Fastify's routing and hooks, without a
-  socket.
-- *Why not mock tRPC?* The point is to run the real middleware.
-
-## 15. Say it in 30 seconds
-
-"Two api tests run real code in memory: one calls procedures through createCallerFactory to check
-the error mapper, the other uses Fastify's inject with fake proxy headers to check trustProxy and
-spoofing. No server, no env vars, a few milliseconds."
-
-## 16. Status
-
-✅ built.
+[Open this concept in the city explorer](../guides/infra-explorer.html?concept=in-process-api-tests#chapter=13&piece=github).
 
 ## Where it appears in the story
 
 - [App story: 14. The testing pyramid](../app-story.md#14-the-testing-pyramid)
+
+</details>
