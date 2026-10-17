@@ -1,10 +1,11 @@
 // Tags are labels stuck on AWS resources. They help you find things, split the bill by project,
 // and see which tool created a resource.
+import { names } from "./stack";
 
-// 1. These three tags go on EVERY resource we create.
+// 1. These three tags go on EVERY resource we create. Env is the stack name ("dev", "prod", ...).
 export const commonTags = {
   Project: "minitickets",
-  Env: "dev",
+  Env: names.stack,
   ManagedBy: "pulumi",
 };
 

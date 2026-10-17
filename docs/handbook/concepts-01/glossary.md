@@ -1,5 +1,7 @@
 # Glossary: every term in plain English
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Keep this open in a second tab. Each entry gives a one-line plain-English meaning, then the precise
 meaning you would use in an interview, then where it appears in MiniTickets. Terms are grouped so that
 related ideas sit together.

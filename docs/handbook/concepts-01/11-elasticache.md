@@ -1,5 +1,7 @@
 # 11. ElastiCache with Valkey: sessions and caching
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/data/cache.ts`), **⚙️ configured for
 > deployment** (the `dataEnabled` switch).
 

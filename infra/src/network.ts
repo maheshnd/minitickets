@@ -9,6 +9,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { prefix } from "./stack";
 
 // The network layer: a VPC with 2 public and 2 private subnets in 2 availability zones.
 // See docs/12-infra-network.md for the diagrams.
@@ -22,8 +23,6 @@ import { tagsFor } from "./tags";
 //   Each subnet owns one street inside it: 10.0.0.x, 10.0.1.x, 10.0.10.x, 10.0.11.x.
 //   Subnets must never overlap, because one address can belong to only one street.
 //   (AWS keeps 5 addresses in every subnet for itself, so 251 are usable.)
-
-const prefix = "minitickets-dev";
 
 export interface NetworkOutputs {
   vpcId: pulumi.Output<string>;

@@ -8,14 +8,13 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The Postgres part of the data layer: one small RDS database in the private subnets.
 // See docs/14-infra-data.md for the diagrams.
 //
 // This file exports a FUNCTION instead of creating resources when it is imported.
 // index.ts calls it only when the "dataEnabled" config switch is on (cost control).
-
-const prefix = "minitickets-dev";
 
 export interface PostgresInputs {
   privateSubnetIds: pulumi.Input<string>[];

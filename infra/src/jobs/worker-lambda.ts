@@ -12,12 +12,11 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The worker as an AWS Lambda function: AWS starts it when there are messages, runs one batch per
 // call, and bills only the milliseconds it runs. No server, nothing running (or billed) while idle.
 // The code is apps/worker/src/lambda.ts, the same handler `pnpm worker:dev` runs locally.
-
-const prefix = "minitickets-dev";
 
 // 1. The function's timeout. queues.ts sets the queue's visibility timeout to 6 x this, so the
 //    two always change together.

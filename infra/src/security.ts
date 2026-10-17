@@ -12,6 +12,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { prefix } from "./stack";
 
 // The security layer: 5 security groups (firewalls) and the rules between them.
 // See docs/13-infra-security-groups.md for the diagrams.
@@ -27,8 +28,6 @@ import { tagsFor } from "./tags";
 //   things move. A rule that says "allow from the api group" always means "whatever is
 //   wearing the api badge right now", whatever its IP is. Least privilege: only the exact
 //   caller we expect can reach each door.
-
-const prefix = "minitickets-dev";
 
 export interface SecurityInputs {
   vpcId: pulumi.Input<string>;

@@ -706,7 +706,7 @@
       "infra/src/data/postgres.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A31"
+    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A30"
   },
   {
     "id": "cache-stampede",
@@ -949,7 +949,7 @@
       "infra/src/jobs/queue-trigger.ts"
     ],
     "source": "https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html",
-    "codeLink": "code-tours.html#aws-lambda%3Ainfra%2Fsrc%2Fjobs%2Fqueue-trigger.ts%3A28"
+    "codeLink": "code-tours.html#aws-lambda%3Ainfra%2Fsrc%2Fjobs%2Fqueue-trigger.ts%3A27"
   },
   {
     "id": "ordering-sagas",
@@ -1069,7 +1069,7 @@
       "infra/src/compute/service.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A43"
+    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A42"
   },
   {
     "id": "compute-choices",
@@ -1100,7 +1100,7 @@
       "infra/src/jobs/worker-lambda.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A43"
+    "codeLink": "code-tours.html#ecs-service%3Ainfra%2Fsrc%2Fcompute%2Fservice.ts%3A42"
   },
   {
     "id": "iam-oidc",
@@ -1131,7 +1131,7 @@
       "infra/src/publish-policy.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#cd-oidc%3Ainfra%2Fsrc%2Fcicd.ts%3A60"
+    "codeLink": "code-tours.html#cd-oidc%3Ainfra%2Fsrc%2Fcicd.ts%3A62"
   },
   {
     "id": "network-boundaries",
@@ -1162,7 +1162,7 @@
       "infra/src/compute/service-connect.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#regions-and-azs%3Ainfra%2Fsrc%2Fnetwork.ts%3A35"
+    "codeLink": "code-tours.html#regions-and-azs%3Ainfra%2Fsrc%2Fnetwork.ts%3A34"
   },
   {
     "id": "dynamodb",
@@ -1345,7 +1345,7 @@
       "infra/src/data/postgres.ts"
     ],
     "source": "",
-    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A31"
+    "codeLink": "code-tours.html#rds-postgres%3Ainfra%2Fsrc%2Fdata%2Fpostgres.ts%3A30"
   },
   {
     "id": "sessions-roles",

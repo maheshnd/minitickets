@@ -9,6 +9,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { names, prefix } from "../stack";
 
 // The CloudFront part of the entry layer.
 // See docs/19-infra-cloudfront.md for the diagrams.
@@ -21,8 +22,6 @@ import { tagsFor } from "../tags";
 //     1. HTTPS: every distribution gets an https://<id>.cloudfront.net address with a free
 //        certificate, so we need no domain name. HTTPS makes the Secure session cookie work.
 //     2. Caching: the built JS and CSS files are cached at the edge, close to the visitor.
-
-const prefix = "minitickets-dev";
 
 export interface CdnInputs {
   albDnsName: pulumi.Input<string>;
@@ -129,7 +128,7 @@ export function createCdn(inputs: CdnInputs): CdnOutputs {
   //   `pulumi up` waits until that is done, so appUrl works as soon as up finishes.
   const distribution = new aws.cloudfront.Distribution(`${prefix}-cdn`, {
     enabled: true,
-    comment: "minitickets dev: HTTPS in front of the ALB",
+    comment: `minitickets ${names.stack}: HTTPS in front of the ALB`,
 
     // @concept: http-versions
     // 3a. HTTP/2 and HTTP/3 between the browser and the edge (faster page loads; the browser

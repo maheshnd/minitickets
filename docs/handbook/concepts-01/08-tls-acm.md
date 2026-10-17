@@ -1,5 +1,7 @@
 # 08. DNS, TLS and ACM: the name and the padlock
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/certificate.ts`, `infra/src/entry/mode.ts`,
 > `infra/src/entry/https-listener.ts`), **⚙️ configured for deployment**.
 

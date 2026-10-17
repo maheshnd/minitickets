@@ -7,13 +7,12 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The worker's memory of which jobs are DONE (the "idempotent consumer",
 // apps/worker/src/processed-jobs.ts): the AWS version of the table that `pnpm jobs:table` creates in
 // DynamoDB Local. Same key, same TTL attribute, so the same code works on both.
 // Always on: an on-demand table costs nothing while idle (only its few KB of storage).
-
-const prefix = "minitickets-dev";
 
 export interface ProcessedJobsTableOutputs {
   tableName: pulumi.Output<string>;

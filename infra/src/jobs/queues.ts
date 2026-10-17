@@ -12,6 +12,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 import { WORKER_TIMEOUT_SECONDS } from "./worker-lambda";
+import { prefix } from "../stack";
 
 // The queues of the job pipeline: the AWS version of the two ElasticMQ queues in
 // docker/elasticmq.conf. Same code talks to both (only the endpoint differs locally).
@@ -21,8 +22,6 @@ import { WORKER_TIMEOUT_SECONDS } from "./worker-lambda";
 //                                │ a message received 3 times without being deleted
 //                                ▼
 //                          minitickets-dev-jobs-dlq   (a person looks: pnpm jobs:dlq, or the console)
-
-const prefix = "minitickets-dev";
 
 // 1. Days -> seconds, for readability below.
 const DAY = 24 * 60 * 60;

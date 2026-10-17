@@ -1,5 +1,7 @@
 # 16. SNS: one event, many consumers (fan-out)
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/jobs/booking-events.ts`,
 > `infra/src/observability/alert-topic.ts`), **⚙️ configured for deployment** (booking events need
 > compute on; the alert topic is always on).

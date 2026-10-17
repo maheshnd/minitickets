@@ -7,7 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
-import { ALARM_PREFIX } from "./alarm-specs";
+import { names, prefix } from "../stack";
 
 // @concept: alerting
 // SNS (Simple Notification Service) in simple words: a loudspeaker. Something publishes ONE message
@@ -18,8 +18,6 @@ import { ALARM_PREFIX } from "./alarm-specs";
 //
 // Always on: a topic and its email deliveries cost nothing at our volume (the first 1,000 emails a
 // month are free), and the DLQ alarm (always on too) needs somewhere to send.
-
-const prefix = "minitickets-dev";
 
 export interface AlertTopicInputs {
   alertEmail: pulumi.Input<string>;
@@ -36,15 +34,15 @@ export function createAlertTopic(inputs: AlertTopicInputs): AlertTopicOutputs {
   //    a fixed policy that does not. A customer-managed KMS key would work ($1/month + a key policy).
   //    The messages say only "alarm X is in ALARM": no personal data, nothing secret.
   // DEPENDS ON: nothing.
-  const topic = new aws.sns.Topic(`${prefix}-alerts`, {
-    name: `${prefix}-alerts`,
-    displayName: "MiniTickets dev alerts",
-    tags: tagsFor(`${prefix}-alerts`),
+  const topic = new aws.sns.Topic(names.alertTopicName, {
+    name: names.alertTopicName,
+    displayName: `MiniTickets ${names.stack} alerts`,
+    tags: tagsFor(names.alertTopicName),
   });
 
   // 2. The topic policy (a RESOURCE policy: it sits on the topic and says who may use it).
   //    WHO: the CloudWatch service (cloudwatch.amazonaws.com), and only for alarms of THIS account
-  //      whose names start with minitickets-dev- (aws:SourceArn). WHY the conditions: without them
+  //      whose names start with <prefix>- (aws:SourceArn), e.g. minitickets-dev-. WHY the conditions: without them
   //      any account's CloudWatch could be tricked into publishing here ("confused deputy").
   //    WHAT: sns:Publish only.
   //    ATTACHED TO: this topic.
@@ -66,7 +64,7 @@ export function createAlertTopic(inputs: AlertTopicInputs): AlertTopicOutputs {
           Action: "sns:Publish",
           Resource: topic.arn,
           Condition: {
-            ArnLike: { "aws:SourceArn": pulumi.interpolate`arn:aws:cloudwatch:${region}:${accountId}:alarm:${ALARM_PREFIX}*` },
+            ArnLike: { "aws:SourceArn": pulumi.interpolate`arn:aws:cloudwatch:${region}:${accountId}:alarm:${prefix}-*` },
             StringEquals: { "aws:SourceAccount": accountId },
           },
         },

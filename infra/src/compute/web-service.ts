@@ -14,11 +14,10 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 import { webProxyPort } from "./service-connect";
+import { prefix } from "../stack";
 
 // The service for the web (Next.js) app. Same pattern as the api service (service.ts),
 // see docs/17-infra-ecs-api.md and docs/18-infra-alb-web.md.
-
-const prefix = "minitickets-dev";
 
 export interface WebServiceInputs {
   clusterName: pulumi.Input<string>;

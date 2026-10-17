@@ -6,6 +6,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ERRORS_QUERY, FOLLOW_ONE_REQUEST_QUERY, WORKER_DURATIONS_QUERY } from "./dashboard-body";
+import { prefix } from "../stack";
 
 // @concept: cloudwatch-logs
 // Logs Insights = a query language over log lines. Because every line of the api and the worker is
@@ -14,8 +15,6 @@ import { ERRORS_QUERY, FOLLOW_ONE_REQUEST_QUERY, WORKER_DURATIONS_QUERY } from "
 // The text is the same as the dashboard's (dashboard-body.ts), so the two never drift apart.
 // Only with compute on: the log groups must exist. COST: saving is free; each RUN is billed per GB
 // of logs it scans ($0.005/GB; our dev logs are a few MB a day).
-
-const prefix = "minitickets-dev";
 
 export interface LogQueriesInputs {
   apiLogGroupName: pulumi.Input<string>;

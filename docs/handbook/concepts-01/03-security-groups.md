@@ -1,5 +1,7 @@
 # 03. Security groups: the firewalls between resources
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/security.ts`), **⚙️ configured for deployment**.
 
 **Prerequisites:** [02. Networking and the VPC](02-vpc-and-networking.md).

@@ -1,5 +1,7 @@
 # 24. GitHub OIDC and CI/CD: deploying without stored keys
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/cicd.ts`, `infra/src/publish-policy.ts`,
 > `.github/workflows/*`), **⚙️ configured for deployment**. The two role ARNs are copied by hand into
 > GitHub repository variables.

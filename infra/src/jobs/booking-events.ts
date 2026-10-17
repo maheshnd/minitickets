@@ -1,13 +1,14 @@
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 import type { JobQueuesOutputs } from "./queues";
 
 // 1. SNS copies an event to BOTH queues; SQS buffers each consumer independently. Always on,
 //    request-billed with no idle fee. Retain the existing email queue and its waiting messages.
 // @concept: sns
 export function createBookingEvents(email: JobQueuesOutputs, tickets: JobQueuesOutputs) {
-  const name = "minitickets-dev-booking-events";
+  const name = `${prefix}-booking-events`;
   const topic = new aws.sns.Topic(name, { name, tags: tagsFor(name) });
   const subscriptions: aws.sns.TopicSubscription[] = [];
   for (const [consumer, queue] of [["email", email], ["tickets", tickets]] as const) {

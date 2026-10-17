@@ -1,5 +1,7 @@
 # 06. ECS and Fargate: running containers without servers
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/compute/*`), **⚙️ configured for deployment**
 > (the `computeEnabled` switch).
 

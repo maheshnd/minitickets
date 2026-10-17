@@ -9,6 +9,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as random from "@pulumi/random";
 import { tagsFor } from "../tags";
+import { names, prefix } from "../stack";
 
 // The shared secret of the revalidate hook, stored in Secrets Manager.
 //
@@ -27,8 +28,6 @@ import { tagsFor } from "../tags";
 //   A plain env var is readable by anyone who can view the task definition (console, API, logs of
 //   `pulumi preview`). With a secret, the task definition holds only WHERE the value is; ECS reads it
 //   with the execution role when the task starts. Same pattern as REDIS_URL (data/secrets.ts).
-
-const prefix = "minitickets-dev";
 
 export interface RevalidateSecretOutputs {
   secretArn: pulumi.Output<string>;
@@ -52,7 +51,7 @@ export function createRevalidateSecret(): RevalidateSecretOutputs {
   // recoveryWindowInDays 0: delete at once when the entry switch is turned off, so turning it back
   //   on does not fail with "secret is scheduled for deletion" (same reason as data/secrets.ts).
   const secret = new aws.secretsmanager.Secret(`${prefix}-revalidate-secret`, {
-    name: "minitickets/dev/revalidate-secret",
+    name: `${names.secretPath}/revalidate-secret`,
     description: "REVALIDATE_SECRET shared by the minitickets api and web tasks",
     recoveryWindowInDays: 0,
     tags: tagsFor(`${prefix}-revalidate-secret`),

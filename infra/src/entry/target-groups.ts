@@ -7,6 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The target group part of the entry layer.
 // See docs/18-infra-alb-web.md for the diagrams.
@@ -15,8 +16,6 @@ import { tagsFor } from "../tags";
 //   A list of the desks (task IP addresses) that can handle one kind of request, plus a rule for
 //   checking that each desk is staffed (the health check). The ECS service adds a task to the list
 //   when it starts and removes it when it stops. The ALB only sends traffic to HEALTHY entries.
-
-const prefix = "minitickets-dev";
 
 export interface TargetGroupsInputs {
   vpcId: pulumi.Input<string>;

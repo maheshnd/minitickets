@@ -1,5 +1,7 @@
 # 04. IAM: identity, authentication, authorization, roles and trust
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/compute/iam.ts`, `jobs/worker-iam.ts`,
 > `tickets/iam.ts`, `cicd.ts`), **⚙️ configured for deployment**.
 

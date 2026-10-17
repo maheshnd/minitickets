@@ -25,9 +25,19 @@ flowchart LR
 
 ---
 
-## 2026-10-17 · docs(handbook): complete concise concept card format
+## 2026-10-17 · infra: stack-derived names and a new-account bootstrap
 
 Commit: filled in by the next handbook commit
+
+Why: infra names now come from the Pulumi stack name (infra/src/names.ts) and cd.yml reads them from GitHub variables, which moved code that the generated tours quote; and `pnpm docs:check` failed on the concepts-01 pages, which lacked the History line.
+
+- `generated/code-tours.json`, `guides/code-tours.html`, `guides/infra-explorer.html`, `generated/scenarios.json`, `guides/scenarios.html`: regenerated with `pnpm docs:build` (snippets of the edited infra files and cd.yml); no hand edits.
+- `concepts-01/*.md` (28 pages): add the required "History: see CHANGELOG.md or run `pnpm docs:history`" line under each title; no content change.
+- `PENDING.md`: entry for this step (the catch-up must also update `guides/cicd-story.md`, which still quotes the old hard-coded cd.yml env block).
+
+## 2026-10-17 · docs(handbook): complete concise concept card format
+
+Commit: c1c96f2
 
 Why: finish the remaining 116 cards so all 152 concepts have one short learning flow and interview answer, with technical reference folded away. Preserve built/partial/explain-only status and distinguish current implementation, historical local evidence and pending live acceptance.
 

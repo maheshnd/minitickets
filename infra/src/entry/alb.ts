@@ -10,6 +10,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The load balancer part of the entry layer.
 // See docs/18-infra-alb-web.md for the diagrams.
@@ -22,8 +23,6 @@ import { tagsFor } from "../tags";
 //   Since Step 11g visitors never reach it directly: CloudFront (cdn.ts) stands in front of it.
 //   Since Step 11i that is one of two modes: with cdnEnabled = false visitors DO reach it directly,
 //   over HTTPS on our own domain (https-listener.ts). The ALB itself is the same in both modes.
-
-const prefix = "minitickets-dev";
 
 export interface AlbInputs {
   publicSubnetIds: pulumi.Input<string>[];

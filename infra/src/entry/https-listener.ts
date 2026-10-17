@@ -11,6 +11,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The listeners for "no CloudFront" mode: the browser talks to the ALB directly, over HTTPS.
 // The other mode (cdnEnabled = true, the default) uses listener.ts instead, never both.
@@ -30,8 +31,6 @@ import { tagsFor } from "../tags";
 // Switch modes only while entryEnabled is false. Both modes have a listener on port 80 and AWS
 // allows one listener per port; Pulumi creates the new one before it deletes the old one, so a
 // switch with entry on fails with "A listener already exists on this port".
-
-const prefix = "minitickets-dev";
 
 export interface HttpsListenerInputs {
   albArn: pulumi.Input<string>;

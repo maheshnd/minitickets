@@ -14,6 +14,7 @@
 //   migration:  config migrationImageTag (set ONLY by CD with --config, never committed) > api tag
 //   worker:     config workerImageTag (set ONLY by CD with --config, never committed) > SSM
 import * as pulumi from "@pulumi/pulumi";
+import { names } from "./stack";
 
 // 1. The value the SSM parameter starts with, before the first deploy (release.ts). SSM refuses an
 //    empty value, so we need SOME text; it means "nothing deployed yet" and is never used as a tag.
@@ -56,7 +57,7 @@ export function chooseImageTags(inputs: ImageTagInputs): ImageTags {
   //    WHY no default: a "latest" default would hide WHICH code runs (immutable-image-tags).
   if (api === undefined || web === undefined) {
     throw new pulumi.RunError(
-      "computeEnabled is true, but no image tag has been deployed yet (SSM /minitickets/dev/image-tag " +
+      `computeEnabled is true, but no image tag has been deployed yet (SSM ${names.imageTagParameter} ` +
         "is missing or still 'none'). Deploy through CD: commit + push, then approve the deploy job " +
         "(docs/handbook/PENDING.md, Step 12b). Emergency only: pulumi config set apiImageTag <sha> " +
         "and webImageTag <sha>.",
@@ -77,7 +78,7 @@ export function chooseImageTags(inputs: ImageTagInputs): ImageTags {
     if (!IMAGE_TAG.test(tag)) {
       throw new pulumi.RunError(
         `The ${name} image tag "${tag}" is not a git SHA (7-40 lowercase hex characters). ` +
-          "Check SSM /minitickets/dev/image-tag and the config keys apiImageTag, webImageTag, migrationImageTag, workerImageTag.",
+          `Check SSM ${names.imageTagParameter} and the config keys apiImageTag, webImageTag, migrationImageTag, workerImageTag.`,
       );
     }
   }

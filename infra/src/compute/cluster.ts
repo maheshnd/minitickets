@@ -6,6 +6,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The cluster part of the compute layer.
 // See docs/17-infra-ecs-api.md for the diagrams.
@@ -14,8 +15,6 @@ import { tagsFor } from "../tags";
 //   ECS (Elastic Container Service) is AWS's container runner. A cluster is just a named
 //   group that services and tasks belong to, like a folder. With Fargate there are no servers
 //   inside it for us to manage: AWS finds a machine for each task. An empty cluster costs nothing.
-
-const prefix = "minitickets-dev";
 
 export interface ClusterOutputs {
   clusterName: pulumi.Output<string>;

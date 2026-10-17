@@ -14,7 +14,9 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { names } from "./stack";
 import { publishPolicyDocument } from "./publish-policy";
+import { prefix } from "./stack";
 
 // The CI/CD layer: lets GitHub Actions push images to ECR WITHOUT any stored AWS keys.
 // Always on: IAM roles and OIDC providers cost nothing.
@@ -37,7 +39,7 @@ import { publishPolicyDocument } from "./publish-policy";
 // The job that builds images (and runs `pnpm install`, i.e. lots of third-party code) must not
 // also be able to change what runs in AWS.
 
-const prefix = "minitickets-dev";
+// The resource names start with prefix = "minitickets-<stack>" (src/stack.ts), e.g. minitickets-dev-gh-deploy.
 
 // 1. The address of GitHub's token issuer, without "https://". IAM condition keys start with
 //    it, e.g. "token.actions.githubusercontent.com:sub".
@@ -133,12 +135,12 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //    maxSessionDuration 3600 s (the default, written out): the credentials die after 1 hour,
   //    long enough for a build, short enough that a leaked copy is soon useless.
   // DEPENDS ON: trustPolicy (so: the provider).
-  const publishRole = new aws.iam.Role(`${prefix}-gh-publish`, {
-    name: `${prefix}-gh-publish`,
+  const publishRole = new aws.iam.Role(names.publishRoleName, {
+    name: names.publishRoleName,
     description: "GitHub Actions (main of our repo only): push images to the 3 minitickets ECR repos",
     assumeRolePolicy: trustPolicy,
     maxSessionDuration: 3600,
-    tags: tagsFor(`${prefix}-gh-publish`),
+    tags: tagsFor(names.publishRoleName),
   });
 
   // 6. The permission policy: exactly what `docker login` + `docker push` to our repos need
@@ -158,8 +160,8 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
 
   // ---------- Deploy role (Step 12b) ----------
   // TRUST POLICY (who can use it):
-  //   a GitHub Actions job of our repo that runs in the GitHub ENVIRONMENT "dev" (step 8b). That
-  //   environment has a required reviewer, so only a job a human approved gets that far.
+  //   a GitHub Actions job of our repo that runs in the GitHub ENVIRONMENT named after the stack
+  //   ("dev" for the dev stack, src/names.ts; step 8b). That environment has a required reviewer, so only a job a human approved gets that far.
   // PERMISSION POLICY (what it can do): whatever `pulumi up` needs for OUR stack (it creates,
   //   changes and deletes everything from the VPC to CloudFront), plus: write the deployed tag and
   //   the deployed commit to SSM, add the "deployed-<sha>" tag in ECR, run + watch the migration
@@ -168,7 +170,8 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
 
   // 8. The trust policy. Same shape as step 4, with a different "sub".
   //    8a. aud = sts.amazonaws.com: same as 4a.
-  //    8b. sub = <subject prefix>:environment:dev.
+  //    8b. sub = <subject prefix>:environment:<stack>, e.g. ":environment:dev" (names.githubEnvironment).
+  //        One environment per stack, so the deploy role of stack "prod" refuses a job approved for "dev".
   //        WHY not ":ref:refs/heads/main": a job that declares `environment: dev` gets the
   //        ENVIRONMENT form of "sub" from GitHub, never the branch form. So this role can only be
   //        used by jobs in the "dev" environment, and GitHub starts those only after the required
@@ -188,7 +191,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
         Condition: {
           StringEquals: {
             [`${githubOidcHost}:aud`]: "sts.amazonaws.com",
-            [`${githubOidcHost}:sub`]: `${inputs.githubSubjectPrefix}:environment:dev`,
+            [`${githubOidcHost}:sub`]: `${inputs.githubSubjectPrefix}:environment:${names.githubEnvironment}`,
           },
         },
       },
@@ -200,12 +203,12 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
   //    RDS (10-15 min) and, in CloudFront mode, for CloudFront (15-30 min), twice over in a two-phase
   //    deploy. Credentials that die halfway through `pulumi up` would leave the stack half-changed.
   // DEPENDS ON: deployTrustPolicy (so: the provider).
-  const deployRole = new aws.iam.Role(`${prefix}-gh-deploy`, {
-    name: `${prefix}-gh-deploy`,
-    description: "GitHub Actions (approved jobs in environment dev only): pulumi up, migrate, roll services",
+  const deployRole = new aws.iam.Role(names.deployRoleName, {
+    name: names.deployRoleName,
+    description: `GitHub Actions (approved jobs in environment ${names.githubEnvironment} only): pulumi up, migrate, roll services`,
     assumeRolePolicy: deployTrustPolicy,
     maxSessionDuration: 7200,
-    tags: tagsFor(`${prefix}-gh-deploy`),
+    tags: tagsFor(names.deployRoleName),
   });
 
   // 10. The permission policy.
@@ -408,7 +411,7 @@ export function createCicd(inputs: CicdInputs): CicdOutputs {
           Sid: "ReadOurParameterPath",
           Effect: "Allow",
           Action: "ssm:GetParametersByPath",
-          Resource: pulumi.interpolate`arn:aws:ssm:${region}:${accountId}:parameter/minitickets/dev`,
+          Resource: pulumi.interpolate`arn:aws:ssm:${region}:${accountId}:parameter${names.path}`,
         },
         {
           Sid: "ListParameterNames",

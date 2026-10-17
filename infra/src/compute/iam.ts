@@ -11,6 +11,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The IAM part of the compute layer: two roles, one for ECS and one for our app.
 // See docs/17-infra-ecs-api.md for the diagrams.
@@ -24,8 +25,6 @@ import { tagsFor } from "../tags";
 //     execution role -> worn by the ECS agent BEFORE our code runs (pull image, read secrets, logs)
 //     task role      -> worn by OUR CODE while it runs (ECS Exec, and sending jobs to SNS)
 //   Keeping them apart means our app's code never holds the power to read the secrets.
-
-const prefix = "minitickets-dev";
 
 export interface IamInputs {
   dbMasterSecretArn: pulumi.Input<string>;

@@ -28,6 +28,7 @@ pnpm dev
 | `pnpm typecheck` | Runs `tsc --noEmit` in every package                    |
 | `pnpm lint`      | Runs ESLint on every package                            |
 | `pnpm test`      | Runs the unit tests (Vitest)                            |
+| `pnpm infra:bootstrap --stack <name> --profile <aws profile> [--dry-run]` | Sets up a new AWS account / stack for CD ([docs/21-new-aws-account.md](docs/21-new-aws-account.md)) |
 
 ## Folders
 
@@ -55,6 +56,8 @@ docs/            Step-by-step explanations
 - [docs/handbook/guides/infra-explorer.html](docs/handbook/guides/infra-explorer.html): the
   interactive city map that goes with that guide. Open it locally (double-click the file; GitHub
   only shows its source).
+- [docs/21-new-aws-account.md](docs/21-new-aws-account.md): set up MiniTickets in a NEW AWS account
+  (or a second stack): one command, `pnpm infra:bootstrap`, plus a short checklist.
 - [docs/handbook/guides/cicd-story.md](docs/handbook/guides/cicd-story.md): the CI/CD story for
   beginners. What happens between `git push` and the new version running on AWS, and how to read
   `ci.yml` and `cd.yml` (GitHub Actions, bash and Pulumi explained from zero).

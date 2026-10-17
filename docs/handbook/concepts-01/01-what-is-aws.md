@@ -1,5 +1,7 @@
 # 01. What is AWS? Accounts, regions, AZs and ARNs
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** for the parts MiniTickets configures (region, tags);
 > otherwise this chapter is conceptual foundation. See the
 > [labels](README.md#2-four-honesty-labels-read-this-before-anything-else).

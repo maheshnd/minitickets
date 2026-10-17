@@ -1,5 +1,7 @@
 # 99. Verification gaps and honesty ledger
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **This chapter is the honesty ledger for the whole handbook.** Everything else teaches; this one tells
 > you **exactly what has been checked and how**. Read it before you quote any number from this handbook
 > as fact.

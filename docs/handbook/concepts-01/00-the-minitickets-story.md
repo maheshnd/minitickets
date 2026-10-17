@@ -1,5 +1,7 @@
 # The MiniTickets story: one booking, every AWS service
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 This is the narrative spine of the handbook. Read it once now for the big picture; return to it after
 each part to see where the new service fits. Every section here has a full chapter later — the point
 of this page is to show how the pieces connect, not to teach the details.

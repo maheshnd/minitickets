@@ -2,8 +2,7 @@ import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 import * as random from "@pulumi/random";
 import { tagsFor } from "../tags";
-
-const prefix = "minitickets-dev";
+import { names, prefix } from "../stack";
 
 export function createTicketStorage() {
   // 1. Persistent across compute/data off/on: issued tickets and their signing key must agree.
@@ -52,7 +51,7 @@ export function createTicketStorage() {
   //    dropping a key would invalidate already-issued HMACs (keep previous keys when adding it).
   const key = new random.RandomBytes(`${prefix}-ticket-signing-key`, { length: 32 });
   const secret = new aws.secretsmanager.Secret(`${prefix}-ticket-signing`, {
-    name: "minitickets/dev/ticket-signing", recoveryWindowInDays: 7, tags: tagsFor(`${prefix}-ticket-signing`),
+    name: `${names.secretPath}/ticket-signing`, recoveryWindowInDays: 7, tags: tagsFor(`${prefix}-ticket-signing`),
   });
   const version = new aws.secretsmanager.SecretVersion(`${prefix}-ticket-signing-value`, {
     secretId: secret.id, secretString: pulumi.secret(key.hex),

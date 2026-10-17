@@ -17,10 +17,8 @@ import type * as pulumi from "@pulumi/pulumi";
 //   3. worker-errors       the worker Lambda itself crashed or timed out
 //   4. alb-5xx             visitors get server errors (the api or web fails, or no healthy task)
 //
-// Names MUST start with "minitickets-dev-": the deploy role may manage only alarms with that prefix
-// (cicd.ts 10m). The test checks it.
-
-export const ALARM_PREFIX = "minitickets-dev-";
+// Names MUST start with "<prefix>-" (e.g. "minitickets-dev-"): the deploy role may manage only alarms
+// with that prefix (cicd.ts 10m). The test checks it.
 
 type Name = pulumi.Input<string>;
 
@@ -51,6 +49,8 @@ export interface AlarmSpec {
 }
 
 export interface AlarmSpecInputs {
+  // The stack's name prefix, e.g. "minitickets-dev" (src/names.ts). Every alarm name starts with it.
+  prefix: string;
   jobsQueueName: Name;
   dlqName: Name;
   // Only when compute is on (the Lambda exists).
@@ -60,6 +60,7 @@ export interface AlarmSpecInputs {
 }
 
 export function alarmSpecs(inputs: AlarmSpecInputs): AlarmSpec[] {
+  const p = inputs.prefix;
   const specs: AlarmSpec[] = [
     // 1. DLQ NOT EMPTY: at least one message waits in the dead-letter queue = a booking email failed
     //    3 times and nobody will retry it. Every such message is a customer without an email, so
@@ -70,9 +71,9 @@ export function alarmSpecs(inputs: AlarmSpecInputs): AlarmSpec[] {
     //      still there. "ignore" keeps the last state until a real number says otherwise (a redrive
     //      or a purge is activity, so it reports 0 and the alarm goes back to OK).
     {
-      name: `${ALARM_PREFIX}jobs-dlq-not-empty`,
+      name: `${p}-jobs-dlq-not-empty`,
       alarmDescription:
-        "A booking email failed 3 times and waits in the DLQ (minitickets-dev-jobs-dlq). Find why: Logs Insights query minitickets-dev/errors, then follow its correlationId. Redrive after the fix (docs/20-deploy-day.md 3.10).",
+        `A booking email failed 3 times and waits in the DLQ (${p}-jobs-dlq). Find why: Logs Insights query ${p}/errors, then follow its correlationId. Redrive after the fix (docs/20-deploy-day.md 3.10).`,
       namespace: "AWS/SQS",
       metricName: "ApproximateNumberOfMessagesVisible",
       dimensions: { QueueName: inputs.dlqName },
@@ -90,9 +91,9 @@ export function alarmSpecs(inputs: AlarmSpecInputs): AlarmSpec[] {
     //    "slow". One minute above it is enough: the age only grows while nobody reads.
     //    notBreaching: an empty, quiet queue sends no numbers, and that is fine.
     {
-      name: `${ALARM_PREFIX}jobs-oldest-message-age`,
+      name: `${p}-jobs-oldest-message-age`,
       alarmDescription:
-        "A message has waited >= 5 minutes in minitickets-dev-jobs: nothing is reading the queue (worker Lambda off, failing, throttled, or its trigger disabled). Check the trigger and the worker log (docs/20-deploy-day.md 3.10).",
+        `A message has waited >= 5 minutes in ${p}-jobs: nothing is reading the queue (worker Lambda off, failing, throttled, or its trigger disabled). Check the trigger and the worker log (docs/20-deploy-day.md 3.10).`,
       namespace: "AWS/SQS",
       metricName: "ApproximateAgeOfOldestMessage",
       dimensions: { QueueName: inputs.jobsQueueName },
@@ -111,9 +112,9 @@ export function alarmSpecs(inputs: AlarmSpecInputs): AlarmSpec[] {
   //    instead. Any error in 5 minutes is worth a look.
   if (inputs.workerFunctionName) {
     specs.push({
-      name: `${ALARM_PREFIX}worker-errors`,
+      name: `${p}-worker-errors`,
       alarmDescription:
-        "The worker Lambda (minitickets-dev-worker) crashed or timed out. Its whole batch comes back after the queue's 60 s visibility timeout. Logs Insights: minitickets-dev/errors and minitickets-dev/worker-durations.",
+        `The worker Lambda (${p}-worker) crashed or timed out. Its whole batch comes back after the queue's 60 s visibility timeout. Logs Insights: ${p}/errors and ${p}/worker-durations.`,
       namespace: "AWS/Lambda",
       metricName: "Errors",
       dimensions: { FunctionName: inputs.workerFunctionName },
@@ -142,9 +143,9 @@ export function alarmSpecs(inputs: AlarmSpecInputs): AlarmSpec[] {
       period: 300,
     });
     specs.push({
-      name: `${ALARM_PREFIX}alb-5xx`,
+      name: `${p}-alb-5xx`,
       alarmDescription:
-        "Visitors got >= 5 server errors (5xx) in 5 minutes, from the api/web (target 5xx) or the ALB itself (502/503/504). Logs Insights: minitickets-dev/errors; ECS service events (docs/20-deploy-day.md 3.9).",
+        `Visitors got >= 5 server errors (5xx) in 5 minutes, from the api/web (target 5xx) or the ALB itself (502/503/504). Logs Insights: ${p}/errors; ECS service events (docs/20-deploy-day.md 3.9).`,
       metricQueries: [
         { id: "target5xx", metric: albMetric("HTTPCode_Target_5XX_Count"), returnData: false },
         { id: "alb5xx", metric: albMetric("HTTPCode_ELB_5XX_Count"), returnData: false },

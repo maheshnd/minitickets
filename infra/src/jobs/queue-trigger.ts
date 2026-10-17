@@ -7,6 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The EVENT SOURCE MAPPING: the part of Lambda that reads the queue for us. Pollers run by AWS
 // long-poll the queue, collect a batch, call our function with it, and then act on the answer:
@@ -17,8 +18,6 @@ import { tagsFor } from "../tags";
 //        (the listed ones stay; the handler already set their retry wait)
 //
 // Locally apps/worker/src/local.ts plays this part.
-
-const prefix = "minitickets-dev";
 
 export interface QueueTriggerInputs {
   queueArn: pulumi.Input<string>;

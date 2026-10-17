@@ -6,6 +6,7 @@
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as random from "@pulumi/random";
+import { prefix } from "../stack";
 
 // The shared secret between CloudFront and the ALB.
 // See docs/19-infra-cloudfront.md, section "Origin protection".
@@ -13,8 +14,6 @@ import * as random from "@pulumi/random";
 // In simple words:
 //   A password that CloudFront says on every request it sends to the ALB. The ALB only lets a
 //   request through when it hears the password. Only our CloudFront distribution knows it.
-
-const prefix = "minitickets-dev";
 
 export interface OriginSecretOutputs {
   headerName: string;

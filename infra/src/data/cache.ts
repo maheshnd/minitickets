@@ -9,6 +9,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as random from "@pulumi/random";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The cache part of the data layer: one small Valkey node in the private subnets.
 // See docs/14-infra-data.md for the diagrams.
@@ -20,8 +21,6 @@ import { tagsFor } from "../tags";
 //
 // Like postgres.ts, this file exports a FUNCTION. index.ts calls it only when "dataEnabled"
 // is on.
-
-const prefix = "minitickets-dev";
 
 export interface CacheInputs {
   privateSubnetIds: pulumi.Input<string>[];

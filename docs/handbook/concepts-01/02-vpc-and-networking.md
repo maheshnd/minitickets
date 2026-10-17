@@ -1,5 +1,7 @@
 # 02. Networking and the VPC: how anything reaches anything
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/network.ts`), **⚙️ configured for deployment**
 > (exists when `computeEnabled`/`dataEnabled` are on and a deploy has run).
 

@@ -8,12 +8,11 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { dashboardBody } from "./dashboard-body";
+import { names, prefix } from "../stack";
 
 // WHAT is on it and why: dashboard-body.ts. This file only creates it.
 // COST: free (the first 3 dashboards of an account, up to 50 metrics each; ours has ~20).
 // Always on; the parts for switched-off layers are simply left out.
-
-const prefix = "minitickets-dev";
 
 export interface DashboardInputs {
   alarmArns: pulumi.Input<string>[];
@@ -28,7 +27,7 @@ export function createDashboard(inputs: DashboardInputs): { dashboardName: pulum
   // 1. Wait until every name and ARN is known (pulumi.output resolves them), then build the JSON.
   //    The region: the same as the stack's (us-east-1), so the graphs read the right metrics.
   const body = pulumi
-    .output({ ...inputs, region: aws.getRegionOutput().region })
+    .output({ ...inputs, stack: names.stack, prefix, region: aws.getRegionOutput().region })
     .apply((resolved) => JSON.stringify(dashboardBody(resolved)));
 
   // 2. The dashboard. dashboardName is also its address: CloudWatch -> Dashboards -> minitickets-dev.

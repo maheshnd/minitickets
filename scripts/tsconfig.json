@@ -17,5 +17,5 @@
     //    write the .ts ending, and tsc must allow it (only possible because tsc emits nothing).
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts", "stack/*.ts"]
+  "include": ["*.ts", "stack/*.ts", "bootstrap/*.ts"]
 }

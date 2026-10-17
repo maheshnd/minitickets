@@ -1,5 +1,7 @@
 # 07. Application Load Balancer: routing the request
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/entry/alb.ts`, `listener.ts`,
 > `target-groups.ts`), **⚙️ configured for deployment** (the `entryEnabled` switch).
 

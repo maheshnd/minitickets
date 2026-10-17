@@ -10,6 +10,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 import { alarmSpecs, type AlarmSpecInputs } from "./alarm-specs";
+import { prefix } from "../stack";
 
 // The alarms themselves. WHAT each one watches and WHY: alarm-specs.ts.
 // Which exist depends on the switches: the two queue alarms always (the queues are always on), the
@@ -20,7 +21,8 @@ import { alarmSpecs, type AlarmSpecInputs } from "./alarm-specs";
 //   Always on: 2 alarms = $0.20/month. Compute on: + $0.10 (worker). Entry on: + $0.20 (the ALB alarm
 //   watches 2 metrics). At most $0.50/month.
 
-export interface AlarmsInputs extends AlarmSpecInputs {
+// Everything alarm-specs needs except the prefix: that one comes from the stack (src/stack.ts).
+export interface AlarmsInputs extends Omit<AlarmSpecInputs, "prefix"> {
   topicArn: pulumi.Input<string>;
 }
 
@@ -29,7 +31,7 @@ export interface AlarmsOutputs {
 }
 
 export function createAlarms(inputs: AlarmsInputs): AlarmsOutputs {
-  const alarms = alarmSpecs(inputs).map(
+  const alarms = alarmSpecs({ ...inputs, prefix }).map(
     (spec) =>
       // 1. One alarm per spec.
       //    alarmActions: on the switch to ALARM, publish to the topic (-> email).

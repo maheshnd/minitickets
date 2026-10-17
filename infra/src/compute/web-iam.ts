@@ -6,6 +6,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The IAM part for the web app: ONE role, with less power than the api's execution role.
 // See docs/18-infra-alb-web.md for the diagrams, and iam.ts for what a role is.
@@ -19,8 +20,6 @@ import { tagsFor } from "../tags";
 // Why no task role:
 //   The task role is what our running code may do with AWS. The web code calls no AWS API, and we
 //   do not enable ECS Exec for web, so it needs none. No task role = no AWS permissions at all.
-
-const prefix = "minitickets-dev";
 
 export interface WebIamInputs {
   revalidateSecretArn: pulumi.Input<string>;

@@ -1,5 +1,7 @@
 # 10. RDS for PostgreSQL: the main database
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/data/postgres.ts`), **⚙️ configured for
 > deployment** (the `dataEnabled` switch). All the "production vs dev" trade-offs below are stated in
 > the code's own comments.

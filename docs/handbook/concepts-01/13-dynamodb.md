@@ -1,5 +1,7 @@
 # 13. DynamoDB: idempotency and issued tickets
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/jobs/processed-jobs-table.ts`,
 > `infra/src/tickets/storage.ts`), **⚙️ configured for deployment**. The tables are "always on" (an
 > idle on-demand table costs nothing but storage).

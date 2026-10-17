@@ -11,6 +11,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
 import { NO_TAG_YET } from "./image-tag";
+import { names, prefix } from "./stack";
 
 // The release layer (Step 12b): ONE record that says which image tag is deployed.
 // Always on: a standard SSM parameter is free.
@@ -28,18 +29,17 @@ import { NO_TAG_YET } from "./image-tag";
 //   on one machine. In SSM it is ONE value in AWS that a local `pulumi up` and CD both read, so
 //   neither can roll the app back by accident (single source of truth).
 
-const prefix = "minitickets-dev";
-
-// 1. The parameter's name. A path: "/minitickets/dev/" groups everything of this environment, so
+// 1. The parameter's name (src/names.ts), e.g. "/minitickets/dev/image-tag" for the dev stack.
+//    A path: "/minitickets/<stack>/" groups everything of this environment, so
 //    readDeployedImageTag (3) can list the path and IAM can name exactly this one (cicd.ts).
 // @concept: release-guard
-export const imageTagParameterName = "/minitickets/dev/image-tag";
-const parameterPath = "/minitickets/dev";
+export const imageTagParameterName = names.imageTagParameter;
+const parameterPath = names.path;
 
 // 1b. The deploy guard's record (after the incident of 2026-10-15, scripts/deploy-guard.sh): the
 //     full git commit whose infrastructure code CD applied last. Same path, so the deploy role's
 //     path rule (cicd.ts 10i) covers it.
-export const deployedCommitParameterName = "/minitickets/dev/deployed-commit";
+export const deployedCommitParameterName = names.deployedCommitParameter;
 
 export interface ReleaseOutputs {
   parameterName: pulumi.Output<string>;
@@ -60,7 +60,7 @@ export function createRelease(): ReleaseOutputs {
     `${prefix}-image-tag`,
     {
       name: imageTagParameterName,
-      description: "Image tag deployed to dev (api + web). Written by CD after a successful migration.",
+      description: `Image tag deployed to ${names.stack} (api + web). Written by CD after a successful migration.`,
       type: "String",
       tier: "Standard",
       insecureValue: NO_TAG_YET,
@@ -80,7 +80,7 @@ export function createRelease(): ReleaseOutputs {
     `${prefix}-deployed-commit`,
     {
       name: deployedCommitParameterName,
-      description: "Git commit whose infrastructure code CD applied last (dev). Written by CD; read by its deploy guard.",
+      description: `Git commit whose infrastructure code CD applied last (${names.stack}). Written by CD; read by its deploy guard.`,
       type: "String",
       tier: "Standard",
       insecureValue: NO_TAG_YET,

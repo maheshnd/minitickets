@@ -1,5 +1,7 @@
 # 09. CloudFront: the CDN and origin protection
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/entry/cdn.ts`, `origin-secret.ts`, `mode.ts`),
 > **⚙️ configured for deployment** (the `cdnEnabled` switch). **The committed dev configuration uses
 > `cdnEnabled=false`**, so in dev the ALB-only path is active; CloudFront is configured and exercised

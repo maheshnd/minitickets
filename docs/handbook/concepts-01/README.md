@@ -1,5 +1,7 @@
 # MiniTickets, from zero AWS to production engineer
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 Welcome. This folder is a complete, self-contained AWS learning handbook built around **one real
 application**: MiniTickets, the ticket-booking app in this repository.
 

@@ -12,11 +12,10 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
 import { imageServices, repoName, type ImageService } from "./image-repos";
+import { names, prefix } from "./stack";
 
 // The registry layer: private shelves in AWS where our Docker images are stored.
 // See docs/16-infra-ecr.md for the explanation.
-
-const prefix = "minitickets-dev";
 
 // 1. Lifecycle policy (the same for all three repositories), as JSON text.
 //    WHY: images pile up with every push and storage is billed per GB. Three rules keep it small,
@@ -63,7 +62,7 @@ const lifecyclePolicy = JSON.stringify({
 // @concept: ecr
 // 2. Helper that builds one repository plus its lifecycle policy, so the repos are not copy-pasted.
 function createRepo(service: ImageService) {
-  const name = repoName(service);
+  const name = repoName(names.stack, service);
 
   // @concept: immutable-image-tags
   // @concept: image-scanning

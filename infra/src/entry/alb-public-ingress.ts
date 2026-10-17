@@ -7,6 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // Who may open a connection to the ALB when there is no CloudFront in front of it.
 //
@@ -20,8 +21,6 @@ import { tagsFor } from "../tags";
 // WHY these rules live in the entry layer and not in security.ts like the CloudFront rule:
 //   they only make sense while the ALB exists, and they open the group to (maybe) the whole
 //   internet. With entry off nothing wears the alb badge, so we keep the group closed.
-
-const prefix = "minitickets-dev";
 
 export interface AlbPublicIngressInputs {
   albSgId: pulumi.Input<string>;

@@ -1,5 +1,7 @@
 # 21. CloudWatch: logs, metrics, alarms and dashboards
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/observability/*`), **⚙️ configured for
 > deployment**. The **alarm definitions and specs** are unit-tested; whether a given alarm has fired in
 > a live account is **not** verified here. The email subscription requires a human to confirm it.

@@ -16,6 +16,8 @@ Nothing new is built in this step. It uses everything from [Step 11a](12-infra-n
 | Extra work | none | **days before:** one DNS record for the certificate (3.0b); **on the day:** one CNAME to the ALB (3.3) |
 | `TRUST_PROXY_HOPS` | 2 (CloudFront, ALB) | 1 (ALB) |
 
+**A new AWS account (or a new stack)?** Set it up first with one command and its checklist: [21. New AWS account](21-new-aws-account.md) (`pnpm infra:bootstrap`). This page starts from a stack that CD can already deploy.
+
 Steps marked **Path A** or **Path B** apply only to that path; everything else is the same. Change `cdnEnabled` only while `entryEnabled` is `false` (both paths have a listener on port 80, and AWS allows one per port).
 
 ## 2. The big picture

@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ALARM_PREFIX, alarmSpecs, type AlarmSpec } from "./alarm-specs";
+import { alarmSpecs, type AlarmSpec } from "./alarm-specs";
+import { namesFor } from "../names";
 
-const always = { jobsQueueName: "minitickets-dev-jobs", dlqName: "minitickets-dev-jobs-dlq" };
+// The dev stack's names (src/names.ts): every alarm name starts with "minitickets-dev-".
+const ALARM_PREFIX = `${namesFor("dev").prefix}-`;
+const always = { prefix: namesFor("dev").prefix, jobsQueueName: "minitickets-dev-jobs", dlqName: "minitickets-dev-jobs-dlq" };
 const everythingOn = { ...always, workerFunctionName: "minitickets-dev-worker", albArnSuffix: "app/minitickets-dev/0123456789abcdef" };
 
 function byName(specs: AlarmSpec[], suffix: string): AlarmSpec {
@@ -35,6 +38,8 @@ describe("alarmSpecs: which alarms exist follows the switches", () => {
     const cicd = readFileSync(path.join(__dirname, "../cicd.ts"), "utf8");
     expect(cicd).toContain("alarm:${prefix}-*");
     expect(ALARM_PREFIX).toBe("minitickets-dev-");
+    // Another stack gets its own prefix, so two stacks in one account never share an alarm.
+    expect(alarmSpecs({ ...everythingOn, prefix: namesFor("prod").prefix }).every((s) => s.name.startsWith("minitickets-prod-"))).toBe(true);
     for (const spec of alarmSpecs(everythingOn)) expect(spec.name.startsWith(ALARM_PREFIX)).toBe(true);
   });
 });

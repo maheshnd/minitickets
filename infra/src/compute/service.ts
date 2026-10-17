@@ -14,6 +14,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
 import { apiProxyPort } from "./service-connect";
+import { prefix } from "../stack";
 
 // The service part of the compute layer.
 // See docs/17-infra-ecs-api.md for the diagrams.
@@ -22,8 +23,6 @@ import { apiProxyPort } from "./service-connect";
 //   A task definition is a recipe; a TASK is one dish cooked from it (a running container).
 //   The SERVICE is the manager who makes sure there is always the right number of dishes on
 //   the counter: if a task crashes or fails its health check, the service starts a new one.
-
-const prefix = "minitickets-dev";
 
 export interface ServiceInputs {
   clusterName: pulumi.Input<string>;

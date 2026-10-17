@@ -17,13 +17,13 @@
 #                        │ success                      "Run workflow" with image_tag = <old sha>:
 #                        │                              publish is SKIPPED, deploy runs with that tag
 #                        ▼                              (rollback / redeploy)
-#   ┌─ JOB deploy (GitHub environment "dev") ───────────────────────────────────────────┐
+#   ┌─ JOB deploy (GitHub environment = the stack, e.g. "dev") ─────────────────────────┐
 #   │ ⏸ waits until YOU click "Approve" in the Actions tab                               │
 #   │ 1. log in to AWS as the deploy role (OIDC: no stored password, keys last 2 h)      │
 #   │ 1b. GUARD: older infra code than the deployed commit (SSM), or superseded by a     │
 #   │     newer commit on main?  yes ──▶ fail (nothing changed)                          │
 #   │ 2. <tag> in all 3 ECR repos?  no ──▶ fail (nothing changed)                        │
-#   │ 3. committed Pulumi.dev.yaml says computeEnabled false?                            │
+#   │ 3. committed Pulumi.<stack>.yaml says computeEnabled false?                        │
 #   │      yes ──▶ pulumi up (this is how "everything off/on" works), summary, END       │
 #   │ 4. PHASE A  pulumi up --config migrationImageTag=<tag>                             │
 #   │      app keeps the CURRENT version (SSM); anything missing is created (DB, ...)    │
@@ -41,9 +41,18 @@
 # Build once, then promote: publish builds each commit's images ONCE. deploy runs THOSE exact
 # images (same tag, same content); it never builds anything itself.
 # Two places decide what runs on AWS:
-#   WHAT exists         = the switches in the committed infra/Pulumi.dev.yaml;
-#   WHICH version runs  = SSM /minitickets/dev/image-tag (one small note stored in AWS, written in
+#   WHAT exists         = the switches in the committed infra/Pulumi.<stack>.yaml;
+#   WHICH version runs  = SSM /minitickets/<stack>/image-tag (one small note stored in AWS, written in
 #                         phase B).
+#
+# NAMES COME FROM GITHUB VARIABLES, not from this file (so a new stack / AWS account needs no edit
+# here; scripts/infra-bootstrap.ts sets them, docs/21-new-aws-account.md):
+#   repo variables         (job publish: it has no environment, see 7c) AWS_REGION, AWS_PUBLISH_ROLE_ARN,
+#                           API_REPO_NAME, WEB_REPO_NAME, WORKER_REPO_NAME, DEPLOY_ENVIRONMENT
+#   environment variables  (job deploy, environment "<stack>") PULUMI_STACK, AWS_REGION,
+#                           AWS_DEPLOY_ROLE_ARN, the 3 repo names, WORKER_FUNCTION_NAME,
+#                           TICKET_FUNCTION_NAME, IMAGE_TAG_PARAMETER, DEPLOYED_COMMIT_PARAMETER
+#   An environment variable wins over a repo variable with the same name.
 #
 # Step docs: docs/handbook/PENDING.md (Steps 12a, 12b) until the next handbook catch-up.
 name: CD
@@ -65,14 +74,14 @@ on:
   #      whose CI run is green), then deploy it.
   #    image_tag SET (e.g. 1a2b3c4): skip publish and deploy that EXISTING image: a rollback to an
   #      older version, or a redeploy of the current one. The image must already be in ECR.
-  #    environment: only "dev" exists today. A choice list, so nobody can type a wrong name.
+  #    environment: a list of the repo's GitHub environments (one per Pulumi stack), so nobody can
+  #      type a wrong name. Empty = the repo variable DEPLOY_ENVIRONMENT (the same one CI-started runs use).
   workflow_dispatch:
     inputs:
       environment:
-        description: Where to deploy
-        type: choice
-        options: [dev]
-        default: dev
+        description: Where to deploy (empty = repo variable DEPLOY_ENVIRONMENT)
+        type: environment
+        required: false
       image_tag:
         description: "Existing image tag (git SHA) to deploy: rollback / redeploy. Empty = build main and deploy it."
         type: string
@@ -97,23 +106,9 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  # 4. The AWS region (the area of AWS data centres we use). Same as the Pulumi stack
-  #    (infra/Pulumi.dev.yaml, aws:region).
-  AWS_REGION: us-east-1
-  # 5. The three ECR repositories (infra/src/registry.ts). The publish role may push ONLY here.
-  API_REPO_NAME: minitickets-dev-api
-  WEB_REPO_NAME: minitickets-dev-web
-  WORKER_REPO_NAME: minitickets-dev-worker
-  # 5b. The worker Lambda (S1c, infra/src/jobs/worker-lambda.ts), checked after the deploy (37).
-  WORKER_FUNCTION_NAME: minitickets-dev-worker
-  TICKET_FUNCTION_NAME: minitickets-dev-tickets
-  # 6. The SSM parameter (a named value stored in AWS) that says which image tag is deployed
-  #    (infra/src/release.ts). The deploy role may write ONLY this one.
-  IMAGE_TAG_PARAMETER: /minitickets/dev/image-tag
-  # 6b. The SSM parameter with the commit whose infrastructure code CD applied last (release.ts 2b).
-  #     The deploy guard (28b) reads it; the end of the deploy (38b) writes it.
-  DEPLOYED_COMMIT_PARAMETER: /minitickets/dev/deployed-commit
+# 4-6. The names each job uses live in GitHub variables (see "NAMES COME FROM GITHUB VARIABLES" at the
+#      top), set in each job's own `env:` below. Every name is built from the stack name in
+#      infra/src/names.ts, e.g. stack "dev" -> minitickets-dev-api, /minitickets/dev/image-tag.
 
 jobs:
   # CHAPTER 3: publish = build the api, web and worker images ONCE and store them in ECR.
@@ -159,18 +154,35 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
 
+    # 7c. The names this job needs, from REPO variables (scripts/infra-bootstrap.ts sets them).
+    #     WHY not an environment's variables: a job with `environment:` gets a different OIDC "sub"
+    #     (":environment:<name>" instead of ":ref:refs/heads/main"), and the publish role trusts only
+    #     main (infra/src/cicd.ts step 3). It would also wait for an approval on every push.
+    #     So this repo publishes to ONE AWS account: the one these variables point at.
+    #     AWS_REGION:   the AWS region (the area of AWS data centres), aws:region of the stack.
+    #     *_REPO_NAME:  the three ECR repositories (infra/src/registry.ts). The publish role may push
+    #                   ONLY there.
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      API_REPO_NAME: ${{ vars.API_REPO_NAME }}
+      WEB_REPO_NAME: ${{ vars.WEB_REPO_NAME }}
+      WORKER_REPO_NAME: ${{ vars.WORKER_REPO_NAME }}
+
     steps:
       # 9. Fail early, with a clear message, if the one-time setup was not done.
-      #    WHY: without the variable, the AWS step below fails with a vague "could not load
-      #    credentials". See the setup steps in docs/handbook/PENDING.md (Step 12a).
+      #    WHY: without the variables, the AWS step below fails with a vague "could not load
+      #    credentials" (or pushes to a repository named ""). The fix for all of them:
+      #    pnpm infra:bootstrap --stack <stack> --profile <profile> (docs/21-new-aws-account.md).
       - name: Check setup
         env:
-          ROLE_ARN: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          AWS_PUBLISH_ROLE_ARN: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
         run: |
-          if [ -z "$ROLE_ARN" ]; then
-            echo "::error::Repo variable AWS_PUBLISH_ROLE_ARN is not set. Set it to: cd infra && pulumi stack output publishRoleArn"
-            exit 1
-          fi
+          for NAME in AWS_PUBLISH_ROLE_ARN AWS_REGION API_REPO_NAME WEB_REPO_NAME WORKER_REPO_NAME; do
+            if [ -z "${!NAME}" ]; then
+              echo "::error::Repo variable $NAME is not set. Run: pnpm infra:bootstrap --stack <stack> --profile <profile> (docs/21-new-aws-account.md)"
+              exit 1
+            fi
+          done
 
       # 10. Check out (download) the EXACT commit CI tested.
       #     WHAT: workflow_run.head_sha is the commit the CI run tested. For a manual run there
@@ -368,13 +380,13 @@ jobs:
         github.event.workflow_run.event == 'push'))
 
     # CHAPTER 4: wait until a human clicks "Approve".
-    # 20. The GitHub environment "dev" (Settings -> Environments).
+    # 20. The GitHub environment named after the Pulumi stack, e.g. "dev" (Settings -> Environments).
     #     WHAT it gives: (a) the job WAITS until a required reviewer (you) clicks "Approve";
     #       (b) the job's OIDC ID card then says "sub = ...:environment:dev" ("sub" = the "who am I"
     #       line), and ONLY that card may use the deploy role (infra/src/cicd.ts step 8).
-    #       So no approval = no AWS keys.
-    #     A workflow_run start has no inputs, so the default "dev" applies.
-    environment: ${{ inputs.environment || 'dev' }}
+    #       So no approval = no AWS keys. (c) its VARIABLES: every name below (env:).
+    #     A workflow_run start has no inputs, so the repo variable DEPLOY_ENVIRONMENT applies.
+    environment: ${{ inputs.environment || vars.DEPLOY_ENVIRONMENT }}
 
     # 21. One deploy per environment at a time; NEVER cancel a running one.
     #     WHY no cancelling: a deploy stopped halfway (e.g. between the migration and phase B, or in
@@ -386,7 +398,7 @@ jobs:
     #       an update. A second `pulumi up` (from CD, or from your laptop during a CD deploy) fails at
     #       once with "the stack is currently locked", without changing anything.
     concurrency:
-      group: cd-deploy-${{ inputs.environment || 'dev' }}
+      group: cd-deploy-${{ inputs.environment || vars.DEPLOY_ENVIRONMENT }}
       cancel-in-progress: false
 
     # 22. A normal x86 runner is fine: nothing is built here (the images exist already).
@@ -396,21 +408,57 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
 
+    # 22b. The names this job uses, from the ENVIRONMENT's variables (20c; scripts/infra-bootstrap.ts
+    #      sets them from infra/src/names.ts, e.g. stack "dev" -> minitickets-dev-api).
+    #      PULUMI_STACK:              the stack to `pulumi up` (= the environment's name)
+    #      AWS_REGION:                aws:region of that stack
+    #      *_REPO_NAME:               the three ECR repositories (the deploy checks + tags images there)
+    #      *_FUNCTION_NAME:           the two Lambda functions checked after the deploy (37)
+    #      IMAGE_TAG_PARAMETER:       SSM parameter with the DEPLOYED image tag (infra/src/release.ts);
+    #                                 the deploy role may write ONLY this one and the next
+    #      DEPLOYED_COMMIT_PARAMETER: SSM parameter with the commit whose infrastructure code CD applied
+    #                                 last (release.ts 2b). The guard (28b) reads it; 38b writes it.
+    env:
+      PULUMI_STACK: ${{ vars.PULUMI_STACK }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      API_REPO_NAME: ${{ vars.API_REPO_NAME }}
+      WEB_REPO_NAME: ${{ vars.WEB_REPO_NAME }}
+      WORKER_REPO_NAME: ${{ vars.WORKER_REPO_NAME }}
+      WORKER_FUNCTION_NAME: ${{ vars.WORKER_FUNCTION_NAME }}
+      TICKET_FUNCTION_NAME: ${{ vars.TICKET_FUNCTION_NAME }}
+      IMAGE_TAG_PARAMETER: ${{ vars.IMAGE_TAG_PARAMETER }}
+      DEPLOYED_COMMIT_PARAMETER: ${{ vars.DEPLOYED_COMMIT_PARAMETER }}
+
     steps:
       # CHAPTER 5: safety checks. Check the setup, the tag and the current state. Nothing in AWS changes yet.
       # 23. Fail early, with clear messages, if the one-time setup was not done (PENDING.md, Step 12b).
       #     The secret's VALUE never reaches this script: GitHub only tells us whether it is empty.
+      #     Every variable of 22b, too: an empty one means the environment was not set up (or the run
+      #     picked no environment: repo variable DEPLOY_ENVIRONMENT missing).
       - name: Check setup
         env:
-          ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          ENVIRONMENT: ${{ inputs.environment || vars.DEPLOY_ENVIRONMENT }}
           HAS_PULUMI_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN != '' }}
         run: |
-          if [ -z "$ROLE_ARN" ]; then
-            echo "::error::Repo variable AWS_DEPLOY_ROLE_ARN is not set. Set it to: cd infra && pulumi stack output deployRoleArn"
+          FIX="Run: pnpm infra:bootstrap --stack <stack> --profile <profile> (docs/21-new-aws-account.md)"
+          if [ -z "$ENVIRONMENT" ]; then
+            echo "::error::No environment: repo variable DEPLOY_ENVIRONMENT is not set. $FIX"
+            exit 1
+          fi
+          for NAME in AWS_DEPLOY_ROLE_ARN PULUMI_STACK AWS_REGION API_REPO_NAME WEB_REPO_NAME WORKER_REPO_NAME \
+                      WORKER_FUNCTION_NAME TICKET_FUNCTION_NAME IMAGE_TAG_PARAMETER DEPLOYED_COMMIT_PARAMETER; do
+            if [ -z "${!NAME}" ]; then
+              echo "::error::Variable $NAME is not set in environment '$ENVIRONMENT'. $FIX"
+              exit 1
+            fi
+          done
+          if [ "$PULUMI_STACK" != "$ENVIRONMENT" ]; then
+            echo "::error::Environment '$ENVIRONMENT' says PULUMI_STACK=$PULUMI_STACK. They must be the same word (the deploy role trusts ':environment:<stack>'). $FIX"
             exit 1
           fi
           if [ "$HAS_PULUMI_TOKEN" != "true" ]; then
-            echo "::error::Secret PULUMI_ACCESS_TOKEN is not set (environment 'dev' or repo). Create one at app.pulumi.com -> Personal access tokens."
+            echo "::error::Secret PULUMI_ACCESS_TOKEN is not set (environment '$ENVIRONMENT' or repo). Create one at app.pulumi.com -> Personal access tokens."
             exit 1
           fi
 
@@ -484,7 +532,7 @@ jobs:
       #      WHAT it checks (scripts/deploy-guard.sh; tests in scripts/deploy-guard.test.ts):
       #        a. runs CI started: is this still main's NEWEST commit? No = "superseded", refuse.
       #           (GitHub reads cd.yml from main, but each run keeps the commit it was started for.)
-      #        b. every run: is this commit OLDER than SSM /minitickets/dev/deployed-commit (an
+      #        b. every run: is this commit OLDER than SSM DEPLOYED_COMMIT_PARAMETER (an
       #           ancestor of it in git)? Yes = refuse, unless a manual run sets allow_older_infra.
       #      App rollbacks keep working: they check out main's newest commit (25), never older code.
       #      FAILS CLOSED: if SSM cannot be read (no permission, network), the deploy stops. Only a
@@ -518,7 +566,7 @@ jobs:
             bash "$RUNNER_TEMP/deploy-guard.sh"
 
       # 29. Log in to Pulumi Cloud (where Pulumi keeps its records of what it built, and its lock)
-      #     and pick the dev stack (our one copy of the infrastructure).
+      #     and pick this environment's stack (PULUMI_STACK, e.g. dev: one copy of the infrastructure).
       #     The token is given to THIS step only; `pulumi login` stores it for the later steps.
       - name: Pulumi login
         working-directory: infra
@@ -526,7 +574,7 @@ jobs:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         run: |
           pulumi login
-          pulumi stack select dev
+          pulumi stack select "$PULUMI_STACK"
 
       # 30. Does <tag> exist in ALL THREE repositories? Fail early, before anything changes.
       #     WHY: a rollback to a tag that was never published (typo), or that ECR already deleted
@@ -552,9 +600,9 @@ jobs:
           done
 
       # 31. Read the current state: what the COMMITTED config wants, and what runs now.
-      #     compute_enabled / entry_enabled: from the committed infra/Pulumi.dev.yaml (missing = false,
+      #     compute_enabled / entry_enabled: from the committed infra/Pulumi.<stack>.yaml (missing = false,
       #       the same default as infra/index.ts).
-      #     current_tag: SSM /minitickets/dev/image-tag, the version running now ("none" = never
+      #     current_tag: SSM IMAGE_TAG_PARAMETER, the version running now ("none" = never
       #       deployed). Empty if that image is no longer in ECR (then phase A cannot keep it, 33).
       #     web_existed: did the web service exist BEFORE this run? (Needed for the restart in 37.)
       #     worker_new_tag (S1c): "true" when the current tag has NO worker image (the first deploy
@@ -569,7 +617,7 @@ jobs:
         run: |
           for KEY in apiImageTag webImageTag migrationImageTag workerImageTag; do
             if pulumi config get "$KEY" > /dev/null 2>&1; then
-              echo "::error::$KEY is set in the committed infra/Pulumi.dev.yaml. Remove it (pulumi config rm $KEY), commit, push."
+              echo "::error::$KEY is set in the committed infra/Pulumi.$PULUMI_STACK.yaml. Remove it (pulumi config rm $KEY), commit, push."
               exit 1
             fi
           done
@@ -847,7 +895,7 @@ jobs:
             done
           done
 
-      # 38b. Record this commit as the deployed one (SSM /minitickets/dev/deployed-commit), for the
+      # 38b. Record this commit as the deployed one (SSM DEPLOYED_COMMIT_PARAMETER), for the
       #      deploy guard (28b) of every LATER run.
       #      WHEN: as soon as this commit's `pulumi up` has STARTED (the compute-off apply, or phase A),
       #        and also if a later step failed or the run was cancelled (`always()`). WHY not only
@@ -880,7 +928,10 @@ jobs:
         run: |
           CLUSTER="$(pulumi stack output clusterName 2>/dev/null || true)"
           if [ -z "$CLUSTER" ] || [ "$CLUSTER" = "null" ]; then echo "No cluster (yet)."; exit 0; fi
-          for SERVICE in minitickets-dev-api minitickets-dev-web; do
+          # The service names from the stack (null = that service does not exist: skipped).
+          for OUTPUT in apiServiceName webServiceName; do
+            SERVICE="$(pulumi stack output "$OUTPUT" 2>/dev/null || true)"
+            if [ -z "$SERVICE" ] || [ "$SERVICE" = "null" ]; then continue; fi
             echo "--- $SERVICE: newest events first ---"
             aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
               --query 'services[0].events[:8].[createdAt,message]' --output text || true
@@ -907,14 +958,14 @@ jobs:
           DNS_TARGET: ${{ steps.smoke.outputs.dns_target }}
         run: |
           {
-            echo "## Deploy to dev"
+            echo "## Deploy to $PULUMI_STACK"
             echo
             echo "Image tag: \`$TAG\` (before this run: \`${CURRENT:-unknown}\`)"
             echo
             if [ "$GUARD" = "failure" ]; then
               echo "**The deploy guard refused this run** (older infrastructure code than the deployed commit, or superseded by a newer commit on main). Nothing in AWS changed. The reason is in the guard step's log."
             elif [ "$COMPUTE" != "true" ]; then
-              echo "computeEnabled is **false** in the committed \`infra/Pulumi.dev.yaml\`: ran \`pulumi up\` to match it (**$APPLY_OFF**). No image was deployed; SSM still says \`${CURRENT:-?}\`."
+              echo "computeEnabled is **false** in the committed \`infra/Pulumi.$PULUMI_STACK.yaml\`: ran \`pulumi up\` to match it (**$APPLY_OFF**). No image was deployed; SSM still says \`${CURRENT:-?}\`."
             else
               echo "| Step | Result |"
               echo "|---|---|"

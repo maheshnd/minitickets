@@ -1,5 +1,7 @@
 # 17. SQS: the durable work queues
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/jobs/queues.ts`,
 > `apps/worker/src/batch.ts`, `apps/worker/src/retry-later.ts`), **⚙️ configured for deployment**
 > (compute switch). The DLQ is covered fully in [19](19-dead-letter-queue.md).

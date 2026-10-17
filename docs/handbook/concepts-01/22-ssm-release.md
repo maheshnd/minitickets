@@ -1,5 +1,7 @@
 # 22. SSM Parameter Store and the release record
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/release.ts`, `scripts/deploy-guard.sh`,
 > `.github/workflows/cd.yml`), **⚙️ configured for deployment**.
 

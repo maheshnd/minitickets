@@ -8,6 +8,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { names, prefix } from "../stack";
 
 // The logs part of the compute layer: one place in CloudWatch for one app's output.
 // Called once for the api (compute switch), once for web (entry switch) and once for the worker
@@ -19,8 +20,6 @@ import { tagsFor } from "../tags";
 //   Logs is AWS's log book: ECS copies every line there, so we can read them later (also after
 //   a crash). A "log group" is one book; each container writes its own "log stream" (chapter).
 
-const prefix = "minitickets-dev";
-
 export interface LogsOutputs {
   logGroupName: pulumi.Output<string>;
   logGroupArn: pulumi.Output<string>;
@@ -29,7 +28,7 @@ export interface LogsOutputs {
 // @concept: cloudwatch-logs
 export function createLogs(service: "api" | "web" | "worker" | "tickets"): LogsOutputs {
   // 1. Log group
-  // WHAT: the book named /minitickets/dev/api (or /minitickets/dev/web).
+  // WHAT: the book named /minitickets/<stack>/api (or .../web), e.g. /minitickets/dev/api.
   // WHY: the awslogs driver in task.ts / web-task.ts needs a group to write to. It does not
   //      create one itself. One group per app keeps the api and web lines apart.
   // DEPENDS ON: nothing.
@@ -37,7 +36,7 @@ export function createLogs(service: "api" | "web" | "worker" | "tickets"): LogsO
   //   GB, and dev logs older than a week are never read. Without it, logs are kept FOREVER.
   //   Production: often 30-90 days (or what an audit requires).
   const logGroup = new aws.cloudwatch.LogGroup(`${prefix}-${service}-logs`, {
-    name: `/minitickets/dev/${service}`,
+    name: `${names.path}/${service}`,
     retentionInDays: 7,
     tags: tagsFor(`${prefix}-${service}-logs`),
   });

@@ -9,6 +9,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { names, prefix } from "../stack";
 
 // ECS Service Connect: a private road between the web and api tasks inside AWS.
 //
@@ -36,8 +37,6 @@ import { tagsFor } from "../tags";
 //
 // The ALB does NOT use this road: it keeps calling the containers on 4000 and 3000 directly
 // (see the proxy ports below and service.ts 1g).
-
-const prefix = "minitickets-dev";
 
 // The ports the two server-side proxies listen on ("ingressPortOverride" in service.ts and
 // web-service.ts). WHY not the default: by default the proxy takes over the container port itself,
@@ -71,7 +70,7 @@ export function createServiceConnect(inputs: ServiceConnectInputs): ServiceConne
   // DEPENDS ON: nothing.
   const namespace = new aws.servicediscovery.HttpNamespace(`${prefix}-namespace`, {
     name: "minitickets.internal",
-    description: "Service Connect names for minitickets dev (api, web)",
+    description: `Service Connect names for minitickets ${names.stack} (api, web)`,
     tags: tagsFor(`${prefix}-namespace`),
   });
 

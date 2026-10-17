@@ -10,6 +10,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The migration task definition (Step 12b): the recipe for ONE run of `node dist/migrate.js`.
 // See task.ts for what a task definition is.
@@ -25,8 +26,6 @@ import { tagsFor } from "../tags";
 //   Apart, the migration can change WITHOUT touching the services.
 //
 // Much smaller than the api's: no ports, no health check, no Redis, no ECS Exec. It runs, exits, done.
-
-const prefix = "minitickets-dev";
 
 export interface MigrationTaskInputs {
   image: pulumi.Input<string>;

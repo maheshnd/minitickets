@@ -1,5 +1,7 @@
 # 15. The transactional outbox: reliable publishing after a commit
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`apps/api/src/services/outbox.ts`,
 > `apps/api/src/queries/outbox.ts`, `apps/api/src/queues/jobs.ts`), **⚙️ configured for deployment**
 > (the relay runs inside the API container; publishing requires the SNS topic and the `send-jobs` task

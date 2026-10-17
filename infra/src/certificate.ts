@@ -7,6 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "./tags";
+import { prefix } from "./stack";
 
 // The TLS certificate for our own subdomain (Step 11i).
 //
@@ -34,8 +35,6 @@ import { tagsFor } from "./tags";
 // Region: ACM certificates belong to ONE region, and an ALB can only use a certificate from its
 //   own region. Ours is the provider's region, us-east-1, the same as the ALB. (CloudFront only
 //   accepts certificates from us-east-1, so this one would also fit CloudFront later.)
-
-const prefix = "minitickets-dev";
 
 export interface CertificateInputs {
   domainName: string;

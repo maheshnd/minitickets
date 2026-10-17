@@ -10,12 +10,11 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The task definition (recipe) for the web (Next.js) container.
 // See docs/18-infra-alb-web.md, and task.ts / docs/17-infra-ecs-api.md for what a task definition is.
 // It is much shorter than the api's: one secret, no database settings, no ECS Exec.
-
-const prefix = "minitickets-dev";
 
 export interface WebTaskInputs {
   image: pulumi.Input<string>;

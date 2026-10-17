@@ -1,5 +1,7 @@
 # 18. Lambda: the serverless consumer
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/jobs/worker-lambda.ts`,
 > `infra/src/jobs/queue-trigger.ts`, `apps/worker/src/lambda.ts`), **⚙️ configured for deployment**
 > (compute switch; reserved concurrency optional from config).

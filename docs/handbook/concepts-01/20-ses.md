@@ -1,5 +1,7 @@
 # 20. SES: sending the confirmation email
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/jobs/email.ts`,
 > `apps/worker/src/ses-mailer.ts`) plus a fallback `LogMailer`. ⚙️ **In practice MiniTickets starts in
 > the SES sandbox**, which means emails only go to verified recipients unless production access was

@@ -1,5 +1,7 @@
 # 19. Dead-letter queues: the repair tray
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **This is the flagship chapter.** The task that created this handbook asked for the dead-letter
 > queue to be written first, fully, as the model for every other chapter. It is deliberately the
 > deepest one. If you understand everything here, you understand the retry-and-recovery heart of

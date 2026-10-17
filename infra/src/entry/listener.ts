@@ -10,6 +10,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The listener part of the entry layer: where the routing decisions live.
 // CloudFront mode only (cdnEnabled = true, the default). Without CloudFront, https-listener.ts
@@ -29,8 +30,6 @@ import { tagsFor } from "../tags";
 //      That blocks every request that does not come from CloudFront.
 //   2. the secret header checked by the rules below. That blocks OTHER people's CloudFront
 //      distributions: they use the same IP ranges as ours, so lock 1 alone lets them in.
-
-const prefix = "minitickets-dev";
 
 export interface ListenerInputs {
   albArn: pulumi.Input<string>;

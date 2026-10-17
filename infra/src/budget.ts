@@ -5,11 +5,11 @@
 //
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { prefix } from "./stack";
+import { commonTags } from "./tags";
 
 // The budget layer: an email warning when AWS spending gets high.
 // See docs/13-infra-security-groups.md (last section) for the explanation.
-
-const prefix = "minitickets-dev";
 
 // 1. Helper that builds one notification block, so the 4 alerts are not copy-pasted.
 function notification(alertEmail: pulumi.Input<string>, threshold: number, type: "ACTUAL" | "FORECASTED") {
@@ -55,6 +55,6 @@ export function createBudget(inputs: BudgetInputs): void {
       notification(inputs.alertEmail, 100, "ACTUAL"),
       notification(inputs.alertEmail, 100, "FORECASTED"),
     ],
-    tags: { Project: "minitickets", Env: "dev", ManagedBy: "pulumi" },
+    tags: commonTags,
   });
 }

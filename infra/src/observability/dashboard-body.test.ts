@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { dashboardBody, FOLLOW_ONE_REQUEST_QUERY, type DashboardBodyInputs } from "./dashboard-body";
 
 const always: DashboardBodyInputs = {
+  stack: "dev",
+  prefix: "minitickets-dev",
   region: "us-east-1",
   alarmArns: ["arn:aws:cloudwatch:us-east-1:123456789012:alarm:minitickets-dev-jobs-dlq-not-empty"],
   jobsQueueName: "minitickets-dev-jobs",

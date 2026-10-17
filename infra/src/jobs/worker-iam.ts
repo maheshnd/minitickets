@@ -9,6 +9,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The worker Lambda's role: what OUR CODE in the Lambda may do while it runs.
 //
@@ -24,8 +25,6 @@ import { tagsFor } from "../tags";
 // the Lambda service (to read the queue for the event source mapping, to write logs) and by our
 // code (DynamoDB, SES, the backoff's ChangeMessageVisibility). Pulling the image is not in it: the
 // ECR repository allows that (registry.ts step 3).
-
-const prefix = "minitickets-dev";
 
 export interface WorkerIamInputs {
   queueArn: pulumi.Input<string>;

@@ -1,5 +1,7 @@
 # 12. Secrets Manager and KMS: passwords and encryption keys
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/data/secrets.ts`, `infra/src/tickets/storage.ts`)
 > plus the RDS-managed secret. **⚙️ configured for deployment.**
 

@@ -7,6 +7,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { names, prefix } from "../stack";
 
 // The secrets part of the data layer: the full Redis URL, stored in Secrets Manager.
 // See docs/14-infra-data.md for the diagrams.
@@ -18,8 +19,6 @@ import { tagsFor } from "../tags";
 //
 // We do NOT create a secret for the Postgres password: RDS already made one for us
 // (manageMasterUserPassword in postgres.ts).
-
-const prefix = "minitickets-dev";
 
 export interface SecretsInputs {
   redisEndpoint: pulumi.Input<string>;
@@ -42,7 +41,7 @@ export function createSecrets(inputs: SecretsInputs): SecretsOutputs {
   //   back on would fail with "secret is scheduled for deletion". Production: keep the
   //   default window, so a deleted secret can be recovered.
   const secret = new aws.secretsmanager.Secret(`${prefix}-redis-url`, {
-    name: "minitickets/dev/redis-url",
+    name: `${names.secretPath}/redis-url`,
     description: "REDIS_URL for the minitickets api (rediss://:<token>@<host>:6379)",
     recoveryWindowInDays: 0,
     tags: tagsFor(`${prefix}-redis-url`),

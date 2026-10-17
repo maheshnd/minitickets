@@ -10,6 +10,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // Amazon SES (Simple Email Service): sends the booking confirmation emails.
 // Always on (when domainName is set), NOT behind a switch: identities are free, and the DNS records
@@ -26,8 +27,6 @@ import { tagsFor } from "../tags";
 // SES ("Email address is not verified"), is retried 3 times and lands in the dead-letter queue: a
 // live demo of the DLQ. Leaving the sandbox = a request to AWS (SES console -> Account dashboard ->
 // "Request production access"), reviewed by a person; not needed to learn this.
-
-const prefix = "minitickets-dev";
 
 export interface EmailInputs {
   domainName: string;

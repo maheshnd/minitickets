@@ -1,5 +1,7 @@
 # 05. ECR: where our container images live
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/registry.ts`), **⚙️ configured for deployment**.
 
 **Prerequisites:** [01](01-what-is-aws.md), [04. IAM](04-iam.md).

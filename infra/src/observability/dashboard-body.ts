@@ -12,6 +12,9 @@
 // Widgets have no x/y: CloudWatch then places them left to right, top to bottom, in this order.
 
 export interface DashboardBodyInputs {
+  // The stack ("dev") and its name prefix ("minitickets-dev"), for the help text (src/names.ts).
+  stack: string;
+  prefix: string;
   region: string;
   alarmArns: string[];
   jobsQueueName: string;
@@ -41,9 +44,9 @@ export function dashboardBody(inputs: DashboardBodyInputs): { widgets: Widget[] 
     height: 3,
     properties: {
       markdown: [
-        "## MiniTickets dev",
-        "An alarm email arrived? Find its box below, then **Logs Insights** -> saved query `minitickets-dev/errors`.",
-        "Follow ONE booking: copy `x-correlation-id` from the booking's response (browser network tab), then the saved query `minitickets-dev/follow-one-request`.",
+        `## MiniTickets ${inputs.stack}`,
+        `An alarm email arrived? Find its box below, then **Logs Insights** -> saved query \`${inputs.prefix}/errors\`.`,
+        `Follow ONE booking: copy \`x-correlation-id\` from the booking's response (browser network tab), then the saved query \`${inputs.prefix}/follow-one-request\`.`,
       ].join("\n\n"),
     },
   });

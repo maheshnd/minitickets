@@ -17,6 +17,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { tagsFor } from "../tags";
+import { prefix } from "../stack";
 
 // The task definition part of the compute layer.
 // See docs/17-infra-ecs-api.md for the diagrams.
@@ -26,8 +27,6 @@ import { tagsFor } from "../tags";
 //   and secrets, where the logs go, and how to check it is healthy. It runs nothing by itself.
 //   Every change creates a new numbered REVISION (minitickets-dev-api:1, :2, ...); old ones stay,
 //   which is what makes a rollback possible.
-
-const prefix = "minitickets-dev";
 
 export interface TaskInputs {
   image: pulumi.Input<string>;

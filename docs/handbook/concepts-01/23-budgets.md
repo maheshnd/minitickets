@@ -1,5 +1,7 @@
 # 23. AWS Budgets: the cost smoke alarm
 
+History: see [CHANGELOG.md](../CHANGELOG.md) or run `pnpm docs:history`
+
 > **Honesty label: ✅ Built in repository** (`infra/src/budget.ts`), **⚙️ configured for deployment**.
 > The budget **warns only**; it never stops anything.
 
